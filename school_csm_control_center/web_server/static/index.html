@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#06101e" />
+  <title>School Client Satisfaction Survey</title>
+  <style>
+    :root {
+      --bg: #06101e;
+      --bg-2: #09192b;
+      --panel: #0a1d30;
+      --panel-2: #0d263b;
+      --card: #0d2940;
+      --card-hover: #123a55;
+      --line: #1b5572;
+      --divider: #173b53;
+      --text: #f4faff;
+      --text-2: #c2d2df;
+      --muted: #91a7b9;
+      --teal: #2bd9c5;
+      --teal-dark: #168e88;
+      --cyan: #62dbff;
+      --blue: #3b82f6;
+      --success: #39db91;
+      --warning: #f7be5b;
+      --danger: #ff6b78;
+      --shadow: 0 28px 80px rgba(0,0,0,.34);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 14% 4%, rgba(43,217,197,.14), transparent 24rem),
+        radial-gradient(circle at 88% 18%, rgba(59,130,246,.14), transparent 28rem),
+        linear-gradient(145deg, #040b14 0%, var(--bg) 42%, #081a2b 100%);
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 3px solid var(--cyan);
+      outline-offset: 3px;
+    }
+    .language-option input:focus-visible + label,
+    .service-card input:focus-visible + label,
+    .rating-option input:focus-visible + label {
+      outline: 3px solid var(--cyan);
+      outline-offset: 3px;
+    }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 74px;
+      padding: 12px clamp(16px, 4vw, 52px);
+      background: rgba(4,12,23,.88);
+      border-bottom: 1px solid rgba(98,219,255,.16);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand { display: flex; align-items: center; min-width: 0; gap: 12px; }
+    .brand-mark {
+      width: 66px; height: 48px; border-radius: 15px; padding: 3px;
+      display: grid; place-items: center; flex: 0 0 auto;
+      background: linear-gradient(145deg, rgba(43,217,197,.14), rgba(59,130,246,.13));
+      border: 1px solid rgba(98,219,255,.40);
+      box-shadow: inset 0 0 24px rgba(43,217,197,.06), 0 10px 28px rgba(0,0,0,.2);
+    }
+    .brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .brand-copy { min-width: 0; }
+    .brand-kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; color: var(--teal); text-transform: uppercase; }
+    .brand-title { margin-top: 2px; font-size: clamp(15px, 2vw, 19px); font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .connection {
+      display: flex; align-items: center; gap: 9px; padding: 9px 12px;
+      background: rgba(10,29,48,.74); border: 1px solid rgba(57,219,145,.28);
+      border-radius: 999px; color: var(--text-2); font-size: 12px; white-space: nowrap;
+    }
+    .connection-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 5px rgba(57,219,145,.10), 0 0 18px rgba(57,219,145,.65); }
+
+    .page-shell {
+      width: min(1220px, calc(100% - 28px));
+      margin: 30px auto 64px;
+      display: grid;
+      grid-template-columns: 294px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .side-panel {
+      position: sticky; top: 98px;
+      padding: 22px;
+      border: 1px solid rgba(98,219,255,.17);
+      border-radius: var(--radius);
+      background: linear-gradient(165deg, rgba(13,38,59,.92), rgba(7,22,37,.92));
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .side-panel::after {
+      content: ""; position: absolute; width: 180px; height: 180px; border-radius: 50%;
+      right: -100px; top: -90px; background: rgba(43,217,197,.10); filter: blur(4px); pointer-events: none;
+    }
+    .school-chip { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(43,217,197,.10); border: 1px solid rgba(43,217,197,.25); color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .side-panel h1 { margin: 15px 0 8px; font-size: 27px; line-height: 1.12; letter-spacing: -.02em; }
+    .side-panel p { margin: 0; color: var(--text-2); line-height: 1.55; font-size: 13px; }
+    .address-box { margin: 18px 0 20px; padding: 12px 13px; border-radius: 13px; background: rgba(4,16,30,.55); border: 1px solid rgba(145,167,185,.16); }
+    .address-label { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; font-weight: 800; }
+    .address-value { margin-top: 5px; font-size: 12px; color: var(--cyan); word-break: break-all; }
+
+    .step-list { display: grid; gap: 8px; margin-top: 12px; }
+    .step-link {
+      position: relative; display: grid; grid-template-columns: 32px minmax(0,1fr); gap: 11px; align-items: center;
+      width: 100%; padding: 10px; color: var(--muted); text-align: left; border: 1px solid transparent; border-radius: 13px; background: transparent;
+    }
+    .step-link .num { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 11px; background: rgba(4,16,30,.7); border: 1px solid rgba(145,167,185,.20); font-weight: 800; font-size: 12px; }
+    .step-link .copy strong { display: block; color: inherit; font-size: 12px; }
+    .step-link .copy span { display: block; margin-top: 2px; font-size: 10px; color: inherit; opacity: .82; }
+    .step-link.active { background: rgba(43,217,197,.10); border-color: rgba(43,217,197,.32); color: var(--text); }
+    .step-link.active .num { background: linear-gradient(145deg, var(--teal-dark), #176d8d); color: white; border-color: var(--cyan); box-shadow: 0 0 18px rgba(43,217,197,.18); }
+    .step-link.complete { color: var(--text-2); }
+    .step-link.complete .num { background: rgba(57,219,145,.14); color: var(--success); border-color: rgba(57,219,145,.35); }
+
+    .privacy-note { margin-top: 20px; display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding-top: 17px; border-top: 1px solid rgba(145,167,185,.14); color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .privacy-note svg { width: 22px; color: var(--teal); }
+
+    .form-panel {
+      min-height: 680px;
+      border: 1px solid rgba(98,219,255,.17);
+      border-radius: var(--radius);
+      background: linear-gradient(165deg, rgba(13,38,59,.96), rgba(7,22,37,.96));
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .form-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+      padding: 25px clamp(20px,4vw,36px) 21px;
+      background: linear-gradient(110deg, rgba(43,217,197,.075), rgba(59,130,246,.03));
+      border-bottom: 1px solid rgba(145,167,185,.13);
+    }
+    .eyebrow { margin: 0 0 5px; color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .form-head h2 { margin: 0; font-size: clamp(22px,4vw,31px); letter-spacing: -.025em; }
+    .form-head p { margin: 8px 0 0; max-width: 640px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+    .progress-ring { position: relative; width: 64px; height: 64px; flex: 0 0 64px; }
+    .progress-ring svg { width: 64px; height: 64px; transform: rotate(-90deg); }
+    .progress-ring circle { fill: none; stroke-width: 6; }
+    .progress-ring .track { stroke: rgba(145,167,185,.18); }
+    .progress-ring .value { stroke: var(--teal); stroke-linecap: round; stroke-dasharray: 163.36; stroke-dashoffset: 130.69; transition: stroke-dashoffset .25s ease; filter: drop-shadow(0 0 5px rgba(43,217,197,.32)); }
+    .progress-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+
+    .form-body { padding: clamp(20px,4vw,36px); }
+    .step-section { animation: appear .24s ease; }
+    @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .info-banner { display: grid; grid-template-columns: 38px 1fr; gap: 13px; padding: 14px; border-radius: 14px; background: rgba(59,130,246,.09); border: 1px solid rgba(98,219,255,.22); margin-bottom: 23px; }
+    .info-banner .icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: rgba(98,219,255,.10); color: var(--cyan); }
+    .info-banner strong { display: block; font-size: 12px; }
+    .info-banner p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label, .question-label { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: var(--text-2); font-size: 12px; font-weight: 700; }
+    .optional { color: var(--muted); font-size: 10px; font-weight: 500; }
+    input, select, textarea {
+      width: 100%; color: var(--text); background: rgba(4,16,30,.72);
+      border: 1px solid rgba(43,217,197,.30); border-radius: 12px; outline: none;
+      padding: 12px 13px; transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    input, select { min-height: 46px; }
+    textarea { min-height: 126px; resize: vertical; line-height: 1.5; }
+    input:focus, select:focus, textarea:focus { border-color: var(--cyan); box-shadow: 0 0 0 4px rgba(98,219,255,.08); background: rgba(5,19,33,.92); }
+    select option, select optgroup { color: #0c1b29; background: #fff; }
+
+    .choice-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+    .choice-card { position: relative; }
+    .choice-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .choice-card label {
+      min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px; text-align: center; color: var(--text-2); background: rgba(4,16,30,.58);
+      border: 1px solid rgba(145,167,185,.20); border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 700;
+      transition: all .18s ease;
+    }
+    .choice-card label:hover { background: rgba(18,58,85,.72); border-color: rgba(98,219,255,.48); }
+    .choice-card input:checked + label { color: white; background: linear-gradient(145deg, rgba(22,142,136,.82), rgba(23,109,141,.88)); border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(43,217,197,.08); }
+
+    .question-stack { display: grid; gap: 15px; }
+    .question-card { padding: 18px; border: 1px solid rgba(145,167,185,.15); border-radius: 16px; background: rgba(4,16,30,.48); }
+    .question-code { color: var(--teal); font-size: 10px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
+    .question-title { margin: 6px 0 14px; color: var(--text); line-height: 1.45; font-size: 14px; font-weight: 650; }
+    .radio-list { display: grid; gap: 8px; }
+    .radio-line { position: relative; }
+    .radio-line input { position: absolute; opacity: 0; pointer-events: none; }
+    .radio-line label { display: grid; grid-template-columns: 21px 1fr; gap: 10px; align-items: start; padding: 11px 12px; border-radius: 11px; border: 1px solid rgba(145,167,185,.16); color: var(--text-2); background: rgba(9,25,43,.55); cursor: pointer; font-size: 12px; line-height: 1.45; }
+    .radio-line label::before { content: ""; width: 17px; height: 17px; margin-top: 1px; border-radius: 50%; background: #04121f; border: 1px solid rgba(145,167,185,.60); }
+    .radio-line input:checked + label { border-color: rgba(43,217,197,.55); background: rgba(43,217,197,.08); color: white; }
+    .radio-line input:checked + label::before { background: radial-gradient(circle, white 0 25%, var(--teal) 28% 65%, #092337 68%); border-color: var(--cyan); }
+
+    .rating-legend { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 7px; margin-bottom: 15px; padding: 10px; border-radius: 13px; background: rgba(4,16,30,.42); }
+    .rating-legend div { text-align: center; font-size: 9px; color: var(--muted); line-height: 1.3; }
+    .rating-legend strong { display: block; margin-bottom: 3px; font-size: 11px; color: var(--text-2); }
+    .sqd-card { padding: 18px; border-bottom: 1px solid rgba(145,167,185,.12); }
+    .sqd-card:first-of-type { border-top: 1px solid rgba(145,167,185,.12); }
+    .sqd-head { display: grid; grid-template-columns: 70px 1fr; gap: 13px; margin-bottom: 14px; }
+    .dimension { width: 70px; padding: 7px 6px; align-self: start; border-radius: 9px; background: rgba(43,217,197,.09); color: var(--teal); font-size: 9px; font-weight: 900; text-align: center; text-transform: uppercase; line-height: 1.25; }
+    .sqd-head p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.48; }
+    .rating-row { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+    .rating-option { position: relative; }
+    .rating-option input { position: absolute; opacity: 0; pointer-events: none; }
+    .rating-option label { min-height: 54px; display: grid; place-items: center; padding: 7px 4px; border: 1px solid rgba(145,167,185,.18); border-radius: 11px; background: rgba(4,16,30,.54); color: var(--muted); cursor: pointer; transition: all .16s ease; }
+    .rating-option .face { font-size: 19px; line-height: 1; filter: grayscale(.35); }
+    .rating-option .score { margin-top: 4px; font-size: 9px; font-weight: 900; }
+    .rating-option input:checked + label { color: white; background: linear-gradient(145deg, rgba(22,142,136,.70), rgba(59,130,246,.55)); border-color: var(--cyan); transform: translateY(-1px); box-shadow: 0 7px 18px rgba(0,0,0,.16); }
+    .rating-option input:checked + label .face { filter: none; }
+
+    .consent-box { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; margin-top: 20px; padding: 14px; border: 1px solid rgba(145,167,185,.17); border-radius: 13px; background: rgba(4,16,30,.48); }
+    .consent-box input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--teal); }
+    .consent-box label { color: var(--text-2); font-size: 11px; line-height: 1.5; cursor: pointer; }
+
+    .review-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+    .review-card { padding: 15px; border: 1px solid rgba(145,167,185,.15); border-radius: 14px; background: rgba(4,16,30,.48); }
+    .review-card.full { grid-column: 1 / -1; }
+    .review-card .review-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; font-weight: 800; }
+    .review-card .review-value { margin-top: 6px; color: var(--text); font-size: 12px; line-height: 1.5; }
+    .submission-note { margin-top: 18px; padding: 14px; border-radius: 13px; color: var(--text-2); background: rgba(57,219,145,.07); border: 1px solid rgba(57,219,145,.21); font-size: 11px; line-height: 1.5; }
+
+    .success-screen { min-height: 500px; display: grid; place-items: center; text-align: center; padding: 30px; }
+    .success-icon { width: 86px; height: 86px; display: grid; place-items: center; margin: 0 auto 20px; border-radius: 29px; background: linear-gradient(145deg, rgba(57,219,145,.24), rgba(43,217,197,.14)); border: 1px solid rgba(57,219,145,.45); box-shadow: 0 0 40px rgba(57,219,145,.16); }
+    .success-icon svg { width: 44px; color: var(--success); }
+    .success-screen h2 { margin: 0; font-size: 30px; }
+    .success-screen p { max-width: 560px; margin: 11px auto 0; color: var(--text-2); line-height: 1.6; }
+    .reference { display: inline-flex; margin-top: 20px; padding: 10px 14px; border: 1px solid rgba(98,219,255,.22); border-radius: 12px; background: rgba(4,16,30,.55); color: var(--cyan); font-family: Consolas, monospace; font-size: 12px; }
+
+    .form-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 22px; border-top: 1px solid rgba(145,167,185,.13); }
+    .action-right { display: flex; gap: 10px; margin-left: auto; }
+    .btn { min-height: 45px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 16px; border-radius: 12px; border: 1px solid rgba(145,167,185,.22); font-weight: 750; font-size: 12px; }
+    .btn.secondary { color: var(--text-2); background: rgba(4,16,30,.55); }
+    .btn.secondary:hover { border-color: rgba(98,219,255,.50); background: rgba(18,58,85,.55); }
+    .btn.primary { color: #031716; border-color: var(--cyan); background: linear-gradient(135deg, var(--teal), #64e8dd); box-shadow: 0 10px 26px rgba(43,217,197,.16); }
+    .btn.primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn svg { width: 16px; height: 16px; }
+
+    .error-toast { position: fixed; left: 50%; bottom: 22px; z-index: 100; transform: translate(-50%,20px); opacity: 0; pointer-events: none; padding: 12px 15px; border: 1px solid rgba(255,107,120,.45); border-radius: 12px; background: rgba(69,19,30,.96); color: white; box-shadow: 0 16px 42px rgba(0,0,0,.35); font-size: 12px; transition: .2s ease; }
+    .error-toast.show { transform: translate(-50%,0); opacity: 1; }
+
+    .mobile-progress { display: none; padding: 12px 16px; border-bottom: 1px solid rgba(145,167,185,.12); background: rgba(4,16,30,.36); }
+    .mobile-progress .row { display: flex; justify-content: space-between; color: var(--text-2); font-size: 11px; }
+    .bar { height: 5px; margin-top: 8px; border-radius: 999px; background: rgba(145,167,185,.15); overflow: hidden; }
+    .bar span { display: block; width: 20%; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--teal),var(--cyan)); transition: width .25s ease; }
+
+    .survey-brand-footer {
+      display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;
+      padding:14px 20px calc(14px + env(safe-area-inset-bottom));
+      background:rgba(4,12,23,.98); border-top:1px solid rgba(98,219,255,.22);
+      color:#9fb2c4; font-size:.76rem;
+    }
+    .survey-footer-school, .survey-footer-mosslab { display:flex; align-items:center; gap:11px; min-width:0; }
+    .survey-footer-school-logo, .survey-footer-seal {
+      width:42px; height:42px; object-fit:contain; flex:0 0 auto;
+      border-radius:9px; background:rgba(98,219,255,.06); border:1px solid rgba(98,219,255,.22); padding:3px;
+    }
+    .survey-footer-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
+    .survey-footer-copy strong { color:#f4faff; font-size:.82rem; line-height:1.2; }
+    .survey-footer-copy span { color:#91a7b9; line-height:1.25; }
+    .survey-footer-deped-logo { width:118px; height:44px; object-fit:contain; }
+    .survey-footer-mosslab-logo { width:118px; height:34px; object-fit:contain; }
+
+    @media (max-width: 900px) {
+      .page-shell { grid-template-columns: 1fr; width: min(760px, calc(100% - 24px)); margin-top: 18px; }
+      .side-panel { display: none; }
+      .mobile-progress { display: block; }
+      .form-panel { min-height: 0; }
+    }
+
+    @media (max-width: 620px) {
+      .survey-brand-footer { justify-content:center; text-align:center; padding-left:14px; padding-right:14px; }
+      .survey-footer-school { width:100%; justify-content:center; }
+      .survey-footer-mosslab { justify-content:center; }
+      .survey-footer-copy { align-items:center; }
+
+      .topbar { min-height: 66px; padding: 9px 13px; }
+      .brand-mark { width: 58px; height: 43px; border-radius: 13px; }
+      .brand-kicker { font-size: 9px; }
+      .brand-title { font-size: 13px; max-width: 58vw; }
+      .connection { padding: 8px; }
+      .connection span:last-child { display: none; }
+      .page-shell { width: 100%; margin: 0 auto; }
+      .form-panel { border-radius: 0; border-left: 0; border-right: 0; }
+      .form-head { padding: 20px 17px 17px; }
+      .form-head p { font-size: 12px; }
+      .progress-ring { display: none; }
+      .form-body { padding: 18px 15px 24px; }
+      .field-grid, .review-grid { grid-template-columns: 1fr; }
+      .field.full, .review-card.full { grid-column: auto; }
+      .choice-row, .choice-row.four, .choice-row.five { grid-template-columns: 1fr; }
+      .rating-legend { display: none; }
+      .sqd-card { padding: 16px 2px; }
+      .sqd-head { grid-template-columns: 1fr; gap: 8px; }
+      .dimension { width: max-content; max-width: 100%; }
+      .rating-row { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+      .rating-option label { min-height: 48px; border-radius: 9px; }
+      .rating-option .face { font-size: 17px; }
+      .form-actions { align-items: stretch; }
+      .action-right { width: 100%; }
+      .btn { flex: 1; padding-inline: 10px; }
+      .form-actions > .btn.secondary { display: none; }
+      .language-gate {
+        display: block;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0;
+        scrollbar-gutter: stable;
+      }
+      .language-panel {
+        width: 100%;
+        min-height: 100dvh;
+        max-height: none;
+        overflow: visible;
+        padding: 22px 16px calc(18px + env(safe-area-inset-bottom));
+        border-radius: 0;
+      }
+      .language-options { grid-template-columns: 1fr; }
+      .language-option label { min-height: 82px; }
+      .language-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        margin: 18px -4px 0;
+        padding: 12px 4px calc(10px + env(safe-area-inset-bottom));
+        background: linear-gradient(180deg, rgba(5,18,31,0), rgba(5,18,31,.97) 28%);
+      }
+      .service-card-grid { grid-template-columns: 1fr; }
+      .picker-overlay {
+        display: block;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0;
+        scrollbar-gutter: stable;
+      }
+      .picker-dialog {
+        width: 100%;
+        min-height: 100dvh;
+        height: auto;
+        max-height: none;
+        display: block;
+        overflow: visible;
+        border-radius: 0;
+      }
+      .picker-head {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(13,38,59,.98);
+      }
+      .picker-scroll { overflow: visible; }
+      .picker-foot {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        background: rgba(4,16,30,.98);
+      }
+      .picker-head, .picker-scroll, .picker-foot { padding-left: 16px; padding-right: 16px; }
+    }
+  
+
+    body.gate-open { overflow: hidden; }
+
+    .scanner-launch {
+      position: fixed; top: max(16px, env(safe-area-inset-top)); right: 16px; z-index: 360;
+      width: 50px; height: 50px; display: grid; place-items: center; border-radius: 16px;
+      border: 1px solid rgba(98,219,255,.38); color: var(--cyan); cursor: pointer;
+      background: linear-gradient(145deg,rgba(43,217,197,.16),rgba(59,130,246,.14));
+      box-shadow: 0 16px 40px rgba(0,0,0,.30); backdrop-filter: blur(10px);
+    }
+    .scanner-launch:hover { border-color: var(--cyan); transform: translateY(-1px); }
+    .scanner-launch svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .scanner-launch .lock-dot { position:absolute;right:-3px;bottom:-3px;width:19px;height:19px;display:grid;place-items:center;border-radius:999px;background:#071522;border:1px solid rgba(98,219,255,.4);font-size:10px; }
+
+    .scanner-login-overlay { position:fixed;inset:0;z-index:420;display:grid;place-items:center;padding:18px;background:rgba(2,9,17,.88);backdrop-filter:blur(12px); }
+    .scanner-login-card { width:min(440px,100%);padding:24px;border-radius:22px;border:1px solid rgba(98,219,255,.26);background:linear-gradient(160deg,rgba(13,38,59,.99),rgba(5,18,31,.99));box-shadow:0 34px 100px rgba(0,0,0,.52); }
+    .scanner-login-head { display:flex;align-items:flex-start;gap:12px; }
+    .scanner-login-head .scan-mark { width:50px;height:50px;display:grid;place-items:center;border-radius:15px;background:rgba(98,219,255,.09);color:var(--cyan);font-size:23px; }
+    .scanner-login-head h2 { margin:0;font-size:22px; }.scanner-login-head p { margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.45; }
+    .scanner-login-field { display:grid;gap:6px;margin-top:14px; }.scanner-login-field label { color:var(--muted);font-size:11px;font-weight:750; }
+    .scanner-login-field input { width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid rgba(145,167,185,.24);background:rgba(4,16,30,.72);color:var(--text);outline:none; }
+    .scanner-login-field input:focus { border-color:var(--cyan);box-shadow:0 0 0 4px rgba(98,219,255,.07); }
+    .scanner-login-actions { display:flex;gap:10px;margin-top:18px; }.scanner-login-actions button { flex:1; }
+    .scanner-login-message { margin-top:12px;padding:10px 12px;border-radius:11px;color:#ffd1d5;background:rgba(255,107,120,.08);border:1px solid rgba(255,107,120,.25);font-size:11px;line-height:1.45; }
+
+    .language-gate {
+      position: fixed; inset: 0; z-index: 300; display: grid; place-items: center;
+      padding: 20px; background:
+        radial-gradient(circle at 18% 10%, rgba(43,217,197,.18), transparent 28rem),
+        radial-gradient(circle at 82% 82%, rgba(59,130,246,.16), transparent 30rem),
+        rgba(3,10,19,.96); backdrop-filter: blur(12px);
+    }
+    .language-panel {
+      width: min(720px, 100%); padding: clamp(24px,5vw,42px); border-radius: 24px;
+      border: 1px solid rgba(98,219,255,.24);
+      background: linear-gradient(160deg, rgba(13,38,59,.98), rgba(5,18,31,.98));
+      box-shadow: 0 34px 100px rgba(0,0,0,.48);
+    }
+    .language-mosslab-logo {
+      display: block; width: min(150px, 46vw); max-height: 86px; object-fit: contain;
+      margin: 0 auto 16px; filter: drop-shadow(0 10px 22px rgba(0,0,0,.24));
+    }
+    .language-emblem {
+      width: 62px; height: 62px; display: grid; place-items: center; margin-bottom: 20px;
+      border-radius: 20px; border: 1px solid rgba(98,219,255,.42);
+      background: linear-gradient(145deg, rgba(43,217,197,.18), rgba(59,130,246,.16));
+      color: var(--cyan); font-size: 23px; font-weight: 900;
+    }
+    .language-question h1 { margin: 0; font-size: clamp(25px,5vw,38px); letter-spacing: -.03em; }
+    .language-question .fil { margin: 9px 0 0; color: var(--text-2); font-size: clamp(17px,3vw,22px); }
+    .language-question .war { margin: 7px 0 0; color: var(--muted); font-size: clamp(15px,2.5vw,19px); }
+    .language-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .language-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 25px; }
+    .language-option { position: relative; }
+    .language-option input { position: absolute; opacity: 0; pointer-events: none; }
+    .language-option label {
+      min-height: 108px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+      padding: 17px; border-radius: 16px; border: 1px solid rgba(145,167,185,.22);
+      background: rgba(4,16,30,.58); cursor: pointer; transition: .18s ease;
+    }
+    .language-option label:hover { border-color: rgba(98,219,255,.54); background: rgba(18,58,85,.65); transform: translateY(-1px); }
+    .language-option strong { color: var(--text); font-size: 15px; }
+    .language-option span { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .language-option input:checked + label { border-color: var(--cyan); background: linear-gradient(145deg, rgba(22,142,136,.58), rgba(23,109,141,.58)); box-shadow: 0 0 0 4px rgba(43,217,197,.08); }
+    .language-footer { display: flex; justify-content: flex-end; margin-top: 22px; }
+    .language-gate, .picker-overlay { scrollbar-width: thin; scrollbar-color: rgba(98,219,255,.58) rgba(4,16,30,.44); }
+    .language-gate::-webkit-scrollbar, .picker-overlay::-webkit-scrollbar { width: 10px; }
+    .language-gate::-webkit-scrollbar-track, .picker-overlay::-webkit-scrollbar-track { background: rgba(4,16,30,.44); }
+    .language-gate::-webkit-scrollbar-thumb, .picker-overlay::-webkit-scrollbar-thumb { background: rgba(98,219,255,.58); border-radius: 999px; border: 2px solid rgba(4,16,30,.44); }
+    .btn:disabled { cursor: not-allowed; opacity: .42; filter: grayscale(.4); transform: none !important; }
+
+    .picker-launch {
+      width: 100%; min-height: 74px; display: grid; grid-template-columns: minmax(0,1fr) 38px; gap: 12px;
+      align-items: center; padding: 14px 14px 14px 16px; text-align: left; color: var(--text);
+      border: 1px solid rgba(43,217,197,.30); border-radius: 14px; background: rgba(4,16,30,.72);
+      transition: .18s ease;
+    }
+    .picker-launch:hover { border-color: var(--cyan); background: rgba(8,31,49,.88); box-shadow: 0 0 0 4px rgba(98,219,255,.06); }
+    .picker-launch strong { display: block; font-size: 13px; line-height: 1.35; }
+    .picker-launch small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .picker-launch .picker-arrow { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--cyan); background: rgba(98,219,255,.08); font-size: 20px; }
+    .picker-launch.has-value { border-color: rgba(57,219,145,.45); background: rgba(57,219,145,.055); }
+
+    .picker-overlay {
+      position: fixed; inset: 0; z-index: 240; display: grid; place-items: center; padding: 18px;
+      background: rgba(2,8,16,.82); backdrop-filter: blur(10px);
+    }
+    .picker-dialog {
+      width: min(980px,100%); max-height: min(850px, calc(100vh - 36px)); display: grid;
+      grid-template-rows: auto minmax(0,1fr) auto; overflow: hidden; border-radius: 22px;
+      border: 1px solid rgba(98,219,255,.24); background: linear-gradient(160deg, #0d263b, #061523);
+      box-shadow: 0 34px 100px rgba(0,0,0,.48);
+    }
+    .picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; border-bottom: 1px solid rgba(145,167,185,.14); }
+    .picker-head h3 { margin: 0; font-size: 22px; }
+    .picker-head p { margin: 6px 0 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+    .icon-btn { width: 39px; height: 39px; flex: 0 0 39px; border-radius: 12px; border: 1px solid rgba(145,167,185,.20); background: rgba(4,16,30,.58); color: var(--text-2); font-size: 22px; }
+    .icon-btn:hover { border-color: rgba(98,219,255,.48); color: white; }
+    .picker-scroll { overflow: auto; padding: 21px 24px 26px; }
+    .service-group + .service-group { margin-top: 26px; }
+    .service-group-title { display: flex; align-items: center; gap: 9px; margin: 0 0 11px; color: var(--teal); font-size: 11px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
+    .service-group-title::after { content: ''; height: 1px; flex: 1; background: rgba(145,167,185,.14); }
+    .service-card-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+    .service-card { position: relative; }
+    .service-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .service-card label {
+      min-height: 112px; display: block; padding: 16px; border-radius: 15px;
+      border: 1px solid rgba(145,167,185,.17); background: rgba(4,16,30,.50); cursor: pointer; transition: .16s ease;
+    }
+    .service-card label:hover { border-color: rgba(98,219,255,.42); background: rgba(18,58,85,.56); transform: translateY(-1px); }
+    .service-card .service-title { display: block; color: var(--text); font-size: 13px; font-weight: 800; line-height: 1.35; }
+    .service-card .service-desc { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .service-card input:checked + label { border-color: var(--cyan); background: linear-gradient(145deg, rgba(22,142,136,.28), rgba(59,130,246,.18)); box-shadow: 0 0 0 3px rgba(43,217,197,.08); }
+    .picker-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid rgba(145,167,185,.14); background: rgba(4,16,30,.38); }
+
+    .required-mark { color: var(--warning); font-size: 10px; font-weight: 800; }
+    .choice-row.four { grid-template-columns: repeat(4,minmax(0,1fr)); }
+    .choice-row.five { grid-template-columns: repeat(5,minmax(0,1fr)); }
+
+
+    .system-state-screen { width:min(760px,calc(100% - 28px)); margin:72px auto; padding:42px 30px; text-align:center; border:1px solid rgba(98,219,255,.22); border-radius:22px; background:linear-gradient(160deg,rgba(13,38,59,.96),rgba(6,21,35,.98)); box-shadow:0 28px 90px rgba(0,0,0,.34); }
+    .system-state-screen .state-mark { width:78px;height:78px;display:grid;place-items:center;margin:0 auto 18px;border-radius:25px;background:rgba(98,219,255,.09);color:var(--cyan);font-size:34px;font-weight:900; }
+    .system-state-screen h1 { margin:0;font-size:28px; }
+    .system-state-screen p { max-width:580px;margin:12px auto 0;color:var(--text-2);line-height:1.6; }
+    .system-state-screen code { display:inline-block;margin-top:18px;padding:9px 12px;border-radius:10px;background:rgba(4,16,30,.62);color:var(--cyan); }
+    .session-badge { min-width:72px;padding:8px 10px;border:1px solid rgba(98,219,255,.22);border-radius:11px;background:rgba(4,16,30,.48);color:var(--cyan);font:700 12px Consolas,monospace;text-align:center; }
+    .question-card.disabled { opacity:.48; pointer-events:none; }
+
+    /* Final mobile overlay overrides are placed after the base overlay rules so
+       short-screen phones can scroll the complete language and service dialogs. */
+    @media (max-width: 620px) {
+      .language-gate {
+        display: block;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0;
+        scrollbar-gutter: stable;
+      }
+      .language-panel {
+        width: 100%;
+        min-height: 100dvh;
+        max-height: none;
+        overflow: visible;
+        padding: 22px 16px calc(18px + env(safe-area-inset-bottom));
+        border-radius: 0;
+      }
+      .language-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        margin: 18px -4px 0;
+        padding: 12px 4px calc(10px + env(safe-area-inset-bottom));
+        background: linear-gradient(180deg, rgba(5,18,31,0), rgba(5,18,31,.97) 28%);
+      }
+      .picker-overlay {
+        display: block;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0;
+        scrollbar-gutter: stable;
+      }
+      .picker-dialog {
+        width: 100%;
+        min-height: 100dvh;
+        height: auto;
+        max-height: none;
+        display: block;
+        overflow: visible;
+        border-radius: 0;
+      }
+      .picker-head {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(13,38,59,.98);
+      }
+      .picker-scroll { overflow: visible; }
+      .picker-foot {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        background: rgba(4,16,30,.98);
+      }
+    }
+  </style>
+</head>
+<body class="gate-open">
+  <button type="button" class="scanner-launch" id="scannerLaunch" title="Open CSM Sheet Scanner" aria-label="Open CSM Sheet Scanner" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 9h10v7H7zM9 12h6"/></svg>
+    <span class="lock-dot" aria-hidden="true">●</span>
+  </button>
+
+  <section class="scanner-login-overlay" id="scannerLoginOverlay" hidden aria-modal="true" role="dialog" aria-labelledby="scannerLoginTitle">
+    <form class="scanner-login-card" id="scannerLoginForm">
+      <div class="scanner-login-head">
+        <div class="scan-mark" aria-hidden="true">⌗</div>
+        <div><h2 id="scannerLoginTitle">CSM Sheet Scanner</h2><p>Sign in using Scanner Operator credentials registered in the School CSM Control Center.</p></div>
+      </div>
+      <div class="scanner-login-field"><label for="scannerUsername">Username</label><input id="scannerUsername" autocomplete="username" required></div>
+      <div class="scanner-login-field"><label for="scannerPassword">Password or PIN</label><input id="scannerPassword" type="password" autocomplete="current-password" required></div>
+      <div class="scanner-login-message" id="scannerLoginMessage" hidden></div>
+      <div class="scanner-login-actions"><button type="button" class="btn ghost" id="scannerLoginCancel">Cancel</button><button type="submit" class="btn primary" id="scannerLoginSubmit">Sign In</button></div>
+    </form>
+  </section>
+
+  <section class="language-gate" id="languageGate" hidden aria-modal="true" role="dialog" aria-labelledby="languageQuestionEnglish">
+    <div class="language-panel">
+      <img class="language-mosslab-logo" src="/static/mosslab-logo-ui.png" alt="MoSSLab · Motiong Schools Systems Laboratory" />
+      <div class="language-emblem" aria-hidden="true">文</div>
+      <div class="language-question">
+        <h1 id="languageQuestionEnglish">Which language do you prefer?</h1>
+        <p class="fil">Anong wika ang nais mong gamitin?</p>
+        <p class="war">Ano nga yinaknan an karuyag mo gamiton?</p>
+      </div>
+      <p class="language-note">Your selection changes the survey language. · Babaguhin ng pagpili mo ang wika ng sarbey. · An imo pagpili magbabag-o han yinaknan han surbey.</p>
+      <div class="language-options">
+        <div class="language-option"><input type="radio" id="langEn" name="preferredLanguage" value="en"><label for="langEn"><strong>English</strong><span>English version of the survey</span></label></div>
+        <div class="language-option"><input type="radio" id="langFil" name="preferredLanguage" value="fil"><label for="langFil"><strong>Tagalog / Filipino</strong><span>Bersyon ng sarbey sa Filipino</span></label></div>
+        <div class="language-option"><input type="radio" id="langWar" name="preferredLanguage" value="war"><label for="langWar"><strong>Waray-Waray</strong><span>Waray nga bersyon han surbey</span></label></div>
+      </div>
+      <div class="language-footer"><button type="button" class="btn primary" id="languageContinue" disabled>Continue · Magpatuloy · Padayon</button></div>
+    </div>
+  </section>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" title="MoSSLab · Motiong Schools Systems Laboratory">
+        <img src="/static/mosslab-logo-ui.png" alt="MoSSLab logo" />
+      </div>
+      <div class="brand-copy">
+        <div class="brand-kicker">Department of Education</div>
+        <div class="brand-title" data-key="brandTitle">School · Client Satisfaction Survey</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px"><div class="session-badge" id="sessionBadge" hidden>05:00</div><div class="connection" id="connectionStatus" title="Survey availability is controlled by the School CSM Control Center"><span class="connection-dot" id="connectionDot"></span><span id="connectionText" data-key="surveyOnline">Survey Online</span></div></div>
+  </header>
+
+
+  <section class="system-state-screen" id="systemStateScreen">
+    <div class="state-mark" id="systemStateMark">…</div>
+    <h1 id="systemStateTitle">Connecting to the School CSM Control Center</h1>
+    <p id="systemStateMessage">Checking the local survey server and your access session.</p>
+    <code id="systemStateAddress"></code>
+  </section>
+
+  <main class="page-shell" id="surveyShell" hidden>
+    <aside class="side-panel">
+      <span class="school-chip" data-key="schoolSurveyForm">School CSM Survey Form</span>
+      <h1 data-key="sideHeading">Your feedback helps us improve.</h1>
+      <p data-key="sideDescription">Please rate the service you received from the school. The survey usually takes three to five minutes.</p>
+      <div class="address-box">
+        <div class="address-label" data-key="localAddress">Local survey address</div>
+        <div class="address-value" id="addressValue">Local survey address</div>
+      </div>
+      <nav class="step-list" aria-label="Survey progress">
+        <button class="step-link active" data-nav="0"><span class="num">1</span><span class="copy"><strong data-step-name="0">Client Profile</strong><span data-key="navProfileSub">Basic transaction information</span></span></button>
+        <button class="step-link" data-nav="1"><span class="num">2</span><span class="copy"><strong data-step-name="1">Citizen’s Charter</strong><span data-key="navCCSub">Awareness and usefulness</span></span></button>
+        <button class="step-link" data-nav="2"><span class="num">3</span><span class="copy"><strong data-step-name="2">Service Quality</strong><span data-key="navSQDSub">Nine quality statements</span></span></button>
+        <button class="step-link" data-nav="3"><span class="num">4</span><span class="copy"><strong data-step-name="3">Remarks</strong><span data-key="navRemarksSub">Suggestions and consent</span></span></button>
+        <button class="step-link" data-nav="4"><span class="num">5</span><span class="copy"><strong data-step-name="4">Review</strong><span data-key="navReviewSub">Confirm and submit</span></span></button>
+      </nav>
+      <div class="privacy-note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v10H5z"/><path d="M12 14v3" stroke-linecap="round"/></svg>
+        <span data-key="privacyText">Responses are stored only on the school’s local server. Personally identifying fields are optional.</span>
+      </div>
+    </aside>
+
+    <section class="form-panel">
+      <div class="mobile-progress">
+        <div class="row"><strong id="mobileStepLabel">Step 1 of 5</strong><span id="mobileStepName">Client Profile</span></div>
+        <div class="bar"><span id="mobileBar"></span></div>
+      </div>
+
+      <div id="surveyContent">
+        <header class="form-head">
+          <div>
+            <p class="eyebrow" id="stepEyebrow">Step 1 of 5</p>
+            <h2 id="stepTitle">Tell us about your transaction</h2>
+            <p id="stepDescription">These details allow the school to compare satisfaction across services without asking for your name.</p>
+          </div>
+          <div class="progress-ring" aria-label="Survey completion">
+            <svg viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r="26"/><circle class="value" id="ringValue" cx="32" cy="32" r="26"/></svg>
+            <span id="ringText">20%</span>
+          </div>
+        </header>
+
+        <div class="form-body">
+          <form id="surveyForm" novalidate>
+            <section class="step-section" data-step="0">
+              <div class="info-banner">
+                <div class="icon">ⓘ</div>
+                <div><strong data-key="profileInfoTitle">No sign-in is required.</strong><p data-key="profileInfoText">This form follows the school’s onsite Client Satisfaction Measurement questionnaire. Fields marked optional may be left blank.</p></div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field full">
+                  <label><span data-key="clientType">Client type</span> <span class="required-mark" data-key="requiredSelectOne">Required · Select one</span></label>
+                  <div class="choice-row">
+                    <div class="choice-card"><input id="clientCitizen" type="radio" name="clientType" value="Citizen" checked><label for="clientCitizen" data-key="citizen">Citizen</label></div>
+                    <div class="choice-card"><input id="clientBusiness" type="radio" name="clientType" value="Business"><label for="clientBusiness" data-key="business">Business</label></div>
+                    <div class="choice-card"><input id="clientGovernment" type="radio" name="clientType" value="Government"><label for="clientGovernment" data-key="government">Government</label></div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="age"><span data-key="age">Age</span> <span class="optional" data-key="optional">Optional</span></label>
+                  <input id="age" type="number" min="0" max="130" placeholder="e.g., 36" data-placeholder-key="agePlaceholder">
+                </div>
+                <div class="field">
+                  <label><span data-key="sex">Sex</span> <span class="optional" data-key="optional">Optional</span></label>
+                  <div class="choice-row" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+                    <div class="choice-card"><input id="sexMale" type="radio" name="sex" value="Male"><label for="sexMale" data-key="male">Male</label></div>
+                    <div class="choice-card"><input id="sexFemale" type="radio" name="sex" value="Female"><label for="sexFemale" data-key="female">Female</label></div>
+                  </div>
+                </div>
+                <div class="field full">
+                  <label for="region"><span data-key="region">Region of residence</span> <span class="optional" data-key="optional">Optional</span></label>
+                  <select id="region" aria-describedby="regionHint"></select>
+                  <small id="regionHint" class="optional" data-key="regionHint">Select your region, or choose Not Specified.</small>
+                </div>
+                <div class="field full">
+                  <label><span data-key="serviceAvailed">Service availed</span> <span class="required-mark" data-key="required">Required</span></label>
+                  <input id="service" type="hidden" value="">
+                  <button type="button" class="picker-launch" id="servicePickerButton" aria-haspopup="dialog">
+                    <span><strong id="serviceSelectedTitle">Choose a transaction</strong><small id="serviceSelectedDescription">Tap to view service cards with brief definitions.</small></span>
+                    <span class="picker-arrow" aria-hidden="true">›</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="step-section" data-step="1" hidden>
+              <div class="info-banner">
+                <div class="icon">CC</div>
+                <div><strong data-key="ccInfoTitle">About the Citizen’s Charter</strong><p data-key="ccInfoText">The Citizen’s Charter lists the school’s services, requirements, steps, processing time, and responsible personnel.</p></div>
+              </div>
+              <div class="question-stack">
+                <article class="question-card" id="cc1Card">
+                  <div class="question-code" data-key="cc1Code">CC1 · Awareness · Required</div>
+                  <div class="question-title" data-key="cc1Question">Which of the following best describes your awareness of a Citizen’s Charter?</div>
+                  <div class="radio-list">
+                    <div class="radio-line"><input type="radio" id="cc1a" name="cc1" value="1"><label for="cc1a" data-key="cc1a">I know what a Citizen’s Charter is and I saw this office’s Citizen’s Charter.</label></div>
+                    <div class="radio-line"><input type="radio" id="cc1b" name="cc1" value="2"><label for="cc1b" data-key="cc1b">I know what a Citizen’s Charter is but I did not see this office’s Citizen’s Charter.</label></div>
+                    <div class="radio-line"><input type="radio" id="cc1c" name="cc1" value="3"><label for="cc1c" data-key="cc1c">I learned of the Citizen’s Charter only when I saw this office’s Citizen’s Charter.</label></div>
+                    <div class="radio-line"><input type="radio" id="cc1d" name="cc1" value="4"><label for="cc1d" data-key="cc1d">I do not know what a Citizen’s Charter is and I did not see one in this office.</label></div>
+                  </div>
+                </article>
+                <article class="question-card" id="cc2Card">
+                  <div class="question-code" data-key="cc2Code">CC2 · Visibility · Required</div>
+                  <div class="question-title" data-key="cc2Question">If aware of the Citizen’s Charter, would you say that this office’s Citizen’s Charter was…?</div>
+                  <div class="choice-row five">
+                    <div class="choice-card"><input id="cc2a" type="radio" name="cc2" value="1"><label for="cc2a" data-key="cc2a">Easy to see</label></div>
+                    <div class="choice-card"><input id="cc2b" type="radio" name="cc2" value="2"><label for="cc2b" data-key="cc2b">Somewhat easy</label></div>
+                    <div class="choice-card"><input id="cc2c" type="radio" name="cc2" value="3"><label for="cc2c" data-key="cc2c">Difficult to see</label></div>
+                    <div class="choice-card"><input id="cc2d" type="radio" name="cc2" value="4"><label for="cc2d" data-key="cc2d">Not visible at all</label></div>
+                    <div class="choice-card"><input id="cc2e" type="radio" name="cc2" value="5"><label for="cc2e">N/A</label></div>
+                  </div>
+                </article>
+                <article class="question-card" id="cc3Card">
+                  <div class="question-code" data-key="cc3Code">CC3 · Usefulness · Required</div>
+                  <div class="question-title" data-key="cc3Question">If aware of the Citizen’s Charter, how much did it help you in your transaction?</div>
+                  <div class="choice-row four">
+                    <div class="choice-card"><input id="cc3a" type="radio" name="cc3" value="1"><label for="cc3a" data-key="cc3a">Helped very much</label></div>
+                    <div class="choice-card"><input id="cc3b" type="radio" name="cc3" value="2"><label for="cc3b" data-key="cc3b">Somewhat helped</label></div>
+                    <div class="choice-card"><input id="cc3c" type="radio" name="cc3" value="3"><label for="cc3c" data-key="cc3c">Did not help</label></div>
+                    <div class="choice-card"><input id="cc3d" type="radio" name="cc3" value="4"><label for="cc3d">N/A</label></div>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="step-section" data-step="2" hidden>
+              <div class="rating-legend" id="ratingLegend"></div>
+              <div id="sqdList"></div>
+            </section>
+
+            <section class="step-section" data-step="3" hidden>
+              <div class="info-banner">
+                <div class="icon">✎</div>
+                <div><strong data-key="remarksInfoTitle">Tell us what could be improved.</strong><p data-key="remarksInfoText">Comments are optional, but specific observations help the school identify practical improvements.</p></div>
+              </div>
+              <div class="field-grid">
+                <div class="field full">
+                  <label for="remarks"><span data-key="remarksLabel">Suggestions on how we can further improve our services</span> <span class="optional" data-key="optional">Optional</span></label>
+                  <textarea id="remarks" placeholder="Share your comments or suggestions here…" data-placeholder-key="remarksPlaceholder"></textarea>
+                </div>
+                <div class="field full">
+                  <label for="email"><span data-key="emailLabel">Email address</span> <span class="optional" data-key="emailOptional">Optional · only if you want a reply</span></label>
+                  <input id="email" type="email" placeholder="name@example.com">
+                </div>
+              </div>
+              <div class="consent-box">
+                <input type="checkbox" id="consent">
+                <label for="consent" data-key="consentText">I understand that my responses will be used for service-quality measurement and improvement. Optional personal information will be handled according to applicable data-privacy requirements.</label>
+              </div>
+            </section>
+
+            <section class="step-section" data-step="4" hidden>
+              <div class="info-banner">
+                <div class="icon">✓</div>
+                <div><strong data-key="reviewInfoTitle">Review before submitting.</strong><p data-key="reviewInfoText">You may go back to edit your answers. Your answers will be sent directly to the School CSM Control Center and included in its live analysis.</p></div>
+              </div>
+              <div class="review-grid" id="reviewGrid"></div>
+              <div class="submission-note" id="submissionNote">Submission is accepted only while the Control Center sets the Survey Form to <strong>Online</strong>. A successful response is recorded and analyzed automatically.</div>
+            </section>
+
+            <div class="form-actions">
+              <button type="button" class="btn secondary" id="saveLater" data-key="saveDevice" hidden>Save on this device</button>
+              <div class="action-right">
+                <button type="button" class="btn secondary" id="backBtn" hidden>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg><span data-key="back">Back</span>
+                </button>
+                <button type="button" class="btn primary" id="nextBtn"><span id="nextButtonText">Continue</span>
+                  <svg id="nextButtonIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="success-screen" id="successScreen" hidden>
+        <div>
+          <div class="success-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h2 data-key="successTitle">Response recorded</h2>
+          <p data-key="successText">Thank you for helping the school improve its services. This access session has ended. Close this page. Another respondent must scan the survey QR code again.</p>
+          <div class="reference" id="referenceCode">CSM-2026-000184</div><br>
+          <button type="button" class="btn secondary" id="newResponse" style="margin-top:20px" data-key="newResponse">Return to access page</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="survey-brand-footer" aria-label="School and MoSSLab branding">
+    <div class="survey-footer-school">
+      <img class="survey-footer-school-logo" id="surveySchoolLogo" src="" alt="School logo" hidden />
+      <div class="survey-footer-copy">
+        <strong id="surveyFooterSchoolName">School CSM Survey Form</strong>
+        <span id="surveyFooterSchoolDetails"></span>
+      </div>
+    </div>
+    <div class="survey-footer-mosslab">
+      <img class="survey-footer-deped-logo" src="/static/deped-logo-ui.png" alt="Department of Education" />
+      <img class="survey-footer-mosslab-logo" src="/static/mosslab-logo-ui.png" alt="MoSSLab · Motiong Schools Systems Laboratory" />
+      <img class="survey-footer-seal" src="/static/mosslab-seal-ui.png" alt="MoSSLab seal" />
+    </div>
+  </footer>
+
+  <div class="picker-overlay" id="servicePickerOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="servicePickerTitle">
+    <div class="picker-dialog">
+      <header class="picker-head">
+        <div><h3 id="servicePickerTitle">Choose the service or services you received</h3><p id="servicePickerSubtitle">Select every transaction that applies. Each card includes a short description.</p></div>
+        <button type="button" class="icon-btn" id="closeServicePicker" aria-label="Close">×</button>
+      </header>
+      <div class="picker-scroll">
+        <section class="service-group"><h4 class="service-group-title" id="externalGroupTitle">External school transactions</h4><div class="service-card-grid" id="externalServiceCards"></div></section>
+        <section class="service-group"><h4 class="service-group-title" id="internalGroupTitle">Internal school transactions</h4><div class="service-card-grid" id="internalServiceCards"></div></section>
+      </div>
+      <footer class="picker-foot"><button type="button" class="btn secondary" id="cancelServicePicker">Cancel</button><button type="button" class="btn primary" id="confirmServicePicker" disabled>Use selected services</button></footer>
+    </div>
+  </div>
+
+  <div class="error-toast" id="toast" role="status" aria-live="assertive" aria-atomic="true">Please complete the required fields.</div>
+
+  <script>
+    const languages = {
+      en: {
+        langName: "English", brandTitle: "School · Client Satisfaction Survey", surveyOnline: "Survey Online", schoolSurveyForm: "School CSM Survey Form",
+        sideHeading: "Your feedback helps us improve.", sideDescription: "Please rate the service you received from the school. The survey usually takes three to five minutes.", localAddress: "Local survey address",
+        navProfileSub: "Basic transaction information", navCCSub: "Awareness and usefulness", navSQDSub: "Nine quality statements", navRemarksSub: "Suggestions and consent", navReviewSub: "Confirm and submit",
+        privacyText: "Responses are stored only on the school’s local server. Personally identifying fields are optional.",
+        profileInfoTitle: "No sign-in is required.", profileInfoText: "This form follows the school’s onsite Client Satisfaction Measurement questionnaire. Fields marked optional may be left blank.",
+        clientType: "Client type", requiredSelectOne: "Required · Select one", citizen: "Citizen", business: "Business", government: "Government", age: "Age", optional: "Optional", agePlaceholder: "e.g., 36", sex: "Sex", male: "Male", female: "Female", region: "Region of residence", regionPlaceholder: "Enter region",
+        serviceAvailed: "Service availed", required: "Required", chooseTransaction: "Choose one or more transactions", chooseTransactionHint: "Tap to view the complete service checklist.", servicePickerTitle: "Choose the service or services you received", servicePickerSubtitle: "Select every transaction that applies. Each card includes a short description.", externalGroup: "External school transactions", internalGroup: "Internal school transactions", cancel: "Cancel", useService: "Use selected services",
+        ccInfoTitle: "About the Citizen’s Charter", ccInfoText: "The Citizen’s Charter lists the school’s services, requirements, steps, processing time, and responsible personnel.",
+        cc1Code: "CC1 · Awareness · Required", cc1Question: "Which of the following best describes your awareness of a Citizen’s Charter?", cc1a: "I know what a Citizen’s Charter is and I saw this office’s Citizen’s Charter.", cc1b: "I know what a Citizen’s Charter is but I did not see this office’s Citizen’s Charter.", cc1c: "I learned of the Citizen’s Charter only when I saw this office’s Citizen’s Charter.", cc1d: "I do not know what a Citizen’s Charter is and I did not see one in this office.",
+        cc2Code: "CC2 · Visibility · Required", cc2Question: "If aware of the Citizen’s Charter, would you say that this office’s Citizen’s Charter was…?", cc2a: "Easy to see", cc2b: "Somewhat easy", cc2c: "Difficult to see", cc2d: "Not visible at all",
+        cc3Code: "CC3 · Usefulness · Required", cc3Question: "If aware of the Citizen’s Charter, how much did it help you in your transaction?", cc3a: "Helped very much", cc3b: "Somewhat helped", cc3c: "Did not help",
+        remarksInfoTitle: "Tell us what could be improved.", remarksInfoText: "Comments are optional, but specific observations help the school identify practical improvements.", remarksLabel: "Suggestions on how we can further improve our services", remarksPlaceholder: "Share your comments or suggestions here…", emailLabel: "Email address", emailOptional: "Optional · only if you want a reply", consentText: "I understand that my responses will be used for service-quality measurement and improvement. Optional personal information will be handled according to applicable data-privacy requirements.",
+        reviewInfoTitle: "Review before submitting.", reviewInfoText: "You may go back to edit your answers. Your answers will be sent directly to the School CSM Control Center and included in its live analysis.", submissionNote: "This is an interactive design preview. In the implemented system, submission will be accepted only while the Control Center sets the Survey Form to Online.",
+        saveDevice: "Save on this device", back: "Back", continue: "Continue", submit: "Submit response", successTitle: "Response recorded", successText: "Thank you for helping the school improve its services. This access session has ended. Close this page. Another respondent must scan the survey QR code again.", newResponse: "Start another response",
+        step: "Step", of: "of", stepNames: ["Client Profile","Citizen’s Charter","Service Quality","Remarks","Review"],
+        titles: [["Tell us about your transaction","These details allow the school to compare satisfaction across services without asking for your name."],["Citizen’s Charter","Tell us whether the school’s service guide was visible and useful during your transaction."],["Rate the service you received","Answer every statement. Choose N/A only when the statement does not apply to your transaction."],["Remarks and data consent","Add an optional comment and confirm that your responses may be used for service improvement."],["Review your response","Check the summary below before submitting it to the school’s local server."]],
+        validationService: "Select the service you received before continuing.", validationCC: "Please answer", validationSQD: "Please answer", validationConsent: "Confirm the data-use statement before continuing.", jumpBlocked: "Complete the current step before moving forward.", savedPreview: "Local draft-saving is not enabled in this initial build.",
+        reviewLanguage: "Preferred language", reviewClient: "Client type", reviewAgeSex: "Age and sex", reviewService: "Service availed", reviewCC1: "Citizen’s Charter awareness", reviewCC2: "Citizen’s Charter visibility", reviewCC3: "Citizen’s Charter usefulness", reviewRating: "Average service rating", reviewRemarks: "Remarks", notProvided: "Not provided", notAnswered: "Not answered", noRemarks: "No remarks provided", allNA: "All responses marked N/A", naCount: "N/A response(s)",
+        ratingLegend: [["1 · SD","Strongly Disagree"],["2 · D","Disagree"],["3 · NAD","Neither Agree nor Disagree"],["4 · A","Agree"],["5 · SA","Strongly Agree"],["N/A","Not Applicable"]]
+      },
+      fil: {
+        langName: "Tagalog / Filipino", brandTitle: "Paaralan · Sarbey sa Kasiyahan ng Kliyente", surveyOnline: "Bukas ang Sarbey", schoolSurveyForm: "Pormularyo ng CSM ng Paaralan",
+        sideHeading: "Nakakatulong ang inyong puna upang mapabuti ang aming serbisyo.", sideDescription: "Paki-rate ang serbisyong natanggap ninyo mula sa paaralan. Karaniwang tumatagal nang tatlo hanggang limang minuto ang sarbey.", localAddress: "Lokal na address ng sarbey",
+        navProfileSub: "Pangunahing detalye ng transaksyon", navCCSub: "Kaalaman at pakinabang", navSQDSub: "Siyam na pahayag sa kalidad", navRemarksSub: "Mungkahi at pahintulot", navReviewSub: "Suriin at isumite",
+        privacyText: "Sa lokal na server lamang ng paaralan iniimbak ang mga sagot. Opsyonal ang mga impormasyong maaaring kumilala sa respondent.",
+        profileInfoTitle: "Hindi kailangan ang pag-sign in.", profileInfoText: "Ang pormularyong ito ay nakabatay sa onsite Client Satisfaction Measurement questionnaire ng paaralan. Maaaring iwanang blangko ang mga patlang na may markang opsyonal.",
+        clientType: "Uri ng kliyente", requiredSelectOne: "Kailangan · Pumili ng isa", citizen: "Mamamayan", business: "Negosyo", government: "Pamahalaan", age: "Edad", optional: "Opsyonal", agePlaceholder: "hal., 36", sex: "Kasarian", male: "Lalaki", female: "Babae", region: "Rehiyong tinitirhan", regionPlaceholder: "Ilagay ang rehiyon",
+        serviceAvailed: "Serbisyong natanggap", required: "Kailangan", chooseTransaction: "Pumili ng transaksyon", chooseTransactionHint: "Pindutin upang makita ang mga service card at maikling paliwanag.", servicePickerTitle: "Piliin ang serbisyong natanggap", servicePickerSubtitle: "Pumili ng isang transaction card. May maikling paliwanag ang bawat card.", externalGroup: "Mga transaksyon para sa panlabas na kliyente", internalGroup: "Mga panloob na transaksyon ng paaralan", cancel: "Kanselahin", useService: "Gamitin ang napiling serbisyo",
+        ccInfoTitle: "Tungkol sa Citizen’s Charter", ccInfoText: "Nakalista sa Citizen’s Charter ang mga serbisyo, kinakailangan, hakbang, oras ng pagproseso, at mga responsableng kawani.",
+        cc1Code: "CC1 · Kaalaman · Kailangan", cc1Question: "Alin sa mga sumusunod ang pinakamahusay na naglalarawan sa inyong kaalaman tungkol sa Citizen’s Charter?", cc1a: "Alam ko kung ano ang Citizen’s Charter at nakita ko ang Citizen’s Charter ng tanggapang ito.", cc1b: "Alam ko kung ano ang Citizen’s Charter ngunit hindi ko nakita ang Citizen’s Charter ng tanggapang ito.", cc1c: "Nalaman ko lamang ang tungkol sa Citizen’s Charter nang makita ko ang Citizen’s Charter ng tanggapang ito.", cc1d: "Hindi ko alam kung ano ang Citizen’s Charter at wala akong nakitang Citizen’s Charter sa tanggapang ito.",
+        cc2Code: "CC2 · Pagkakakita · Kailangan", cc2Question: "Kung alam ninyo ang Citizen’s Charter, masasabi ba ninyong ang Citizen’s Charter ng tanggapang ito ay…?", cc2a: "Madaling makita", cc2b: "Medyo madaling makita", cc2c: "Mahirap makita", cc2d: "Hindi talaga nakikita",
+        cc3Code: "CC3 · Pakinabang · Kailangan", cc3Question: "Kung alam ninyo ang Citizen’s Charter, gaano ito nakatulong sa inyong transaksyon?", cc3a: "Malaking tulong", cc3b: "Bahagyang nakatulong", cc3c: "Hindi nakatulong",
+        remarksInfoTitle: "Sabihin kung ano pa ang maaaring mapabuti.", remarksInfoText: "Opsyonal ang komento, ngunit nakatutulong ang tiyak na obserbasyon upang matukoy ng paaralan ang praktikal na pagpapabuti.", remarksLabel: "Mga mungkahi upang lalo pang mapabuti ang aming mga serbisyo", remarksPlaceholder: "Ilagay rito ang inyong komento o mungkahi…", emailLabel: "Email address", emailOptional: "Opsyonal · kung nais ninyong makatanggap ng tugon", consentText: "Nauunawaan kong gagamitin ang aking mga sagot para sa pagsukat at pagpapabuti ng kalidad ng serbisyo. Ang opsyonal na personal na impormasyon ay pangangasiwaan alinsunod sa naaangkop na mga tuntunin sa data privacy.",
+        reviewInfoTitle: "Suriin bago isumite.", reviewInfoText: "Maaari kayong bumalik upang baguhin ang mga sagot. Ang sample na Submit button ay hindi nagpapadala ng impormasyon sa aktuwal na server.", submissionNote: "Ito ay interactive na preview ng disenyo. Sa aktuwal na sistema, tatanggap lamang ng sagot kapag itinakda ng Control Center ang Survey Form bilang Online.",
+        saveDevice: "I-save sa device na ito", back: "Bumalik", continue: "Magpatuloy", submit: "Isumite ang sagot", successTitle: "Naitala ang sagot", successText: "Salamat sa pagtulong na mapabuti ang mga serbisyo ng paaralan. Tapos na ang access session na ito. Kailangang i-scan muli ng susunod na respondent ang QR code ng Survey Form.", newResponse: "Magsimula ng panibagong sagot",
+        step: "Hakbang", of: "sa", stepNames: ["Profile ng Kliyente","Citizen’s Charter","Kalidad ng Serbisyo","Mga Puna","Pagsusuri"],
+        titles: [["Ilarawan ang inyong transaksyon","Makakatulong ang mga detalyeng ito upang maihambing ng paaralan ang kasiyahan sa iba’t ibang serbisyo nang hindi hinihingi ang inyong pangalan."],["Citizen’s Charter","Ipaalam kung nakita at napakinabangan ninyo ang gabay sa serbisyo ng paaralan."],["I-rate ang serbisyong natanggap","Sagutin ang bawat pahayag. Piliin lamang ang N/A kapag hindi naaangkop ang pahayag sa inyong transaksyon."],["Mga puna at pahintulot sa paggamit ng datos","Magdagdag ng opsyonal na komento at kumpirmahing maaaring gamitin ang mga sagot para sa pagpapabuti ng serbisyo."],["Suriin ang inyong sagot","Tingnan ang buod bago ito isumite sa lokal na server ng paaralan."]],
+        validationService: "Piliin muna ang serbisyong natanggap bago magpatuloy.", validationCC: "Pakisagutan ang", validationSQD: "Pakisagutan ang", validationConsent: "Kumpirmahin muna ang pahayag sa paggamit ng datos.", jumpBlocked: "Kumpletuhin muna ang kasalukuyang hakbang bago lumipat pasulong.", savedPreview: "Preview lamang: sa aktuwal na pormularyo, maaaring i-save ang draft sa device.",
+        reviewLanguage: "Napiling wika", reviewClient: "Uri ng kliyente", reviewAgeSex: "Edad at kasarian", reviewService: "Serbisyong natanggap", reviewCC1: "Kaalaman sa Citizen’s Charter", reviewCC2: "Pagkakakita sa Citizen’s Charter", reviewCC3: "Pakinabang ng Citizen’s Charter", reviewRating: "Karaniwang service rating", reviewRemarks: "Mga puna", notProvided: "Hindi ibinigay", notAnswered: "Hindi nasagutan", noRemarks: "Walang ibinigay na puna", allNA: "Lahat ng sagot ay N/A", naCount: "sagot na N/A",
+        ratingLegend: [["1 · SD","Lubos na Hindi Sumasang-ayon"],["2 · D","Hindi Sumasang-ayon"],["3 · NAD","Hindi sang-ayon at hindi rin tutol."],["4 · A","Sumasang-ayon"],["5 · SA","Lubos na Sumasang-ayon"],["N/A","Hindi Naaangkop"]]
+      },
+      war: {
+        langName: "Waray-Waray", brandTitle: "Eskwelahan · Surbey ha Katagbaw han Kliyente", surveyOnline: "Abri an Surbey", schoolSurveyForm: "Porma han CSM han Eskwelahan",
+        sideHeading: "An imo komento nabulig ha amon pagpaopay.", sideDescription: "Alayon pag-rate han serbisyo nga imo nakarawat tikang ha eskwelahan. Kasagaran natatapos an surbey ha sulod hin tulo tubtob lima ka minuto.", localAddress: "Lokal nga address han surbey",
+        navProfileSub: "Panguna nga detalye han transaksyon", navCCSub: "Paghibaro ngan kapulsanan", navSQDSub: "Siyam nga pahayag ha kalidad", navRemarksSub: "Suhestyon ngan pagtugot", navReviewSub: "Repasuha ngan isumite",
+        privacyText: "Ha lokal la nga server han eskwelahan gintitipigan an mga baton. Opsyonal an impormasyon nga mahimo makakilala han respondent.",
+        profileInfoTitle: "Diri kinahanglan an pag-sign in.", profileInfoText: "Ini nga porma nasunod ha onsite Client Satisfaction Measurement questionnaire han eskwelahan. Mahimo bayaan nga waray sulod an mga field nga may marka nga opsyonal.",
+        clientType: "Klase han kliyente", requiredSelectOne: "Kinahanglan · Pagpili hin usa", citizen: "Sibilyan", business: "Negosyo", government: "Gobyerno", age: "Edad", optional: "Opsyonal", agePlaceholder: "pananglitan, 36", sex: "Sekso", male: "Lalaki", female: "Babaye", region: "Rehiyon nga gin-uukyan", regionPlaceholder: "Ibutang an rehiyon",
+        serviceAvailed: "Serbisyo nga nakarawat", required: "Kinahanglan", chooseTransaction: "Pagpili hin transaksyon", chooseTransactionHint: "Pislita basi makita an mga service card ngan halipot nga kahulogan.", servicePickerTitle: "Pilia an serbisyo nga imo nakarawat", servicePickerSubtitle: "Pagpili hin usa nga transaction card. An tagsa nga card may halipot nga pagsaysay.", externalGroup: "Mga transaksyon para ha eksternal nga kliyente", internalGroup: "Mga internal nga transaksyon han eskwelahan", cancel: "Kanselahon", useService: "Gamita an ginpili nga serbisyo",
+        ccInfoTitle: "Mahitungod han Citizen’s Charter", ccInfoText: "Nakalista ha Citizen’s Charter an mga serbisyo, kinahanglanon, mga pitad, oras han pagproseso, ngan responsable nga mga empleyado.",
+        cc1Code: "CC1 · Paghibaro · Kinahanglan", cc1Question: "Hain ha nasunod an nagpapakita han imo hibaro han Citizen's Charter?", cc1a: "Maaram ako kon ano an Citizen’s Charter ngan nakita ko an Citizen’s Charter hini nga opisina.", cc1b: "Maaram ako kon ano an Citizen’s Charter pero waray ko makita an Citizen’s Charter hini nga opisina.", cc1c: "Nahibaro la ako mahitungod han Citizen’s Charter han makita ko an Citizen’s Charter hini nga opisina.", cc1d: "Diri ako maaram kon ano an Citizen’s Charter ngan waray ako makakita hito hini nga opisina.",
+        cc2Code: "CC2 · Pagkita · Kinahanglan", cc2Question: "Kon maaram ka han Citizen’s Charter, masisiring mo ba nga an Citizen’s Charter hini nga opisina…?", cc2a: "Masayon makita", cc2b: "Medyo masayon makita", cc2c: "Makuri makita", cc2d: "Diri gud nakikita",
+        cc3Code: "CC3 · Kapulsanan · Kinahanglan", cc3Question: "Kon maaram ka han Citizen’s Charter, ano kadako an naibulig hito ha imo transaksyon?", cc3a: "Dako gud an naibulig", cc3b: "May gutiay nga naibulig", cc3c: "Waray makabulig",
+        remarksInfoTitle: "Isumat kon ano pa an mahimo mapaopay.", remarksInfoText: "Opsyonal an komento, pero an klaro nga obserbasyon nabulig ha eskwelahan paghibaro han praktikal nga mga pagpaopay.", remarksLabel: "Mga suhestyon kon paonan-o pa mapaopay an amon mga serbisyo", remarksPlaceholder: "Ibutang dinhi an imo komento o suhestyon…", emailLabel: "Email address", emailOptional: "Opsyonal · kon karuyag mo hin baton", consentText: "Nasasabtan ko nga gagamiton an akon mga baton para ha pagsukol ngan pagpaopay han kalidad han serbisyo. An opsyonal nga personal nga impormasyon pagdudumaraon uyon ha angay nga mga kinahanglanon han data privacy.",
+        reviewInfoTitle: "Repasuha antes isumite.", reviewInfoText: "Mahimo ka bumalik basi liwanon an imo mga baton. Direkta nga ipapadara an mga baton ngadto ha School CSM Control Center.", submissionNote: "Ini usa nga interactive design preview. Ha aktuwal nga sistema, makarawat la hin baton kon igbutang han Control Center an Survey Form ha Online nga kahimtang.",
+        saveDevice: "I-save hini nga device", back: "Bumalik", continue: "Padayon", submit: "Isumite an baton", successTitle: "Narekord an baton", successText: "Salamat han pagbulig pagpaopay han mga serbisyo han eskwelahan. Natapos na ini nga access session. Kinahanglan i-scan utro han sunod nga respondent an QR code han Survey Form.", newResponse: "Pagtikang hin bag-o nga baton",
+        step: "Pitad", of: "han", stepNames: ["Profile han Kliyente","Citizen’s Charter","Kalidad han Serbisyo","Mga Komento","Pagrepaso"],
+        titles: [["Maano an imo naging transaksyon?","Ini nga mga detalye mabulig ha eskwelahan pagtanding han katagbaw ha iba-iba nga serbisyo nga diri ginkikinahanglan an imo ngaran."],["Citizen’s Charter","Isumat kon nakita ngan nagamit mo an giya han serbisyo han eskwelahan."],["I-rate an serbisyo nga imo nakarawat","Batona an tagsa nga pahayag. Pilia la an N/A kon diri ini angay ha imo transaksyon."],["Mga komento ngan pagtugot ha paggamit han datos","Pagdugang hin opsyonal nga komento ngan kumpirmaha nga mahimo gamiton an mga baton para ha pagpaopay han serbisyo."],["Repasuha an imo baton","Kitaa an sumaryo antes isumite ngadto ha lokal nga server han eskwelahan."]],
+        validationService: "Pilia anay an serbisyo nga imo nakarawat antes magpadayon.", validationCC: "Alayon batona an", validationSQD: "Alayon batona an", validationConsent: "Kumpirmaha anay an pahayag mahitungod han paggamit han datos.", jumpBlocked: "Kompletoha anay an yana nga pitad antes kumadto ha sunod.", savedPreview: "Preview la: ha aktuwal nga porma, mahimo i-save an draft hini nga device.",
+        reviewLanguage: "Ginpili nga yinaknan", reviewClient: "Klase han kliyente", reviewAgeSex: "Edad ngan sekso", reviewService: "Serbisyo nga nakarawat", reviewCC1: "Paghibaro han Citizen’s Charter", reviewCC2: "Pagkita han Citizen’s Charter", reviewCC3: "Kapulsanan han Citizen’s Charter", reviewRating: "Average nga service rating", reviewRemarks: "Mga komento", notProvided: "Waray ihatag", notAnswered: "Waray batona", noRemarks: "Waray komento nga iginhatag", allNA: "Ngatanan nga baton N/A", naCount: "nga baton nga N/A",
+        ratingLegend: [["1 · SD","Diri Gud Nauyon"],["2 · D","Diri Nauyon"],["3 · NAD","Diri nauyon ngan diri liwat nakontra."],["4 · A","Nauyon"],["5 · SA","Nauyon Gud"],["N/A","Diri Angay"]]
+      }
+    };
+
+    let services = [
+      {id:"enroll-walkin", group:"external", en:["Walk-in Enrollment","Enrolled a learner through an onsite transaction at the school."], fil:["Walk-in na Enrollment","Nag-enroll ng mag-aaral sa pamamagitan ng personal na transaksyon sa paaralan."], war:["Walk-in nga Enrollment","Nag-enroll hin estudyante pinaagi hin personal nga transaksyon ha eskwelahan."]},
+      {id:"enroll-online", group:"external", en:["Online Enrollment","Submitted or processed enrollment through the school’s online channel."], fil:["Online Enrollment","Nagsumite o nagproseso ng enrollment sa online channel ng paaralan."], war:["Online Enrollment","Nagsumite o nagproseso han enrollment pinaagi han online channel han eskwelahan."]},
+      {id:"records-certifications", group:"external", en:["School Records & Certifications","Requested school forms, certifications, or permanent student records."], fil:["School Records at Certifications","Humiling ng school forms, certifications, o permanenteng rekord ng mag-aaral."], war:["School Records ngan Certifications","Nangaro hin school forms, certifications, o permanente nga rekord han estudyante."]},
+      {id:"certified-copies", group:"external", en:["Certified True Copies","Requested certified true copies or photocopies of school documents."], fil:["Certified True Copies","Humiling ng certified true copy o photocopy ng mga dokumento ng paaralan."], war:["Certified True Copies","Nangaro hin certified true copy o photocopy han mga dokumento han eskwelahan."]},
+      {id:"school-clearance", group:"external", en:["School Clearance","Requested clearance for transfer, completion, employment, or another purpose."], fil:["School Clearance","Humiling ng clearance para sa paglipat, pagtatapos, trabaho, o ibang layunin."], war:["School Clearance","Nangaro hin clearance para ha pagbalhin, pagtapos, trabaho, o iba nga katuyoan."]},
+      {id:"borrow-materials", group:"external", en:["Borrow Learning Materials","Borrowed books or learning resources from the library or Learning Resource Center."], fil:["Paghiram ng Learning Materials","Humiram ng aklat o learning resources sa library o Learning Resource Center."], war:["Pag-aram hin Learning Materials","Humuram hin libro o learning resources ha library o Learning Resource Center."]},
+      {id:"assistance-walkin", group:"external", en:["Public Assistance — Walk-in/Phone","Asked for information or assistance in person or through a phone call."], fil:["Public Assistance — Walk-in/Phone","Humingi ng impormasyon o tulong nang personal o sa pamamagitan ng tawag."], war:["Public Assistance — Walk-in/Phone","Nangaro hin impormasyon o bulig ha personal o pinaagi hin tawag."]},
+      {id:"assistance-digital", group:"external", en:["Public Assistance — Email/Social Media","Asked for information or assistance through email or social media."], fil:["Public Assistance — Email/Social Media","Humingi ng impormasyon o tulong sa email o social media."], war:["Public Assistance — Email/Social Media","Nangaro hin impormasyon o bulig pinaagi hin email o social media."]},
+      {id:"documents-routing", group:"external", en:["Receive or Release Documents","Submitted or collected official communications and other documents."], fil:["Pagtanggap o Paglabas ng Dokumento","Nagsumite o kumuha ng opisyal na komunikasyon at iba pang dokumento."], war:["Pagkarawat o Pagpagawas hin Dokumento","Nagsumite o nagkarawat hin opisyal nga komunikasyon ngan iba nga dokumento."]},
+      {id:"facility-reservation", group:"external", en:["Reserve School Facilities","Requested the use of school rooms, grounds, or other facilities."], fil:["Reserbasyon ng School Facilities","Humiling ng paggamit ng silid, grounds, o ibang pasilidad ng paaralan."], war:["Reserbasyon han School Facilities","Nangaro hin paggamit han kwarto, grounds, o iba nga pasilidad han eskwelahan."]},
+      {id:"service-credits", group:"internal", en:["Service Credits & CTC","Requested a service-credit special order or compensatory time credit certification."], fil:["Service Credits at CTC","Humiling ng special order para sa service credits o certification ng compensatory time credits."], war:["Service Credits ngan CTC","Nangaro hin special order para ha service credits o certification han compensatory time credits."]},
+      {id:"inventory", group:"internal", en:["Laboratory & School Inventory","Processed laboratory or school inventory records and transactions."], fil:["Laboratory at School Inventory","Nagproseso ng laboratory o school inventory records at transaksyon."], war:["Laboratory ngan School Inventory","Nagproseso hin laboratory o school inventory records ngan transaksyon."]},
+      {id:"learning-development", group:"internal", en:["School Learning & Development","Processed school-based learning and development activities or records."], fil:["School Learning and Development","Nagproseso ng school-based learning and development activities o records."], war:["School Learning and Development","Nagproseso hin school-based learning and development activities o records."]}
+    ];
+
+    const sqdSets = {
+      en: [
+        ["SQD0","Overall Satisfaction","I am satisfied with the service that I availed."],
+        ["SQD1","Responsiveness","I spent a reasonable amount of time for my transaction."],
+        ["SQD2","Reliability","The office followed the transaction’s requirements and steps based on the information provided."],
+        ["SQD3","Access and Facilities","The steps, including payment, that I needed to do for my transaction were easy and simple."],
+        ["SQD4","Communication","I easily found information about my transaction from the office or its website."],
+        ["SQD5","Costs","I paid a reasonable amount of fees for my transaction."],
+        ["SQD6","Integrity","I feel the office was fair to everyone, or ‘walang palakasan,’ during my transaction."],
+        ["SQD7","Assurance","I was treated courteously by the staff, and the staff was helpful when I asked for assistance."],
+        ["SQD8","Outcome","I got what I needed from the government office, or a denial of my request was sufficiently explained to me."]
+      ],
+      fil: [
+        ["SQD0","Pangkalahatang Kasiyahan","Nasiyahan ako sa serbisyong natanggap ko."],
+        ["SQD1","Pagtugon","Makatwiran ang oras na ginugol ko para sa aking transaksyon."],
+        ["SQD2","Pagiging Maaasahan","Sinunod ng tanggapan ang mga kinakailangan at hakbang ng transaksyon batay sa impormasyong ibinigay."],
+        ["SQD3","Access at Pasilidad","Madali at simple ang mga hakbang, kabilang ang pagbabayad, na kailangan kong gawin para sa aking transaksyon."],
+        ["SQD4","Komunikasyon","Madali kong nakita ang impormasyon tungkol sa aking transaksyon mula sa tanggapan o sa website nito."],
+        ["SQD5","Gastos","Nagbayad ako ng makatwirang halaga para sa transaksyon."],
+        ["SQD6","Integridad","Sa palagay ko ay patas ang tanggapan sa lahat, o ‘walang palakasan,’ sa aking transaksyon."],
+        ["SQD7","Katiyakan","Magalang ang pagtrato sa akin ng mga kawani at matulungin sila nang humingi ako ng tulong."],
+        ["SQD8","Kinalabasan","Nakuha ko ang kailangan ko mula sa tanggapan, o sapat na naipaliwanag sa akin ang pagtanggi sa aking kahilingan."]
+      ],
+      war: [
+        ["SQD0","Kabug-osan nga Katagbaw","Kontento ako han serbisyo nga akon nakarawat."],
+        ["SQD1","Pagtubag","Naaayon an oras nga akon gingahin para han akon transaksyon."],
+        ["SQD2","Pagkasasarigan","Ginsunod han opisina an mga kinahanglanon ngan pitad han transaksyon sumala han impormasyon nga iginhatag."],
+        ["SQD3","Access ngan Pasilidad","Masayon ngan simple an mga pitad, upod an pagbayad, nga kinahanglan ko buhaton para han akon transaksyon."],
+        ["SQD4","Komunikasyon","Masayon ko nabilngan an impormasyon mahitungod han akon transaksyon tikang ha opisina o website hito."],
+        ["SQD5","Gastos","Nagbayad ako hin naaayon nga kantidad para han transaksyon."],
+        ["SQD6","Integridad","Para ha akon, patas an opisina ha ngatanan, o ‘waray palakasan,’ durante han akon transaksyon."],
+        ["SQD7","Kasarigan","Matinalahuron an pagtratar ha akon han mga empleyado ngan mabinuligon hira han nangaro ako hin bulig."],
+        ["SQD8","Resulta","Nakarawat ko an akon ginkinahanglan tikang ha opisina, o an pagdumiri han akon hangyo iginsaysay ha akon hin igo."]
+      ]
+    };
+
+
+    const serviceCanonical = {
+      "enroll-walkin":"Enrollment (Walk-in)","enroll-online":"Enrollment (Online)",
+      "records-certifications":"Issuance of School Forms, Certifications, and other School Permanent Records",
+      "certified-copies":"Issuance of Requested Documents in Certified True Copy (CTC) and Photocopy (Walk-in)",
+      "school-clearance":"Issuance of School Clearance for different purposes",
+      "borrow-materials":"Borrowing of Learning Materials from the School Library/Learning Resource Center",
+      "assistance-walkin":"Public assistance (walk-in/phone call)","assistance-digital":"Public assistance (email/social media)",
+      "documents-routing":"Receiving and releasing of communications and other documents",
+      "facility-reservation":"Reservation Process for the Use of School Facilities",
+      "service-credits":"Issuance of Special Order for Service Credits and Certification of Compensatory Time Credits",
+      "inventory":"Laboratory and School Inventory","learning-development":"School Learning and Development"
+    };
+
+    function loadServiceCatalog(catalog) {
+      if (!Array.isArray(catalog) || !catalog.length) return;
+      services = catalog.map(item => {
+        const translations = item.translations || {};
+        const localized = language => {
+          const translated = translations[language] || {};
+          return [
+            translated.label || item.short_label || item.label,
+            translated.description || item.description || item.label,
+          ];
+        };
+        return {
+          id: String(item.id || item.label),
+          group: item.section === "internal" ? "internal" : "external",
+          canonical: String(item.label || ""),
+          en: localized("en"),
+          fil: localized("fil"),
+          war: localized("war"),
+        };
+      }).filter(item => item.canonical);
+    }
+    let serverConfig = null;
+    let sessionTimer = null;
+    let submissionToken = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+
+    const faces = ["😞","🙁","😐","🙂","😊","—"];
+    const shortLabels = ["SD","D","NAD","A","SA","N/A"];
+    const sections = [...document.querySelectorAll(".step-section")];
+    const navLinks = [...document.querySelectorAll(".step-link")];
+    const ring = document.getElementById("ringValue");
+    const ringText = document.getElementById("ringText");
+    const nextBtn = document.getElementById("nextBtn");
+    const backBtn = document.getElementById("backBtn");
+    const nextButtonText = document.getElementById("nextButtonText");
+    const nextButtonIcon = document.getElementById("nextButtonIcon");
+    const mobileBar = document.getElementById("mobileBar");
+    const mobileStepLabel = document.getElementById("mobileStepLabel");
+    const mobileStepName = document.getElementById("mobileStepName");
+    const toast = document.getElementById("toast");
+    const overlay = document.getElementById("servicePickerOverlay");
+    const confirmServicePicker = document.getElementById("confirmServicePicker");
+    let currentStep = 0;
+    let maxReachedStep = 0;
+    let selectedLanguage = "en";
+    let selectedServiceIds = [];
+    let pendingServiceIds = [];
+    let overlayReturnFocus = null;
+    let scannerReturnFocus = null;
+
+    const scannerLaunch = document.getElementById("scannerLaunch");
+    const scannerLoginOverlay = document.getElementById("scannerLoginOverlay");
+    const scannerLoginForm = document.getElementById("scannerLoginForm");
+    const scannerLoginMessage = document.getElementById("scannerLoginMessage");
+
+    async function scannerSession() {
+      const response = await fetch("/api/scanner/auth/session", {cache:"no-store"});
+      let result = {};
+      try { result = await response.json(); } catch (_) {}
+      return response.ok && result.authenticated ? result : null;
+    }
+
+    scannerLaunch.addEventListener("click", async () => {
+      scannerReturnFocus = document.activeElement;
+      scannerLaunch.disabled = true;
+      try {
+        const active = await scannerSession();
+        if (active) {
+          location.href = "/scanner";
+          return;
+        }
+      } catch (_) {}
+      scannerLoginMessage.hidden = true;
+      scannerLoginOverlay.hidden = false;
+      document.body.classList.add("gate-open");
+      document.getElementById("scannerUsername").focus();
+      scannerLaunch.disabled = false;
+    });
+
+    document.getElementById("scannerLoginCancel").addEventListener("click", () => {
+      scannerLoginOverlay.hidden = true;
+      if (document.getElementById("languageGate").hidden) document.body.classList.remove("gate-open");
+      if (scannerReturnFocus && typeof scannerReturnFocus.focus === "function") scannerReturnFocus.focus();
+      scannerReturnFocus = null;
+    });
+
+    scannerLoginForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = document.getElementById("scannerLoginSubmit");
+      button.disabled = true;
+      scannerLoginMessage.hidden = true;
+      try {
+        const response = await fetch("/api/scanner/auth/login", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            username:document.getElementById("scannerUsername").value,
+            password:document.getElementById("scannerPassword").value,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Scanner Operator sign-in failed.");
+        document.getElementById("scannerPassword").value = "";
+        location.href = result.scanner_url || "/scanner";
+      } catch (error) {
+        scannerLoginMessage.textContent = error.message || "Scanner Operator sign-in failed.";
+        scannerLoginMessage.hidden = false;
+        button.disabled = false;
+      }
+    });
+
+    function t(key) { return languages[selectedLanguage][key] ?? languages.en[key] ?? key; }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => toast.classList.remove("show"), 2800);
+    }
+
+    function applyLanguage() {
+      const pack = languages[selectedLanguage];
+      document.documentElement.lang = selectedLanguage;
+      document.title = pack.brandTitle;
+      document.querySelectorAll("[data-key]").forEach(el => {
+        const key = el.dataset.key;
+        if (pack[key] !== undefined) el.textContent = pack[key];
+      });
+      document.querySelectorAll("[data-placeholder-key]").forEach(el => {
+        const key = el.dataset.placeholderKey;
+        if (pack[key] !== undefined) el.placeholder = pack[key];
+      });
+      document.querySelectorAll("[data-step-name]").forEach(el => el.textContent = pack.stepNames[Number(el.dataset.stepName)]);
+      document.getElementById("servicePickerTitle").textContent = pack.servicePickerTitle;
+      document.getElementById("servicePickerSubtitle").textContent = pack.servicePickerSubtitle;
+      document.getElementById("externalGroupTitle").textContent = pack.externalGroup;
+      document.getElementById("internalGroupTitle").textContent = pack.internalGroup;
+      document.getElementById("cancelServicePicker").textContent = pack.cancel;
+      document.getElementById("confirmServicePicker").textContent = pack.useService;
+      document.getElementById("submissionNote").innerHTML = pack.submissionNote.replace(/Online/g, "<strong>Online</strong>");
+      if (serverConfig) {
+        const school = serverConfig.school_name || "School";
+        const surveyLabel = selectedLanguage === "fil" ? "Sarbey sa Kasiyahan ng Kliyente" : selectedLanguage === "war" ? "Surbey han Katagbaw han Kliyente" : "Client Satisfaction Survey";
+        document.querySelector(".brand-title").textContent = `${school} · ${surveyLabel}`;
+        document.title = `${school} · ${surveyLabel}`;
+      }
+      renderRatingLegend();
+      renderSqd();
+      renderServiceCards();
+      updateSelectedServiceDisplay();
+      updateStep(false);
+    }
+
+    function renderRatingLegend() {
+      document.getElementById("ratingLegend").innerHTML = t("ratingLegend").map(([head,desc]) => `<div><strong>${head}</strong>${desc}</div>`).join("");
+    }
+
+    function renderSqd() {
+      const previous = {};
+      sqdSets.en.forEach((_,i) => previous[i] = document.querySelector(`input[name=q${i}]:checked`)?.value || "");
+      const set = currentSqdSet();
+      document.getElementById("sqdList").innerHTML = set.map(([code, dimension, prompt], i) => `
+        <article class="sqd-card" id="sqdCard${i}">
+          <div class="sqd-head"><span class="dimension">${dimension}</span><p><strong style="color:#f4faff">${code}</strong> · ${prompt}</p></div>
+          <div class="rating-row">
+            ${faces.map((face,j) => {
+              const value = j === 5 ? "NA" : String(j+1);
+              const score = j === 5 ? "N/A" : String(j+1);
+              const checked = previous[i] === value ? " checked" : "";
+              return `<div class="rating-option"><input type="radio" id="q${i}_${j+1}" name="q${i}" value="${value}"${checked}><label for="q${i}_${j+1}" title="${shortLabels[j]}"><span class="face">${face}</span><span class="score">${score}</span></label></div>`;
+            }).join("")}
+          </div>
+        </article>`).join("");
+    }
+
+    function getServiceText(service) { return service[selectedLanguage] || service.en; }
+
+    function renderServiceCards() {
+      const makeCards = group => services.filter(s => s.group === group).map(service => {
+        const [title,desc] = getServiceText(service);
+        return `<div class="service-card"><input type="checkbox" id="service_${service.id}" name="serviceChoice" value="${service.id}" ${pendingServiceIds.includes(service.id) ? "checked" : ""}><label for="service_${service.id}"><span class="service-title">${title}</span><span class="service-desc">${desc}</span></label></div>`;
+      }).join("");
+      document.getElementById("externalServiceCards").innerHTML = makeCards("external");
+      document.getElementById("internalServiceCards").innerHTML = makeCards("internal");
+      document.querySelectorAll('input[name="serviceChoice"]').forEach(input => input.addEventListener("change", () => {
+        pendingServiceIds = [...document.querySelectorAll('input[name="serviceChoice"]:checked')].map(item => item.value);
+        confirmServicePicker.disabled = pendingServiceIds.length === 0;
+      }));
+    }
+
+    function updateSelectedServiceDisplay() {
+      const button = document.getElementById("servicePickerButton");
+      const title = document.getElementById("serviceSelectedTitle");
+      const desc = document.getElementById("serviceSelectedDescription");
+      const selected = selectedServiceIds.map(id => services.find(service => service.id === id)).filter(Boolean);
+      if (selected.length) {
+        const first = getServiceText(selected[0]);
+        title.textContent = selected.length === 1 ? first[0] : `${selected.length} transactions selected`;
+        desc.textContent = selected.length === 1 ? first[1] : selected.map(service => getServiceText(service)[0]).join(" · ");
+        button.classList.add("has-value");
+        document.getElementById("service").value = selectedServiceIds.join(",");
+      } else {
+        title.textContent = t("chooseTransaction"); desc.textContent = t("chooseTransactionHint"); button.classList.remove("has-value");
+        document.getElementById("service").value = "";
+      }
+    }
+
+    function openServicePicker() {
+      overlayReturnFocus = document.activeElement;
+      pendingServiceIds = [...selectedServiceIds];
+      renderServiceCards();
+      confirmServicePicker.disabled = pendingServiceIds.length === 0;
+      overlay.hidden = false;
+      document.body.style.overflow = "hidden";
+      requestAnimationFrame(() => {
+        const first = overlay.querySelector('input[name="serviceChoice"],button');
+        if (first) first.focus();
+      });
+    }
+    function closeServicePicker() {
+      overlay.hidden = true;
+      document.body.style.overflow = "";
+      if (overlayReturnFocus && typeof overlayReturnFocus.focus === "function") overlayReturnFocus.focus();
+      overlayReturnFocus = null;
+    }
+
+    document.getElementById("servicePickerButton").addEventListener("click", openServicePicker);
+    document.getElementById("closeServicePicker").addEventListener("click", closeServicePicker);
+    document.getElementById("cancelServicePicker").addEventListener("click", closeServicePicker);
+    overlay.addEventListener("click", e => { if (e.target === overlay) closeServicePicker(); });
+    confirmServicePicker.addEventListener("click", () => {
+      if (!pendingServiceIds.length) return;
+      selectedServiceIds = [...pendingServiceIds];
+      updateSelectedServiceDisplay();
+      closeServicePicker();
+    });
+
+    document.querySelectorAll('input[name="preferredLanguage"]').forEach(input => input.addEventListener("change", () => {
+      document.getElementById("languageContinue").disabled = false;
+    }));
+    document.getElementById("languageContinue").addEventListener("click", () => {
+      const selected = document.querySelector('input[name="preferredLanguage"]:checked');
+      if (!selected) return;
+      selectedLanguage = selected.value;
+      applyLanguage();
+      document.getElementById("languageGate").hidden = true;
+      document.body.classList.remove("gate-open");
+      document.querySelector('input[name="clientType"]')?.focus();
+    });
+
+    function validateStep(step) {
+      if (step === 0 && selectedServiceIds.length === 0) {
+        document.getElementById("servicePickerButton").focus();
+        showToast(t("validationService"));
+        return false;
+      }
+      if (step === 1) {
+        for (const name of ["cc1","cc2","cc3"]) {
+          if (!document.querySelector(`input[name=${name}]:checked`)) {
+            document.getElementById(`${name}Card`).scrollIntoView({behavior:"smooth",block:"center"});
+            showToast(`${t("validationCC")} ${name.toUpperCase()}.`);
+            return false;
+          }
+        }
+      }
+      if (step === 2) {
+        const set = currentSqdSet();
+        const unanswered = set.findIndex((_,i) => !document.querySelector(`input[name=q${i}]:checked`));
+        if (unanswered !== -1) {
+          document.getElementById(`sqdCard${unanswered}`).scrollIntoView({behavior:"smooth",block:"center"});
+          showToast(`${t("validationSQD")} ${set[unanswered][0]}.`);
+          return false;
+        }
+      }
+      if (step === 3 && !document.getElementById("consent").checked) {
+        document.getElementById("consent").focus();
+        showToast(t("validationConsent"));
+        return false;
+      }
+      return true;
+    }
+
+    function validateAllRequired() {
+      for (let i = 0; i <= 3; i++) {
+        if (!validateStep(i)) { currentStep = i; updateStep(); return false; }
+      }
+      return true;
+    }
+
+    function updateStep(scroll = true) {
+      const pack = languages[selectedLanguage];
+      sections.forEach((section,i) => section.hidden = i !== currentStep);
+      navLinks.forEach((link,i) => {
+        link.classList.toggle("active", i === currentStep);
+        link.classList.toggle("complete", i < currentStep);
+        link.querySelector(".num").textContent = i < currentStep ? "✓" : i + 1;
+      });
+      const percent = (currentStep + 1) * 20;
+      ring.style.strokeDashoffset = 163.36 * (1 - percent/100);
+      ringText.textContent = percent + "%";
+      document.getElementById("stepEyebrow").textContent = `${pack.step} ${currentStep + 1} ${pack.of} 5`;
+      document.getElementById("stepTitle").textContent = pack.titles[currentStep][0];
+      document.getElementById("stepDescription").textContent = pack.titles[currentStep][1];
+      mobileStepLabel.textContent = `${pack.step} ${currentStep + 1} ${pack.of} 5`;
+      mobileStepName.textContent = pack.stepNames[currentStep];
+      mobileBar.style.width = percent + "%";
+      backBtn.hidden = currentStep === 0;
+      nextButtonText.textContent = currentStep === 4 ? pack.submit : pack.continue;
+      nextButtonIcon.innerHTML = currentStep === 4 ? '<path d="m5 12 4 4L19 6"/>' : '<path d="m9 18 6-6-6-6"/>';
+      if (currentStep === 4) buildReview();
+      if (scroll) window.scrollTo({top:0,behavior:"smooth"});
+    }
+
+    nextBtn.addEventListener("click", () => {
+      if (!validateStep(currentStep)) return;
+      if (currentStep < 4) {
+        currentStep++;
+        maxReachedStep = Math.max(maxReachedStep,currentStep);
+        updateStep();
+      } else if (validateAllRequired()) submitPreview();
+    });
+    backBtn.addEventListener("click", () => { if (currentStep > 0) { currentStep--; updateStep(); } });
+    navLinks.forEach((link,index) => link.addEventListener("click", () => {
+      if (index <= maxReachedStep) { currentStep = index; updateStep(); }
+      else showToast(t("jumpBlocked"));
+    }));
+
+    function selectedValue(name, fallback) { return document.querySelector(`input[name="${name}"]:checked`)?.nextElementSibling?.textContent || fallback; }
+
+    function buildReview() {
+      const pack = languages[selectedLanguage];
+      const ratings = currentSqdSet().map((_,i) => document.querySelector(`input[name=q${i}]:checked`)?.value || "");
+      const numeric = ratings.filter(v => /^[1-5]$/.test(v)).map(Number);
+      const naCount = ratings.filter(v => v === "NA").length;
+      const average = numeric.length ? `${(numeric.reduce((a,b)=>a+b,0)/numeric.length).toFixed(1)} / 5${naCount ? ` · ${naCount} ${pack.naCount}` : ""}` : pack.allNA;
+      const selectedServices = selectedServiceIds.map(id => services.find(service => service.id === id)).filter(Boolean);
+      const serviceText = selectedServices.length
+        ? selectedServices.map(service => getServiceText(service)[0]).join(" · ")
+        : pack.notProvided;
+      const ageSex = `${document.getElementById("age").value || pack.notProvided} · ${selectedValue("sex",pack.notProvided)}`;
+      document.getElementById("reviewGrid").innerHTML = `
+        <div class="review-card"><div class="review-label">${pack.reviewLanguage}</div><div class="review-value">${pack.langName}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewClient}</div><div class="review-value">${selectedValue("clientType",pack.notProvided)}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewAgeSex}</div><div class="review-value">${ageSex}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewRating}</div><div class="review-value">${average}</div></div>
+        <div class="review-card full"><div class="review-label">${pack.reviewService}</div><div class="review-value">${serviceText}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewCC1}</div><div class="review-value">${selectedValue("cc1",pack.notAnswered)}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewCC2}</div><div class="review-value">${selectedValue("cc2",pack.notAnswered)}</div></div>
+        <div class="review-card"><div class="review-label">${pack.reviewCC3}</div><div class="review-value">${selectedValue("cc3",pack.notAnswered)}</div></div>
+        <div class="review-card full"><div class="review-label">${pack.reviewRemarks}</div><div class="review-value">${document.getElementById("remarks").value || pack.noRemarks}</div></div>`;
+    }
+
+    async function submitPreview() {
+      nextBtn.disabled = true;
+      nextButtonText.textContent = "Submitting…";
+      const ratings = {};
+      currentSqdSet().forEach(([code],i) => { const raw = document.querySelector(`input[name=q${i}]:checked`)?.value; ratings[code.toLowerCase()] = raw === "NA" ? 0 : Number(raw); });
+      const selectedServices = selectedServiceIds.map(id => services.find(service => service.id === id)).filter(Boolean);
+      const payload = {
+        mode: serverConfig.mode || "onsite", submission_token: submissionToken,
+        privacy_acknowledgement: {
+          accepted: document.getElementById("consent").checked,
+          notice_version: serverConfig.privacy_notice_version || "",
+        },
+        meta: {
+          client_type: document.querySelector('input[name="clientType"]:checked')?.value || "",
+          age: document.getElementById("age").value || "",
+          sex: document.querySelector('input[name="sex"]:checked')?.value || "",
+          region: document.getElementById("region").value || "",
+          service_availed: selectedServices.map(service => service.canonical || serviceCanonical[service.id] || getServiceText(service)[0]),
+          preferred_language: selectedLanguage
+        },
+        cc: { cc1:Number(document.querySelector('input[name="cc1"]:checked')?.value), cc2:Number(document.querySelector('input[name="cc2"]:checked')?.value), cc3:Number(document.querySelector('input[name="cc3"]:checked')?.value) },
+        sqd: ratings,
+        feedback: { comments:document.getElementById("remarks").value, email:document.getElementById("email").value }
+      };
+      try {
+        const response = await fetch("/api/submit", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+        const result = await response.json();
+        if (!response.ok) {
+          if (result.code === "session_expired") { showSystemState("⌛","Survey Access Expired",result.error,serverConfig.survey_address || serverConfig.direct_address); return; }
+          throw new Error(result.error || "The response could not be recorded.");
+        }
+        clearInterval(sessionTimer);
+        document.getElementById("sessionBadge").hidden = true;
+        document.getElementById("surveyContent").hidden = true;
+        document.getElementById("successScreen").hidden = false;
+        document.getElementById("referenceCode").textContent = result.control_number || result.record_id || "Recorded";
+        window.scrollTo({top:0,behavior:"smooth"});
+      } catch (error) {
+        showToast(error.message || "The response could not be recorded.");
+        nextBtn.disabled = false; nextButtonText.textContent = t("submit");
+      }
+    }
+
+    document.getElementById("newResponse").addEventListener("click", () => location.href = "/");
+    document.getElementById("saveLater").addEventListener("click", () => showToast(t("savedPreview")));
+    function trapModalFocus(modal, event) {
+      if (event.key !== "Tab") return;
+      const focusable = [...modal.querySelectorAll(
+        'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      )].filter(element => !element.hidden);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    }
+    document.addEventListener("keydown", event => {
+      const activeModal = [overlay, scannerLoginOverlay, document.getElementById("languageGate")]
+        .find(modal => modal && !modal.hidden);
+      if (activeModal) trapModalFocus(activeModal, event);
+      if (event.key === "Escape" && !overlay.hidden) closeServicePicker();
+      else if (event.key === "Escape" && !scannerLoginOverlay.hidden) {
+        document.getElementById("scannerLoginCancel").click();
+      }
+    });
+
+    function currentSqdSet() {
+      if (serverConfig?.mode === "online" && serverConfig.questionnaire) {
+        return Object.values(serverConfig.questionnaire.sqd_questions).map(item => [item.code,item.dimension,item.prompt]);
+      }
+      return sqdSets[selectedLanguage];
+    }
+
+    function showSystemState(mark,title,message,address="") {
+      clearInterval(sessionTimer);
+      document.getElementById("languageGate").hidden = true;
+      document.body.classList.remove("gate-open");
+      document.getElementById("surveyShell").hidden = true;
+      document.getElementById("systemStateScreen").hidden = false;
+      document.getElementById("systemStateMark").textContent = mark;
+      document.getElementById("systemStateTitle").textContent = title;
+      document.getElementById("systemStateMessage").textContent = message;
+      document.getElementById("systemStateAddress").textContent = address || "";
+      document.getElementById("systemStateAddress").hidden = !address;
+    }
+
+    function startSessionTimer(seconds) {
+      let remaining = Math.max(0,Number(seconds || 0));
+      const badge = document.getElementById("sessionBadge"); badge.hidden = false;
+      const tick = () => {
+        const min = Math.floor(remaining/60), sec = remaining%60; badge.textContent = `${String(min).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+        if (remaining <= 0) { showSystemState("⌛","Survey Access Expired","Please scan the current CSM Survey Form QR code again to begin a new session.",serverConfig.survey_address || serverConfig.direct_address); return; }
+        remaining--;
+      };
+      tick(); sessionTimer = setInterval(tick,1000);
+    }
+
+    function applyCCBranching() {
+      const unaware = document.querySelector('input[name="cc1"]:checked')?.value === "4";
+      for (const id of ["cc2Card","cc3Card"]) document.getElementById(id).classList.toggle("disabled",unaware);
+      document.querySelectorAll('input[name="cc2"],input[name="cc3"]').forEach(input => input.disabled = unaware);
+      if (unaware) { document.getElementById("cc2e").disabled=false; document.getElementById("cc3d").disabled=false; document.getElementById("cc2e").checked=true; document.getElementById("cc3d").checked=true; }
+    }
+    document.querySelectorAll('input[name="cc1"]').forEach(input => input.addEventListener("change",applyCCBranching));
+
+    function loadRegionOptions(regions) {
+      const select = document.getElementById("region");
+      const values = Array.isArray(regions) && regions.length
+        ? regions
+        : [{code:"did_not_specify",label:"Not Specified"}];
+      select.innerHTML = values.map(region =>
+        `<option value="${String(region.code || "")}"${region.code === "did_not_specify" ? " selected" : ""}>${String(region.label || region.code || "")}</option>`
+      ).join("");
+    }
+
+    async function initializeSurvey() {
+      try {
+        const response = await fetch("/api/config",{cache:"no-store"}); serverConfig = await response.json();
+        loadServiceCatalog(serverConfig.service_catalog);
+        loadRegionOptions(serverConfig.regions);
+        const privacyText = document.querySelector(".privacy-note span");
+        if (privacyText && serverConfig.privacy_notice) privacyText.textContent = serverConfig.privacy_notice;
+        scannerLaunch.hidden = !serverConfig.scanner_remote_enabled;
+        const school = serverConfig.school_name || "School";
+        document.querySelectorAll(".brand-title").forEach(el => el.textContent = `${school} · Client Satisfaction Survey`);
+        document.getElementById("surveyFooterSchoolName").textContent = school;
+        const schoolDetails = [serverConfig.school_id ? `School ID ${serverConfig.school_id}` : "", serverConfig.school_district || "", serverConfig.school_division || ""].filter(Boolean).join(" · ");
+        document.getElementById("surveyFooterSchoolDetails").textContent = schoolDetails;
+        const schoolLogo = document.getElementById("surveySchoolLogo");
+        if (serverConfig.school_logo_url) {
+          schoolLogo.src = `${serverConfig.school_logo_url}?v=${Date.now()}`;
+          schoolLogo.hidden = false;
+          schoolLogo.onerror = () => { schoolLogo.hidden = true; };
+        } else { schoolLogo.hidden = true; }
+        document.querySelector(".side-panel h1").textContent = "Your feedback helps us improve.";
+        document.getElementById("addressValue").textContent = serverConfig.survey_address || serverConfig.direct_address || location.origin;
+        document.getElementById("systemStateAddress").textContent = serverConfig.survey_address || serverConfig.direct_address || location.origin;
+        const status = serverConfig.survey_status || "offline";
+        document.getElementById("connectionText").textContent = status === "maintenance" ? "Under Maintenance" : status === "online" ? "Survey Online" : "Survey Offline";
+        if (status !== "online") {
+          showSystemState(status === "maintenance" ? "⚙" : "○", status === "maintenance" ? "Survey Under Maintenance" : "Survey Currently Offline", serverConfig.status_message || (status === "maintenance" ? "The Survey Form is temporarily unavailable while the Control Center is being maintained." : "The Survey Form is not currently accepting responses."), serverConfig.survey_address || serverConfig.direct_address); return;
+        }
+        if (!serverConfig.session_valid) {
+          showSystemState("QR","Scan the Survey QR Code","A valid five-minute survey-access session is required. Scan the current access QR code displayed by the School CSM Control Center.",serverConfig.survey_address || serverConfig.direct_address); return;
+        }
+        document.getElementById("systemStateScreen").hidden = true; document.getElementById("surveyShell").hidden = false;
+        document.getElementById("languageGate").hidden = false; document.body.classList.add("gate-open");
+        startSessionTimer(serverConfig.session_remaining_seconds);
+        applyLanguage();
+        requestAnimationFrame(() => document.getElementById("langEn")?.focus());
+      } catch (error) { showSystemState("!","Control Center Unavailable","The phone could not reach the School CSM Control Center. Confirm that it is connected to the selected local network.",location.origin); }
+    }
+    initializeSurvey();
+  </script>
+</body>
+</html>

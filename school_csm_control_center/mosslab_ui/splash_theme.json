@@ -1,0 +1,36 @@
+{
+  "standard": "mosslab-startup-splash/v1",
+  "canvas": {
+    "width": 760,
+    "height": 440,
+    "brand_rail_width": 248,
+    "corner_radius": 18
+  },
+  "colors": {
+    "background_top": "#071B2C",
+    "background_bottom": "#061724",
+    "brand_surface_top": "#0B2A40",
+    "brand_surface_bottom": "#092235",
+    "outline": "#194660",
+    "title": "#F4F8FC",
+    "secondary": "#B8C7D8",
+    "muted": "#8FA8BC",
+    "teal": "#26D0C5",
+    "blue": "#2A9CE6",
+    "progress_track": "#15354A"
+  },
+  "typography": {
+    "family": "Segoe UI Variable",
+    "fallback_family": "Segoe UI",
+    "eyebrow_pt": 8.5,
+    "title_pt": 23.0,
+    "subtitle_pt": 10.5,
+    "status_pt": 9.5,
+    "percent_pt": 9.5,
+    "version_pt": 8.5
+  },
+  "strings": {
+    "eyebrow": "MoSSLab Application Suite",
+    "default_status": "Preparing application…"
+  }
+}

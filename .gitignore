@@ -1,0 +1,32 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build and release outputs
+build/
+dist/
+release/
+*.spec.bak
+
+# Runtime/user data must never enter source control
+data/
+exports/
+logs/
+backups/
+migration/
+locks/
+DEBUG_LOG.txt
+MRS_FIELD_TEST_REPORT.txt
+
+# Local tooling
+.idea/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

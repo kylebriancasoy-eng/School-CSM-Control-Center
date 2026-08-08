@@ -1,0 +1,598 @@
+{
+  "schema_version": 1,
+  "package": "School_CSM_Control_Center_v0.3.0_Development_Build_11",
+  "created_at": "2026-07-29T23:13:44+00:00",
+  "file_count": 118,
+  "files": [
+    {
+      "path": "ALLOW_SCHOOL_CSM_FIREWALL.cmd",
+      "bytes": 2274,
+      "sha256": "28166a5f613ddb017d61b03e0184908f8bd64b2d2aff153b3ca4acfdfcfbb8ce"
+    },
+    {
+      "path": "assets/CSM App Logo.png",
+      "bytes": 787722,
+      "sha256": "2c8b4ad6f8e949ed9c260818ecb80d3d0c06442dece466ffb781030d29cbefe2"
+    },
+    {
+      "path": "assets/DepEd Logo.png",
+      "bytes": 111159,
+      "sha256": "bab48e1a33edf52c671d551c6afbf5974c783b9e4b895ec83c76ef143383a97a"
+    },
+    {
+      "path": "assets/deped_logo_ui.png",
+      "bytes": 57932,
+      "sha256": "b7419fd339f06d238a31594dc50916e0037ffb0e7af0d310fe4c1da9d37023f0"
+    },
+    {
+      "path": "assets/MoSSLab Logo.png",
+      "bytes": 298837,
+      "sha256": "65c08b4d89126dc292b5f8fdd59978aedbc738b0c1ee8b4be74538ede0b19f43"
+    },
+    {
+      "path": "assets/MoSSLab Seal.png",
+      "bytes": 1691258,
+      "sha256": "d1eedc16f1d1167eb59379e50db3ce71ccd1c66f7d636b8ed74ca9068e1429ae"
+    },
+    {
+      "path": "assets/MoSSLab Splash.png",
+      "bytes": 145015,
+      "sha256": "973469d65d8e737dcf9eccfc5aaf5fe3dc3a19abbacad3d48c57275fb33e156f"
+    },
+    {
+      "path": "assets/MoSSLab%20Splash.png",
+      "bytes": 145015,
+      "sha256": "973469d65d8e737dcf9eccfc5aaf5fe3dc3a19abbacad3d48c57275fb33e156f"
+    },
+    {
+      "path": "assets/mosslab_logo_ui.png",
+      "bytes": 67164,
+      "sha256": "526ed7dcc91acb4737deab35d2fce7af831940ccf067b1af0d1e1c6c2a60f7fc"
+    },
+    {
+      "path": "assets/mosslab_seal_ui.png",
+      "bytes": 351417,
+      "sha256": "105568b8fc38a79bdd9aeeb38f338799043504082394839276b1a52846321446"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Coordinate_Map_v0.4.json",
+      "bytes": 91652,
+      "sha256": "fc0d2908f670f331764322514e980664bbe542c938b44d1e1fd12f6db9f05b06"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_EN_v0.4.json",
+      "bytes": 10699,
+      "sha256": "c9e6bb422521bb730ab632545fd103e9bb203a4d39a6ad6a5fd86606a67ae9f5"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_FIL_v0.4.json",
+      "bytes": 24180,
+      "sha256": "092fc371c9c6351cc66027852766599102b517a7bf873cf4f01624ff5ae6ddd4"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_WAR_v0.4.json",
+      "bytes": 24183,
+      "sha256": "01481fb0240515fc5c9a93c2f249dc0f470956cc1ff55ffcaf4ca405f2c08afb"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Preview_EN_v0.4.png",
+      "bytes": 646602,
+      "sha256": "fe1b52272d2a01f7d3c857c41f12c30da9315d474d43fc09b8f2a3de972dad49"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Preview_FIL_v0.4.png",
+      "bytes": 434482,
+      "sha256": "1ff26112f88d57d8527825686f8fc504dd4c857b18b7f3af9f90a6d880d71f38"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Preview_WAR_v0.4.png",
+      "bytes": 445607,
+      "sha256": "743f15d3e211576bc5d6ca6246b49800ae8cb3ebec74413ce211fdd784571e00"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Template_EN_v0.4.png",
+      "bytes": 655906,
+      "sha256": "7043e55e1ed6fdc3dee2315d64d271036b83b9d9c441d3405c647c11b65d9408"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Template_FIL_v0.4.png",
+      "bytes": 434482,
+      "sha256": "1ff26112f88d57d8527825686f8fc504dd4c857b18b7f3af9f90a6d880d71f38"
+    },
+    {
+      "path": "assets/mrs_v0.4/CSM_MRS_Form_Template_WAR_v0.4.png",
+      "bytes": 445607,
+      "sha256": "743f15d3e211576bc5d6ca6246b49800ae8cb3ebec74413ce211fdd784571e00"
+    },
+    {
+      "path": "assets/recognition/handwritten_digits_v1.npz",
+      "bytes": 68606,
+      "sha256": "97585e3ee2ac0a4b5ae5c70ee6556ad4983128b923a3d92541827f591e566470"
+    },
+    {
+      "path": "BUILD_CLEAN_RELEASE.cmd",
+      "bytes": 258,
+      "sha256": "48c71edb3d6aa78fcfa3a2a43de79e64b508ee3041fa9e6029a4abb5b3751ea0"
+    },
+    {
+      "path": "INSTALL_REQUIREMENTS.cmd",
+      "bytes": 455,
+      "sha256": "71039adcbf5f6ce79106e5dbdf2e8229fe9109009e3bb1d480c64580cd19ae56"
+    },
+    {
+      "path": "MRS_FIELD_TEST_GUIDE.md",
+      "bytes": 4006,
+      "sha256": "547b1f6841e716bd1e52114997f2c319423b412c6c9cd8b3f1cc6763d1a0cee3"
+    },
+    {
+      "path": "NETWORK_DIAGNOSTICS.cmd",
+      "bytes": 781,
+      "sha256": "49d208e67c24a304edbfab4ebd642a2e302d7bd898628dc78996244376a9ed01"
+    },
+    {
+      "path": "README.md",
+      "bytes": 37301,
+      "sha256": "c4f1be2874f5ddf32bc496adfc12bf2dbdd59ed99ff7e69fcc553c939772c6ac"
+    },
+    {
+      "path": "REMOVE_CAPTIVE_PORTAL_HOSTS.cmd",
+      "bytes": 837,
+      "sha256": "edbf1f4bc9c76bbe20ffc7a0ae62db6f9894e1b251b788090ab3833afa9975bc"
+    },
+    {
+      "path": "requirements-lock.txt",
+      "bytes": 102,
+      "sha256": "686fc7be9dc93087dde610b745a3b20e9ffae3e10725503b90d08547aef7b2bd"
+    },
+    {
+      "path": "requirements.txt",
+      "bytes": 92,
+      "sha256": "9d545555a95c6796dbfb7003789a98af2b82801f15b306ad6bdfcd02a4c5c839"
+    },
+    {
+      "path": "RUN_MRS_FIELD_TEST_CHECK.cmd",
+      "bytes": 170,
+      "sha256": "5688c1b0b876299789be6572c945f5c313596d0f9a50e0168268e6652b75d376"
+    },
+    {
+      "path": "run_mrs_field_test_check.py",
+      "bytes": 472,
+      "sha256": "8246e53146ed342af26556c12f25620fbbdcfb3b62d997a621254e5c6567b638"
+    },
+    {
+      "path": "run_school_csm_control_center.py",
+      "bytes": 8441,
+      "sha256": "21a291670893af579f3c7ef9d0b27092d94e57661bebbfba5d1136d5ec9a305e"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Coordinate_Map_v0.4.json",
+      "bytes": 91652,
+      "sha256": "fc0d2908f670f331764322514e980664bbe542c938b44d1e1fd12f6db9f05b06"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_EN_v0.4.json",
+      "bytes": 10699,
+      "sha256": "c9e6bb422521bb730ab632545fd103e9bb203a4d39a6ad6a5fd86606a67ae9f5"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_FIL_v0.4.json",
+      "bytes": 24180,
+      "sha256": "092fc371c9c6351cc66027852766599102b517a7bf873cf4f01624ff5ae6ddd4"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Coordinate_Map_WAR_v0.4.json",
+      "bytes": 24183,
+      "sha256": "01481fb0240515fc5c9a93c2f249dc0f470956cc1ff55ffcaf4ca405f2c08afb"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Preview_EN_v0.4.png",
+      "bytes": 646602,
+      "sha256": "fe1b52272d2a01f7d3c857c41f12c30da9315d474d43fc09b8f2a3de972dad49"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Preview_FIL_v0.4.png",
+      "bytes": 434482,
+      "sha256": "1ff26112f88d57d8527825686f8fc504dd4c857b18b7f3af9f90a6d880d71f38"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Preview_WAR_v0.4.png",
+      "bytes": 445607,
+      "sha256": "743f15d3e211576bc5d6ca6246b49800ae8cb3ebec74413ce211fdd784571e00"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Template_EN_v0.4.png",
+      "bytes": 655906,
+      "sha256": "7043e55e1ed6fdc3dee2315d64d271036b83b9d9c441d3405c647c11b65d9408"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Template_FIL_v0.4.png",
+      "bytes": 434482,
+      "sha256": "1ff26112f88d57d8527825686f8fc504dd4c857b18b7f3af9f90a6d880d71f38"
+    },
+    {
+      "path": "scanner_app/mrs_v0.4/CSM_MRS_Form_Template_WAR_v0.4.png",
+      "bytes": 445607,
+      "sha256": "743f15d3e211576bc5d6ca6246b49800ae8cb3ebec74413ce211fdd784571e00"
+    },
+    {
+      "path": "scanner_app/README.txt",
+      "bytes": 1502,
+      "sha256": "6203b79263ce104a80a3c1a913727accb78057126ff4241243262fd35c34016e"
+    },
+    {
+      "path": "School CSM Control Center Icon.ico",
+      "bytes": 141071,
+      "sha256": "4fcdf914d976d6ed4a06b0ea692ef8d0b296a15dbd2c555577321ebca39665c5"
+    },
+    {
+      "path": "School CSM Control Center Icon.png",
+      "bytes": 787722,
+      "sha256": "2c8b4ad6f8e949ed9c260818ecb80d3d0c06442dece466ffb781030d29cbefe2"
+    },
+    {
+      "path": "school_csm_control_center/__init__.py",
+      "bytes": 636,
+      "sha256": "46fe072718aa146fdf09a67a80c1ef2919d8725f52f677ac4015788b42baf86a"
+    },
+    {
+      "path": "school_csm_control_center/app.py",
+      "bytes": 4351,
+      "sha256": "1405efdae561686b881bc379ab6837f3da3a6c177d76317072a83dfe40d760e9"
+    },
+    {
+      "path": "school_csm_control_center/app_identity.py",
+      "bytes": 5824,
+      "sha256": "e2b819adeb1bdd58ac6cec84c717c73e23503a88f4bce840c2b238fb49ceba0d"
+    },
+    {
+      "path": "school_csm_control_center/demographics.py",
+      "bytes": 8750,
+      "sha256": "2dc7b20b9de3e42fd5080afaadc47bae00f692bee1ee8038e7fa7270f71b7e03"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_splash/__init__.py",
+      "bytes": 272,
+      "sha256": "4cf63b6bf85dbd2fff457cb7d72dd778e13352d25b8af50d0665cf8267126c4d"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_splash/assets/mosslab-logo.png",
+      "bytes": 298837,
+      "sha256": "65c08b4d89126dc292b5f8fdd59978aedbc738b0c1ee8b4be74538ede0b19f43"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_splash/splash.py",
+      "bytes": 18562,
+      "sha256": "d657b2ff196b68cb95cf88fc8a10581be41dd20267d38e9b38fbf6ec21240f76"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_splash/splash_theme.json",
+      "bytes": 841,
+      "sha256": "112ce6797b833148da77f91a09e9a0eaeaabc779c8d20961d5be17956bafc03c"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_ui/__init__.py",
+      "bytes": 272,
+      "sha256": "4cf63b6bf85dbd2fff457cb7d72dd778e13352d25b8af50d0665cf8267126c4d"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_ui/assets/mosslab-logo.png",
+      "bytes": 298837,
+      "sha256": "65c08b4d89126dc292b5f8fdd59978aedbc738b0c1ee8b4be74538ede0b19f43"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_ui/splash.py",
+      "bytes": 18562,
+      "sha256": "d657b2ff196b68cb95cf88fc8a10581be41dd20267d38e9b38fbf6ec21240f76"
+    },
+    {
+      "path": "school_csm_control_center/mosslab_ui/splash_theme.json",
+      "bytes": 841,
+      "sha256": "112ce6797b833148da77f91a09e9a0eaeaabc779c8d20961d5be17956bafc03c"
+    },
+    {
+      "path": "school_csm_control_center/mrs_diagnostics.py",
+      "bytes": 6460,
+      "sha256": "3d341cd34a4c334f9fb731cfd6de89b33b3e8f970d6a3a44870c9c99db515875"
+    },
+    {
+      "path": "school_csm_control_center/mrs_printing.py",
+      "bytes": 20739,
+      "sha256": "88d44ed6c5fda82a777b36b10e18dde4dde9a857c3fc2b1d196f3f87c06950dc"
+    },
+    {
+      "path": "school_csm_control_center/questionnaire.py",
+      "bytes": 13151,
+      "sha256": "1729f951bc3ed10efbed2ebcc66fc33f7e9a38eb98572a2cf85ceb5f69b5188f"
+    },
+    {
+      "path": "school_csm_control_center/runtime_instance.py",
+      "bytes": 1139,
+      "sha256": "1479803f44d41da826a112172a57a90d94ce054bad4bba4eb80ebce4bbe463aa"
+    },
+    {
+      "path": "school_csm_control_center/runtime_paths.py",
+      "bytes": 14246,
+      "sha256": "dabe67a6d72eafb2cf9ccbf67a3601a3727e8baf2fa04e23aae65df62384afe9"
+    },
+    {
+      "path": "school_csm_control_center/school_services.py",
+      "bytes": 10406,
+      "sha256": "f793f70069435e7bb46967dfb82407d6d5e90170ce39b0773af94cb1bac80bd5"
+    },
+    {
+      "path": "school_csm_control_center/services/__init__.py",
+      "bytes": 190,
+      "sha256": "a5b3a273710aee255371b0dbc8ec8f75172e24e9705ad64d19ec7a1b1fe7901c"
+    },
+    {
+      "path": "school_csm_control_center/services/analysis_service.py",
+      "bytes": 40364,
+      "sha256": "a756bcbd91c46a62cef962cbf14c9e4e0c98116df019cf3c4f7e7a774a3a48ce"
+    },
+    {
+      "path": "school_csm_control_center/storage/__init__.py",
+      "bytes": 687,
+      "sha256": "c365cef3f2b7d410887023a520e576ee45f558a8a84da739afaec1dfcd452348"
+    },
+    {
+      "path": "school_csm_control_center/storage/control_center_settings.py",
+      "bytes": 6061,
+      "sha256": "60d0cd73f1779fe28c088ad47b22bd386c619f5ae8729a266d1a0e02e401859f"
+    },
+    {
+      "path": "school_csm_control_center/storage/csv_import.py",
+      "bytes": 5566,
+      "sha256": "d8d40424bf75b343a8f857de2beb8bb7304731e171d417507118712a9848b099"
+    },
+    {
+      "path": "school_csm_control_center/storage/field_preset_store.py",
+      "bytes": 7355,
+      "sha256": "97b36d540c55b5dedcb8d0c3f7f8cae6d3b72ee1e66253148cd91762fe2e04e1"
+    },
+    {
+      "path": "school_csm_control_center/storage/file_safety.py",
+      "bytes": 7897,
+      "sha256": "509f51e95ca046b96405d2c3d21b14022d3a6012abaed96a68fb62839e685382"
+    },
+    {
+      "path": "school_csm_control_center/storage/mrs_field_tests.py",
+      "bytes": 8423,
+      "sha256": "fdf7e5f7f8494c1b12240b8300712904b182061ee14b077943d586fe5a5b3147"
+    },
+    {
+      "path": "school_csm_control_center/storage/mrs_registry.py",
+      "bytes": 31089,
+      "sha256": "ba58862116a6dead949830b09f7ec74bd97a0331f4b4b06d9fcbffd4309cc5de"
+    },
+    {
+      "path": "school_csm_control_center/storage/print_history_store.py",
+      "bytes": 24834,
+      "sha256": "34e22e6520393a0939f142367b30922fe125189df7564f708a4765cb2a34cb40"
+    },
+    {
+      "path": "school_csm_control_center/storage/scanner_security.py",
+      "bytes": 13191,
+      "sha256": "4732570307804e76f0e199b74e83347c234c93ffe10b3511809481141df059b2"
+    },
+    {
+      "path": "school_csm_control_center/storage/survey_store.py",
+      "bytes": 33321,
+      "sha256": "517699c5e6d449943dcc861daccf863829de32e9615f5887cf50e574166432d8"
+    },
+    {
+      "path": "school_csm_control_center/ui/__init__.py",
+      "bytes": 1240,
+      "sha256": "3b311727da3b4699371b01570e3fe042a1548a07775d6d950557395438000732"
+    },
+    {
+      "path": "school_csm_control_center/ui/calendar_overlay.py",
+      "bytes": 9147,
+      "sha256": "0f13f12653122643409bdb90184c6c4f99df2d6e23768359bf5de3e6ccca41f4"
+    },
+    {
+      "path": "school_csm_control_center/ui/charts.py",
+      "bytes": 34666,
+      "sha256": "99fe403137f01e5cc97c03f46925201988f30245c797d51f48dda3857dc6fef4"
+    },
+    {
+      "path": "school_csm_control_center/ui/controls.py",
+      "bytes": 2912,
+      "sha256": "b105f1174778f0d6d9fb9d4e9229898a3f10b8d79f995e372d77efb8ad8c2739"
+    },
+    {
+      "path": "school_csm_control_center/ui/dashboard_board.py",
+      "bytes": 54802,
+      "sha256": "29c06de09d3853c19f348f60427c21faf01343e08ebd585986c598aed0ccb485"
+    },
+    {
+      "path": "school_csm_control_center/ui/dashboard_print_overlay.py",
+      "bytes": 60316,
+      "sha256": "fa7cd56c9fdfd0204876ced29c5b434b7f62d85d8ae8048aa905d7dc990eb236"
+    },
+    {
+      "path": "school_csm_control_center/ui/dashboard_printing.py",
+      "bytes": 40514,
+      "sha256": "97f7ca56a75ae5174c69bfbb5b80e61f5ef3f19426a11def74776f419d6885f4"
+    },
+    {
+      "path": "school_csm_control_center/ui/field_preset_overlay.py",
+      "bytes": 11603,
+      "sha256": "b99ce64fefdae252f7e706a8f3151d120da097535f999d18c8e58afc0e30b37b"
+    },
+    {
+      "path": "school_csm_control_center/ui/history_board.py",
+      "bytes": 35998,
+      "sha256": "07716f7503c92a9b5c3b7ea233df79bc25dcb6fb20d2f1996c0399a6ac651ab4"
+    },
+    {
+      "path": "school_csm_control_center/ui/history_clear_overlay.py",
+      "bytes": 9759,
+      "sha256": "45d8ff4ec94fa9cd988ed0e547c3f59cb7095a2fba1565b249cded5ba0e4e857"
+    },
+    {
+      "path": "school_csm_control_center/ui/icons.py",
+      "bytes": 12591,
+      "sha256": "ca1bf0f7be41a7fec441af0ddc9fcc01a592758c9fd62dbb188e8f8b84be8b88"
+    },
+    {
+      "path": "school_csm_control_center/ui/main_window.py",
+      "bytes": 49336,
+      "sha256": "fbe0d8832f431209c746abb926aa092d0fec089b7a125d86c8407d29e756df19"
+    },
+    {
+      "path": "school_csm_control_center/ui/mrs_printing_board.py",
+      "bytes": 49444,
+      "sha256": "cb64169b3f4179e7cd5f30025df9e1d0e54fa3d7fb9794febc82975a1e80deef"
+    },
+    {
+      "path": "school_csm_control_center/ui/overlays.py",
+      "bytes": 16284,
+      "sha256": "33b8ff29d4f0ed7f68e85c5e98760c32f72b24c6e71af309e63f54fe2373653d"
+    },
+    {
+      "path": "school_csm_control_center/ui/school_information_board.py",
+      "bytes": 14664,
+      "sha256": "af2b4ea886459738a57e854ddcea49440acfb44da8ec38796775dc26cd9b38e2"
+    },
+    {
+      "path": "school_csm_control_center/ui/server_board.py",
+      "bytes": 49691,
+      "sha256": "e35d5062f4ac665e8c5a757abd907da97f0fb9cb72a4b41a488261e1c8d273eb"
+    },
+    {
+      "path": "school_csm_control_center/ui/survey_drawer.py",
+      "bytes": 45751,
+      "sha256": "81180dca2305ba02186b81ee86ee67db953287618d023ede9d97b614f0947b46"
+    },
+    {
+      "path": "school_csm_control_center/ui/survey_widgets.py",
+      "bytes": 25670,
+      "sha256": "e39a18e325545f65abf4451a1fb96e71de4a8dc6eabba545283bdcb7e146a13f"
+    },
+    {
+      "path": "school_csm_control_center/ui/theme.py",
+      "bytes": 6259,
+      "sha256": "c828058b59c4ea32d3c57d6cda58431a2e98db7d30639cbb78b3d7bb27d2eacc"
+    },
+    {
+      "path": "school_csm_control_center/ui/title_bar.py",
+      "bytes": 11341,
+      "sha256": "ad5a326326607879b53e597389df54073490bc2fbbddbf824df898698d281396"
+    },
+    {
+      "path": "school_csm_control_center/ui/widgets.py",
+      "bytes": 19019,
+      "sha256": "1522d78f16bc313cefb99c562598c3c8ee27f46ca22da8b6eb2c353e15d3106a"
+    },
+    {
+      "path": "school_csm_control_center/web_server/__init__.py",
+      "bytes": 375,
+      "sha256": "e2c5dbc6f40f9bbc677515a96992701cd81a2c6ef2c4b58b4729b60b1084049e"
+    },
+    {
+      "path": "school_csm_control_center/web_server/access_codes.py",
+      "bytes": 3065,
+      "sha256": "e334b4222320db1a969279a9774d5946190d72c74e3dedf5f7634a5d3c77be58"
+    },
+    {
+      "path": "school_csm_control_center/web_server/captive_portal.py",
+      "bytes": 14128,
+      "sha256": "700cb7bccb73456a0131a394f3599f961e1b9b1019890b1f042a7e0c9a52380b"
+    },
+    {
+      "path": "school_csm_control_center/web_server/controller.py",
+      "bytes": 30591,
+      "sha256": "e45ef7d50aac08d19eb63a7e04d64408ebb20dd8f91429f0df72751896c60934"
+    },
+    {
+      "path": "school_csm_control_center/web_server/scanner_engine.py",
+      "bytes": 60915,
+      "sha256": "e67bf628d924c8289c7d4735761bc5e9d0f451c6f5a14c10d47b57390ddada57"
+    },
+    {
+      "path": "school_csm_control_center/web_server/scanner_jobs.py",
+      "bytes": 41048,
+      "sha256": "3e5a5d1dc8b75672bad0c26e07c6b900f4466e572924b6403851546c06166d0a"
+    },
+    {
+      "path": "school_csm_control_center/web_server/server.py",
+      "bytes": 80623,
+      "sha256": "3060106e2ad322f739901a09a058a1782586e8e10670b2c9c4a6c7d397dfddf4"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/CSM_MRS_Coordinate_Map_v0.4.json",
+      "bytes": 91652,
+      "sha256": "fc0d2908f670f331764322514e980664bbe542c938b44d1e1fd12f6db9f05b06"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/deped-logo-ui.png",
+      "bytes": 57932,
+      "sha256": "b7419fd339f06d238a31594dc50916e0037ffb0e7af0d310fe4c1da9d37023f0"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/index.html",
+      "bytes": 114841,
+      "sha256": "2793de7ca21562023d1dbae797ceeb82325fcef7cfde7b089b0d94c91c26c345"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/mosslab-logo-ui.png",
+      "bytes": 67164,
+      "sha256": "526ed7dcc91acb4737deab35d2fce7af831940ccf067b1af0d1e1c6c2a60f7fc"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/mosslab-logo.png",
+      "bytes": 298837,
+      "sha256": "65c08b4d89126dc292b5f8fdd59978aedbc738b0c1ee8b4be74538ede0b19f43"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/mosslab-seal-ui.png",
+      "bytes": 351417,
+      "sha256": "105568b8fc38a79bdd9aeeb38f338799043504082394839276b1a52846321446"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/scanner_remote.html",
+      "bytes": 49670,
+      "sha256": "b37facbf1a860f75800b00c31c04d42be4133ac105d4041fb0ec84f9e27517e5"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/survey.css",
+      "bytes": 8370,
+      "sha256": "69bf27a97b19c188010ad0d1dc00ffa1299d7cdc80aa25b33e3a6e55942a9785"
+    },
+    {
+      "path": "school_csm_control_center/web_server/static/survey.js",
+      "bytes": 16063,
+      "sha256": "3c2dfb8b04b35b70e5bd9f085b382e28c35be5473f6697fb58ea3af07680a048"
+    },
+    {
+      "path": "school_csm_control_center/windows_admin.py",
+      "bytes": 3987,
+      "sha256": "084e21b7fc5f9e8214e768aaae4fcc22fe366a243f3cbf6506494ead48331f8d"
+    },
+    {
+      "path": "START_SCHOOL_CSM_CONTROL_CENTER.cmd",
+      "bytes": 253,
+      "sha256": "267e8199c25e54c053f20b7ddf2c417e71110cb50b7bd02ae64a71e19bc80fbd"
+    },
+    {
+      "path": "START_SCHOOL_CSM_CONTROL_CENTER.vbs",
+      "bytes": 1317,
+      "sha256": "56510c8fa1d8c7ab08eb8564557b382fda026c66206d14741a6b427903ff183d"
+    },
+    {
+      "path": "START_SCHOOL_CSM_CONTROL_CENTER_DEBUG.cmd",
+      "bytes": 1101,
+      "sha256": "05c54e778e1c1e684508bc94a8c551e6c054bb1b2d2ab0003d30b351b478fbbe"
+    },
+    {
+      "path": "START_SCHOOL_CSM_CONTROL_CENTER_INTERNAL.cmd",
+      "bytes": 2532,
+      "sha256": "703ae69a28698597563eaaaeb4fd42846f824b52cfc21b5aa8c0c227c2a2f628"
+    },
+    {
+      "path": "tools/build_release.py",
+      "bytes": 5299,
+      "sha256": "0e350155cc38df857cd733510a2afdc6b20bfb6e3c3700d98f8a7c20c91f5bd9"
+    }
+  ]
+}
