@@ -9,8 +9,8 @@ results.
 Operators install and run only compiled Windows programs. They do not need Python
 and should not open the source-tree command files.
 
-1. Download `School-CSM-Control-Center-Setup.exe` from the repository's latest
-   GitHub Release.
+1. Download [`School-CSM-Control-Center-Setup.exe`](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest/download/School-CSM-Control-Center-Setup.exe)
+   from the [latest GitHub release](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest).
 2. Open Setup and approve the Windows administrator prompt.
 3. Select **Install**. The application is placed in
    `C:\Program Files (x86)\MoSSLab\School CSM Control Center`.
@@ -53,7 +53,8 @@ selects the saved-data removal option during uninstall.
 
 ## Repository and releases
 
-The repository contains application sources, automated tests, a PyInstaller
+The [public repository](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center)
+contains application sources, automated tests, a PyInstaller
 one-folder definition, a dependency-free .NET Framework online maintenance
 program, deterministic release/checksum tools, and GitHub Actions workflows.
 Maintainer instructions are in [`docs/RELEASING.md`](docs/RELEASING.md).

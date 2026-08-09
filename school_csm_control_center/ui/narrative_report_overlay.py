@@ -10,7 +10,6 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, QUrl, Qt, Signal, Sl
 from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtPrintSupport import QPrinter, QPrinterInfo
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -44,6 +43,7 @@ from school_csm_control_center.storage.windows_credential_store import (
     OpenAIApiKeyCredentialStore,
 )
 from school_csm_control_center.ui import theme
+from school_csm_control_center.ui.controls import NoWheelComboBox
 from school_csm_control_center.ui.narrative_report_printing import (
     NarrativePrintDocument,
     NarrativeReportRenderer,
@@ -303,7 +303,7 @@ class NarrativeReportOverlay(QWidget):
         self.next_button.clicked.connect(self._next_page)
         preview_toolbar.addWidget(self.next_button)
         preview_toolbar.addStretch(1)
-        self.printer_combo = QComboBox()
+        self.printer_combo = NoWheelComboBox()
         self.printer_combo.setObjectName("narrative_printer_combo")
         self.printer_combo.setMinimumWidth(190)
         preview_toolbar.addWidget(self.printer_combo)

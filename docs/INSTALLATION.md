@@ -4,8 +4,8 @@ School CSM Control Center is distributed as one setup program. Operators do not 
 
 ## Install
 
-1. Open the repository's **Releases** page.
-2. Download `School-CSM-Control-Center-Setup.exe` from the latest release.
+1. Open the [latest public release](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest).
+2. Download [`School-CSM-Control-Center-Setup.exe`](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest/download/School-CSM-Control-Center-Setup.exe).
 3. Open the setup file and approve the Windows administrator prompt.
 4. Select **Install**.
 5. When setup finishes, open **School CSM Control Center** from the desktop or Start menu shortcut.
@@ -67,7 +67,7 @@ Exit code `0` means success, `2` means invalid or unconfigured setup, `3` means 
 
 ## Troubleshooting
 
-- If setup says it is not connected to a repository, the file was a development compile check. Download the setup file from an actual GitHub release.
+- If setup says it is not connected to a repository, the file was a development compile check. Download setup from the [public releases page](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases).
 - If setup says the application is running, close School CSM Control Center and retry.
 - If checksum verification fails, do not bypass it. Download setup again and confirm that the GitHub release is complete.
 - Maintenance details are recorded in `C:\ProgramData\MoSSLab\School CSM Control Center\Maintenance\maintenance.log`.

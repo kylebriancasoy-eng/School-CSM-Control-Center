@@ -8,6 +8,7 @@ and fixed-choice mark interpretation against the bundled coordinate map.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import hashlib
 import json
 import os
@@ -195,7 +196,22 @@ def process_mrs_image(
     barcode = _recognize_barcode(
         template, canonical_geometry_bgr, canonical_bgr, canonical_gray, output, cv2, np
     )
-    date_recognition = _recognize_date_boxes(template, canonical_gray, output, project_root, cv2, np)
+    trusted_control = (
+        str(barcode.get("value") or "")
+        if str(barcode.get("status") or "") == "Normal"
+        and str(barcode.get("value_source") or "") == "barcode"
+        and float(barcode.get("confidence") or 0.0) >= 0.90
+        else ""
+    )
+    date_recognition = _recognize_date_boxes(
+        template,
+        canonical_gray,
+        output,
+        project_root,
+        cv2,
+        np,
+        control_number=trusted_control,
+    )
     field_values = list(fields.values())
     detected_count = sum(1 for field in field_values if field["status"] == "detected")
     ambiguous_count = sum(1 for field in field_values if field["status"] == "ambiguous")
@@ -224,6 +240,11 @@ def process_mrs_image(
         warnings.append("The date boxes require operator review before finalization.")
     if date_recognition.get("resolved_by_date_constraints"):
         warnings.append("The date was reconstructed from multiple digit candidates and calendar rules. Confirm every digit against the hardcopy.")
+    if date_recognition.get("resolved_by_control_issue_constraint"):
+        warnings.append(
+            "A date candidate earlier than the printed form's control-number month "
+            "was rejected. Confirm the reconstructed date against the hardcopy."
+        )
     if image_quality["blur_warning"]:
         warnings.append("The photograph appears blurry. Rescan closer and hold the phone steady for better barcode and handwriting recognition.")
     if image_quality["resolution_warning"]:
@@ -694,6 +715,21 @@ def _is_valid_mrs_control_number(value: str) -> bool:
     return bool(re.fullmatch(r"CSM-MRS-[0-9]{4,12}-[0-9]{4}-(?:0[1-9]|1[0-2])-[0-9]{4}", str(value or "").strip().upper()))
 
 
+def _control_number_issue_month(value: str) -> date | None:
+    """Return the earliest possible response date encoded by a trusted form ID."""
+
+    match = re.fullmatch(
+        r"CSM-MRS-[0-9]{4,12}-(?P<year>[0-9]{4})-(?P<month>0[1-9]|1[0-2])-[0-9]{4}",
+        str(value or "").strip().upper(),
+    )
+    if match is None:
+        return None
+    try:
+        return date(int(match.group("year")), int(match.group("month")), 1)
+    except ValueError:
+        return None
+
+
 def _normalize_control_number_ocr(text: str) -> str:
     cleaned = str(text or "").upper().replace("—", "-").replace("–", "-").replace("_", "-")
     cleaned = re.sub(r"[^A-Z0-9-]+", "", cleaned)
@@ -1071,6 +1107,62 @@ def _normalize_digit_image(image: Any, cv2: Any, np: Any) -> Any:
     return (canvas.astype("float32") / 255.0)
 
 
+def _enclosed_hole_count(normalized: Any) -> int:
+    """Count enclosed background regions in a normalized digit bitmap.
+
+    This intentionally uses a small Python flood fill instead of a library
+    contour routine.  The 30x20 bitmap is tiny, and fixed connectivity keeps
+    topology evidence stable across OpenCV/NumPy wheel builds.
+    """
+
+    rows, columns = (int(value) for value in normalized.shape[:2])
+    ink = [
+        [float(normalized[row, column]) > 0.15 for column in range(columns)]
+        for row in range(rows)
+    ]
+    visited = [[False] * columns for _ in range(rows)]
+
+    def flood(start_row: int, start_column: int) -> int:
+        stack = [(start_row, start_column)]
+        visited[start_row][start_column] = True
+        area = 0
+        while stack:
+            row, column = stack.pop()
+            area += 1
+            for next_row, next_column in (
+                (row - 1, column),
+                (row + 1, column),
+                (row, column - 1),
+                (row, column + 1),
+            ):
+                if (
+                    0 <= next_row < rows
+                    and 0 <= next_column < columns
+                    and not ink[next_row][next_column]
+                    and not visited[next_row][next_column]
+                ):
+                    visited[next_row][next_column] = True
+                    stack.append((next_row, next_column))
+        return area
+
+    for row in range(rows):
+        for column in (0, columns - 1):
+            if not ink[row][column] and not visited[row][column]:
+                flood(row, column)
+    for column in range(columns):
+        for row in (0, rows - 1):
+            if not ink[row][column] and not visited[row][column]:
+                flood(row, column)
+
+    holes = 0
+    for row in range(1, rows - 1):
+        for column in range(1, columns - 1):
+            if not ink[row][column] and not visited[row][column]:
+                if flood(row, column) >= 3:
+                    holes += 1
+    return min(2, holes)
+
+
 def _load_handwritten_digit_model(project_root: str | Path, np: Any) -> tuple[Any, Any] | None:
     path = Path(project_root) / "assets" / "recognition" / "handwritten_digits_v1.npz"
     if not path.is_file():
@@ -1114,11 +1206,17 @@ def _recognize_date_boxes(
     project_root: str | Path,
     cv2: Any,
     np: Any,
+    *,
+    control_number: str = "",
 ) -> dict[str, Any]:
     boxes = template.get("date_digit_boxes_px")
     if not isinstance(boxes, Sequence) or len(boxes) != 8:
         return {"digits": [], "value": "", "status": "Unavailable", "requires_operator_review": True, "crops": []}
     references = _digit_templates(cv2, np)
+    reference_topology = {
+        digit: [(_enclosed_hole_count(variant), variant) for variant in variants]
+        for digit, variants in references.items()
+    }
     handwritten_model = _load_handwritten_digit_model(project_root, np)
     results: list[dict[str, Any]] = []
     crops: list[str] = []
@@ -1136,13 +1234,18 @@ def _recognize_date_boxes(
         inset_y = max(3, int(round(crop.shape[0] * 0.12)))
         inner = crop[inset_y:max(inset_y + 1, crop.shape[0] - inset_y), inset_x:max(inset_x + 1, crop.shape[1] - inset_x)]
         normalized = _normalize_digit_image(inner, cv2, np)
+        topology_holes = _enclosed_hole_count(normalized)
         ink = float((normalized > 0.15).mean())
         if ink < 0.015:
             results.append({"digit": "", "confidence": 0.0, "status": "blank"})
             continue
         distances: list[tuple[float, str]] = []
-        for digit, variants in references.items():
-            distance = min(float(np.mean((normalized - variant) ** 2)) for variant in variants)
+        for digit, variants in reference_topology.items():
+            distance = min(
+                float(np.mean((normalized - variant) ** 2))
+                + abs(topology_holes - variant_holes) * 0.10
+                for variant_holes, variant in variants
+            )
             distances.append((distance, digit))
         distances.sort()
         best, second = distances[0], distances[1]
@@ -1177,26 +1280,39 @@ def _recognize_date_boxes(
             {"digit": candidate_digit, "confidence": round(candidate_confidence, 6)}
             for candidate_digit, candidate_confidence in sorted(alternative_scores.items(), key=lambda item: item[1], reverse=True)[:4]
         ]
-        results.append({"digit": digit, "confidence": round(confidence, 6), "status": "tentative" if confidence < 0.76 else "recognized", "method": method, "template_candidate": best[1], "handwritten_candidate": handwritten_digit, "alternatives": alternatives})
+        results.append({"digit": digit, "confidence": round(confidence, 6), "status": "tentative" if confidence < 0.76 else "recognized", "method": method, "template_candidate": best[1], "handwritten_candidate": handwritten_digit, "topology_holes": topology_holes, "alternatives": alternatives})
     digits = [entry["digit"] for entry in results]
     raw = "".join(digits)
     value = ""
     status = "Incomplete"
     resolved_by_constraints = False
-    from datetime import date as _date
-    current_year = _date.today().year
+    current_year = date.today().year
+    issue_month = _control_number_issue_month(control_number)
 
-    def valid_date(raw_digits: str) -> str:
+    def parsed_date(raw_digits: str, *, enforce_issue_month: bool = True) -> date | None:
         if len(raw_digits) != 8 or not raw_digits.isdigit():
-            return ""
+            return None
         month, day, year = int(raw_digits[:2]), int(raw_digits[2:4]), int(raw_digits[4:])
         if year < 2000 or year > current_year + 1:
-            return ""
+            return None
         try:
-            return _date(year, month, day).isoformat()
+            candidate = date(year, month, day)
         except ValueError:
-            return ""
+            return None
+        if enforce_issue_month and issue_month is not None and candidate < issue_month:
+            return None
+        return candidate
 
+    def valid_date(raw_digits: str) -> str:
+        candidate = parsed_date(raw_digits)
+        return candidate.isoformat() if candidate is not None else ""
+
+    raw_calendar_date = parsed_date(raw, enforce_issue_month=False)
+    raw_rejected_by_issue_month = bool(
+        raw_calendar_date is not None
+        and issue_month is not None
+        and raw_calendar_date < issue_month
+    )
     value = valid_date(raw)
     if not value and len(results) == 8:
         from itertools import product
@@ -1239,6 +1355,10 @@ def _recognize_date_boxes(
         "confidence": round(minimum, 6),
         "requires_operator_review": status != "Recognized" or minimum < 0.86 or resolved_by_constraints,
         "resolved_by_date_constraints": resolved_by_constraints,
+        "control_issue_month": issue_month.isoformat() if issue_month is not None else "",
+        "resolved_by_control_issue_constraint": bool(
+            raw_rejected_by_issue_month and resolved_by_constraints
+        ),
         "crops": crops,
     }
 

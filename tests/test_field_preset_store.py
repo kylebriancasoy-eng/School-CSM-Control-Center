@@ -48,9 +48,15 @@ class FieldPresetStoreTests(unittest.TestCase):
             }
         )
         self.assertEqual(self.store.load(), saved)
+        expected_path = (
+            self.project_root
+            / "data"
+            / "csm_survey"
+            / "field_presets.mossjson"
+        ).resolve()
         self.assertEqual(
-            self.store.path,
-            self.project_root / "data" / "csm_survey" / "field_presets.mossjson",
+            self.store.path.resolve(),
+            expected_path,
         )
         document = json.loads(self.store.path.read_text(encoding="utf-8"))
         self.assertEqual(document["file_type"], "CSM Survey Field Presets")

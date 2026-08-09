@@ -10,6 +10,8 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 from school_csm_control_center.mrs_printing import BARCODE_PRINT_REGION_PX, render_official_mrs_form
 from school_csm_control_center.web_server.scanner_engine import (
+    _control_number_issue_month,
+    _enclosed_hole_count,
     _normalize_control_number_ocr,
     _tesseract_executable,
     process_mrs_image,
@@ -22,6 +24,22 @@ MAP_PATH = ROOT / "assets" / "mrs_v0.4" / "CSM_MRS_Coordinate_Map_v0.4.json"
 
 
 class Dev7RecognitionHardeningTests(unittest.TestCase):
+    def test_date_topology_and_control_month_constraints_are_deterministic(self) -> None:
+        closed_loop = np.zeros((30, 20), dtype="float32")
+        closed_loop[5:25, 4:7] = 1.0
+        closed_loop[5:8, 4:16] = 1.0
+        closed_loop[22:25, 4:16] = 1.0
+        closed_loop[5:25, 13:16] = 1.0
+        open_stroke = closed_loop.copy()
+        open_stroke[5:8, 8:13] = 0.0
+
+        self.assertEqual(_enclosed_hole_count(closed_loop), 1)
+        self.assertEqual(_enclosed_hole_count(open_stroke), 0)
+        issue_month = _control_number_issue_month(CONTROL)
+        self.assertIsNotNone(issue_month)
+        self.assertEqual(issue_month.isoformat(), "2026-07-01")
+        self.assertIsNone(_control_number_issue_month("untrusted-control"))
+
     def test_control_number_ocr_normalization(self) -> None:
         self.assertEqual(
             _normalize_control_number_ocr(" CSM MRS 123627 2O26 O7 OOO1 "),
@@ -83,6 +101,10 @@ class Dev7RecognitionHardeningTests(unittest.TestCase):
         self.assertEqual(result["date_recognition"]["value"], "2026-07-16")
         self.assertTrue(result["date_recognition"]["requires_operator_review"])
         self.assertTrue(result["date_recognition"]["resolved_by_date_constraints"])
+        self.assertEqual(
+            result["date_recognition"]["control_issue_month"],
+            "2026-07-01",
+        )
 
     def test_scanner_remote_exposes_control_text_crop_and_manual_comment_transcription(self) -> None:
         html = (ROOT / "school_csm_control_center" / "web_server" / "static" / "scanner_remote.html").read_text(encoding="utf-8")
