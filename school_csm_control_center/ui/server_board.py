@@ -38,6 +38,7 @@ class SurveyServerBoard(QWidget):
         self._named_access_url = ""
         self._direct_access_url = ""
         self._wifi_payload = ""
+        self._access_capability: dict[str, Any] = {}
         self.setObjectName("survey_server_board")
 
         outer = QVBoxLayout(self)
@@ -170,7 +171,7 @@ class SurveyServerBoard(QWidget):
         net.addWidget(self.detect_network, 5, 1)
         net.addWidget(self.open_hotspot_settings, 5, 2)
         network_note = QLabel(
-            "Default workflow: scan the Wi-Fi QR, join the laptop hotspot, then let the phone's captive-portal login page open the CSM Survey Form. Automatic opening requires both the port-80 redirector and local DNS interception; the fallback Survey Form QR remains available when a phone or Windows adapter does not support the full flow."
+            "Default workflow: scan the Wi-Fi QR and join the laptop hotspot. The phone may then offer a network-login page when the port-80 redirector and app-owned DNS responder pass their local checks. Phone behavior varies, so the verified direct-IP Survey Form QR remains the primary manual address."
         )
         network_note.setObjectName("server_note")
         network_note.setWordWrap(True)
@@ -278,14 +279,14 @@ class SurveyServerBoard(QWidget):
         self.access_url = self._readonly_line()
         self.direct_access_url = self._readonly_line()
 
-        self.copy_access = TooltipIconButton("copy", "Copy configured local Survey Form address", button_size=36, icon_size=19)
-        self.open_access = TooltipIconButton("open", "Open configured local Survey Form address", button_size=36, icon_size=19)
-        self.copy_direct_access = TooltipIconButton("copy", "Copy direct-IP fallback address", button_size=36, icon_size=19)
-        self.open_direct_access = TooltipIconButton("open", "Open direct-IP fallback address", button_size=36, icon_size=19)
+        self.copy_access = TooltipIconButton("copy", "Copy verified configured-name address", button_size=36, icon_size=19)
+        self.open_access = TooltipIconButton("open", "Open verified configured-name address", button_size=36, icon_size=19)
+        self.copy_direct_access = TooltipIconButton("copy", "Copy primary direct-IP address", button_size=36, icon_size=19)
+        self.open_direct_access = TooltipIconButton("open", "Open primary direct-IP address", button_size=36, icon_size=19)
         self.save_wifi = TooltipIconButton("save", "Save laptop-hotspot Wi-Fi QR as PNG", button_size=36, icon_size=19)
-        self.save_survey = TooltipIconButton("save", "Save configured-address QR as PNG", button_size=36, icon_size=19)
-        self.save_direct = TooltipIconButton("save", "Save direct-IP fallback QR as PNG", button_size=36, icon_size=19)
-        self.save_sheet = TooltipIconButton("qr", "Save the complete captive-portal access sheet", button_size=36, icon_size=19)
+        self.save_survey = TooltipIconButton("save", "Save verified configured-name QR as PNG", button_size=36, icon_size=19)
+        self.save_direct = TooltipIconButton("save", "Save primary direct-IP QR as PNG", button_size=36, icon_size=19)
+        self.save_sheet = TooltipIconButton("qr", "Save the respondent access sheet", button_size=36, icon_size=19)
         self.regenerate_access = TooltipIconButton("key", "Regenerate the temporary Survey Form access key", button_size=36, icon_size=19)
 
         header_actions = QHBoxLayout()
@@ -308,8 +309,8 @@ class SurveyServerBoard(QWidget):
         wifi_actions.addWidget(self.save_wifi)
         wifi_actions.addStretch(1)
         wifi_tile = self._qr_tile(
-            "Connect to hotspot",
-            "Primary Wi-Fi QR",
+            "Connect to respondent network",
+            "Wi-Fi QR",
             self.wifi_qr,
             None,
             wifi_actions,
@@ -323,8 +324,8 @@ class SurveyServerBoard(QWidget):
         named_actions.addWidget(self.save_survey)
         named_actions.addStretch(1)
         named_tile = self._qr_tile(
-            "Configured local address",
-            "Preferred manual access",
+            "Configured school name",
+            "Shown only after local DNS verification",
             self.survey_qr,
             self.access_url,
             named_actions,
@@ -338,23 +339,23 @@ class SurveyServerBoard(QWidget):
         direct_actions.addWidget(self.save_direct)
         direct_actions.addStretch(1)
         direct_tile = self._qr_tile(
-            "Direct-IP fallback",
-            "Use when local DNS is unavailable",
+            "Survey Form (direct IP)",
+            "Primary verified manual address",
             self.direct_qr,
             self.direct_access_url,
             direct_actions,
         )
 
         tiles_layout.addWidget(wifi_tile, 0, 0)
-        tiles_layout.addWidget(named_tile, 0, 1)
-        tiles_layout.addWidget(direct_tile, 0, 2)
+        tiles_layout.addWidget(direct_tile, 0, 1)
+        tiles_layout.addWidget(named_tile, 0, 2)
         tiles_layout.setColumnStretch(0, 1)
         tiles_layout.setColumnStretch(1, 1)
         tiles_layout.setColumnStretch(2, 1)
         access.addWidget(tiles, 2, 0, 1, 4)
 
         access_note = QLabel(
-            "Scan the hotspot QR first. When Windows and the phone support captive-portal detection, the Survey Form opens through the network-login notification. The configured-address and direct-IP QR codes remain available as compact fallbacks."
+            "Scan the hotspot QR first. If the phone does not offer a network-login page, scan the direct-IP Survey Form QR. A configured school-name QR appears only while the app-owned local DNS responder is running and has passed its self-test."
         )
         access_note.setWordWrap(True)
         access_note.setObjectName("server_note")
@@ -395,7 +396,9 @@ class SurveyServerBoard(QWidget):
         self.controller.scanner_response_count_changed.connect(lambda count: self.scanner_status[1].setToolTip(f"{count} scanned hardcopy response(s) received this server session"))
         self.controller.active_sessions_changed.connect(lambda count: self.active_sessions[1].setText(str(count)))
         self.controller.portal_status_changed.connect(self._portal_status_changed)
+        self.controller.address_status_changed.connect(self._address_status_changed)
         self._load_settings(self.controller.settings())
+        self._urls_changed(*self.controller.urls())
         self._apply_styles()
 
     def start_server(self) -> None:
@@ -490,6 +493,7 @@ class SurveyServerBoard(QWidget):
         self._sync_scanner_status()
         self._survey_status_changed(str(settings.get("survey_status") or "offline"), "")
         self._portal_status_changed(dict(settings.get("captive_portal") or {}))
+        self._address_status_changed(dict(settings.get("access_capability") or {}))
         self._render_wifi_qr()
 
     def _server_status_changed(self, status: str, message: str) -> None:
@@ -508,7 +512,16 @@ class SurveyServerBoard(QWidget):
         self.stop_button.setEnabled(running and not busy)
         self.apply_button.setEnabled(not busy)
         self.detect_network.setEnabled(not busy)
-        self.port_spin.setEnabled(not running and not busy)
+        network_editable = not running and not busy
+        for widget in (
+            self.port_spin,
+            self.server_ip_combo,
+            self.identifier,
+            self.network_mode,
+            self.access_mode,
+            self.internet_mode,
+        ):
+            widget.setEnabled(network_editable)
 
     def _survey_status_changed(self, status: str, message: str) -> None:
         labels = {"online": "Online", "offline": "Offline", "maintenance": "Under Maintenance"}
@@ -527,13 +540,28 @@ class SurveyServerBoard(QWidget):
         self._named_access_url = named_access
         self._direct_access_url = direct_access
         self.scanner_endpoint.setText((direct.rstrip("/") + "/scanner") if direct else "")
-        self._render_qr(self.survey_qr, named_access, "Start the server")
+        self._render_qr(self.survey_qr, named_access, "Local DNS not verified")
         self._render_qr(self.direct_qr, direct_access, "Start the server")
-        if named_access:
-            self.status_detail.setText(
-                f"Captive Portal will redirect to the configured local address: {named_access}. "
-                f"Use the direct-IP fallback only when local DNS is unavailable: {direct_access}"
-            )
+        named_enabled = bool(named_access)
+        for button in (self.copy_access, self.open_access, self.save_survey):
+            button.setEnabled(named_enabled)
+        direct_enabled = bool(direct_access)
+        for button in (self.copy_direct_access, self.open_direct_access, self.save_direct):
+            button.setEnabled(direct_enabled)
+
+    def _address_status_changed(self, capability: dict[str, Any]) -> None:
+        self._access_capability = dict(capability or {})
+        if not self.controller.running:
+            return
+        direct_reason = str(capability.get("direct_reason") or "")
+        named_reason = str(capability.get("named_reason") or "")
+        parts = [part for part in (direct_reason, named_reason) if part]
+        if bool(capability.get("restart_required")):
+            restart = self.controller.network_restart_state()
+            detail = str(restart.get("detail") or "Restart the local survey server to apply pending network changes.")
+            parts.append(detail)
+        if parts:
+            self.status_detail.setText(" ".join(parts))
 
     def _detect_network(self) -> None:
         self._refresh_server_addresses(str(self.server_ip_combo.currentData() or ""), refresh=True)
@@ -550,7 +578,11 @@ class SurveyServerBoard(QWidget):
     def _portal_status_changed(self, status: dict[str, Any]) -> None:
         label = str(status.get("status") or "Stopped")
         self.portal_status[1].setText(label)
-        state = "online" if bool(status.get("automatic_open")) else ("maintenance" if label in {"Partial", "Hotspot required"} else "offline")
+        state = "online" if bool(status.get("automatic_open")) else (
+            "maintenance"
+            if label in {"Partial", "Hotspot required", "Hotspot IP mismatch"}
+            else "offline"
+        )
         self.portal_status[1].setProperty("state", state)
         self.portal_status[1].style().unpolish(self.portal_status[1])
         self.portal_status[1].style().polish(self.portal_status[1])
@@ -565,8 +597,14 @@ class SurveyServerBoard(QWidget):
         candidates = self.controller.available_server_addresses(refresh=refresh)
         for label, address in candidates:
             self.server_ip_combo.addItem(label, address)
+        if current and self.server_ip_combo.findData(current) < 0:
+            self.server_ip_combo.addItem(
+                f"{current} — Saved address (not currently detected)",
+                current,
+            )
         if not candidates:
-            self.server_ip_combo.addItem("127.0.0.1 — This laptop only", "127.0.0.1")
+            if self.server_ip_combo.findData("127.0.0.1") < 0:
+                self.server_ip_combo.addItem("127.0.0.1 — This laptop only", "127.0.0.1")
         index = self.server_ip_combo.findData(current)
         self.server_ip_combo.setCurrentIndex(index if index >= 0 else 0)
         self.server_ip_combo.blockSignals(False)
@@ -574,14 +612,15 @@ class SurveyServerBoard(QWidget):
     def _open_configured_access(self) -> None:
         value = self.access_url.text().strip()
         if not value:
-            self.status_detail.setText("Start the server before opening the Survey Form.")
+            reason = str(self._access_capability.get("named_reason") or "Start the server before opening the Survey Form.")
+            self.status_detail.setText(reason)
             return
         QDesktopServices.openUrl(QUrl(value))
 
     def _open_direct_access(self) -> None:
         value = self.direct_access_url.text().strip()
         if not value:
-            self.status_detail.setText("Start the server before opening the direct-IP fallback.")
+            self.status_detail.setText("Start the server and wait for its direct-IP health check before opening the Survey Form.")
             return
         QDesktopServices.openUrl(QUrl(value))
 
@@ -784,13 +823,13 @@ class SurveyServerBoard(QWidget):
         self.status_detail.setText(f"QR image saved: {filename}")
 
     def _save_access_sheet(self) -> None:
-        if not self._wifi_payload or not self._named_access_url or not self._direct_access_url:
+        if not self._wifi_payload or not self._direct_access_url:
             self.status_detail.setText("Enter hotspot details and start the server before saving an access sheet.")
             return
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "Save captive-portal access sheet",
-            str(Path.home() / "school_csm_captive_portal_access.png"),
+            "Save respondent access sheet",
+            str(Path.home() / "school_csm_respondent_access.png"),
             "PNG image (*.png)",
         )
         if not filename:
@@ -801,25 +840,40 @@ class SurveyServerBoard(QWidget):
         from PIL import Image, ImageDraw, ImageFont
 
         wifi = qrcode.make(self._wifi_payload).convert("RGB").resize((460, 460))
-        named = qrcode.make(self._named_access_url).convert("RGB").resize((460, 460))
+        named = (
+            qrcode.make(self._named_access_url).convert("RGB").resize((460, 460))
+            if self._named_access_url
+            else None
+        )
         direct = qrcode.make(self._direct_access_url).convert("RGB").resize((460, 460))
         canvas = Image.new("RGB", (1580, 760), "white")
         draw = ImageDraw.Draw(canvas)
         font = ImageFont.load_default()
         draw.text((50, 35), "SCHOOL CSM CONTROL CENTER — RESPONDENT ACCESS", fill="black", font=font)
-        draw.text((95, 90), "PRIMARY: Connect to laptop hotspot", fill="black", font=font)
-        draw.text((590, 90), "CONFIGURED LOCAL ADDRESS", fill="black", font=font)
-        draw.text((1110, 90), "DIRECT-IP EMERGENCY FALLBACK", fill="black", font=font)
+        draw.text((95, 90), "STEP 1: CONNECT TO RESPONDENT NETWORK", fill="black", font=font)
+        draw.text((590, 90), "OPTIONAL VERIFIED SCHOOL NAME", fill="black", font=font)
+        draw.text((1110, 90), "STEP 2: PRIMARY DIRECT-IP ADDRESS", fill="black", font=font)
         canvas.paste(wifi, (50, 130))
-        canvas.paste(named, (560, 130))
+        if named is not None:
+            canvas.paste(named, (560, 130))
+        else:
+            draw.rounded_rectangle((560, 130, 1020, 590), radius=20, outline="#94A3B8", width=4)
+            draw.multiline_text(
+                (635, 330),
+                "NOT ADVERTISED\nLOCAL DNS IS NOT VERIFIED",
+                fill="#475569",
+                font=font,
+                spacing=10,
+                align="center",
+            )
         canvas.paste(direct, (1070, 130))
         draw.text((50, 625), f"Network: {self.ssid.text() or 'Selected network'}", fill="black", font=font)
-        draw.text((560, 625), self._named_access_url, fill="black", font=font)
+        draw.text((560, 625), self._named_access_url or "Hidden until local DNS verification passes", fill="black", font=font)
         draw.text((1070, 625), self._direct_access_url, fill="black", font=font)
-        draw.text((50, 680), "After joining, the phone should open the configured local address through its network-login page.", fill="black", font=font)
-        draw.text((50, 710), "Use the direct-IP QR only if the configured local address cannot be resolved.", fill="black", font=font)
+        draw.text((50, 680), "After joining, use the direct-IP QR if no network-login page appears.", fill="black", font=font)
+        draw.text((50, 710), "Automatic captive-portal opening and configured school-name access are device-dependent.", fill="black", font=font)
         canvas.save(filename, "PNG")
-        self.status_detail.setText(f"Captive-portal access sheet saved: {filename}")
+        self.status_detail.setText(f"Respondent access sheet saved: {filename}")
 
     @staticmethod
     def _qr_tile(

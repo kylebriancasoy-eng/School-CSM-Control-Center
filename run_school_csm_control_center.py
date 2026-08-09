@@ -128,9 +128,6 @@ def _log_environment(
     logger.info("Frozen executable: %s", bool(getattr(sys, "frozen", False)))
 
     required_paths = [
-        project_root / "school_csm_control_center",
-        project_root / "school_csm_control_center" / "app.py",
-        project_root / "school_csm_control_center" / "mosslab_ui" / "splash.py",
         project_root
         / "school_csm_control_center"
         / "mosslab_ui"
@@ -143,10 +140,22 @@ def _log_environment(
         project_root / "assets" / "mosslab_logo_ui.png",
         data_root / "data" / "csm_survey",
     ]
+    if not getattr(sys, "frozen", False):
+        required_paths[:0] = [
+            project_root / "school_csm_control_center",
+            project_root / "school_csm_control_center" / "app.py",
+            project_root / "school_csm_control_center" / "mosslab_ui" / "splash.py",
+        ]
     for path in required_paths:
         logger.info("Required path %s: %s", path.name, "FOUND" if path.exists() else "MISSING")
 
-    for distribution in ("PySide6", "qrcode", "Pillow", "numpy", "opencv-python"):
+    for distribution in (
+        "PySide6",
+        "qrcode",
+        "Pillow",
+        "numpy",
+        "opencv-contrib-python-headless",
+    ):
         try:
             logger.info("Dependency %s version: %s", distribution, importlib.metadata.version(distribution))
         except importlib.metadata.PackageNotFoundError:
@@ -229,9 +238,14 @@ def main() -> int:
         return result
     except ModuleNotFoundError as exc:
         logger.exception("A required Python module is missing.")
+        guidance = (
+            "Open School CSM Control Center Setup and choose Repair."
+            if getattr(sys, "frozen", False)
+            else "Run INSTALL_REQUIREMENTS.cmd, then start the application again."
+        )
         _show_fatal_message(
             f"A required Python module is missing: {exc.name}.\n"
-            "Run INSTALL_REQUIREMENTS.cmd, then start the application again.",
+            + guidance,
             log_path,
         )
         return 10

@@ -81,6 +81,9 @@ class CaptivePortalTests(unittest.TestCase):
             )
             status = service.start(http_port=0, dns_port=0)
             self.assertTrue(status.http_running)
+            self.assertTrue(status.dns_running)
+            self.assertTrue(status.dns_verified)
+            self.assertTrue(status.automatic_open_available)
             server = service._http_server  # focused integration test for the bound ephemeral port
             self.assertIsNotNone(server)
             port = int(server.server_address[1])

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+import getpass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -32,14 +33,18 @@ from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.school_services import service_display, service_value_from_record
 from school_csm_control_center.services.analysis_service import AnalysisService
 from school_csm_control_center.storage.csv_import import parse_survey_history_csv
+from school_csm_control_center.storage.dashboard_snapshot_store import DashboardSnapshotStore
+from school_csm_control_center.storage.narrative_report_store import NarrativeReportStore
 from school_csm_control_center.storage.print_history_store import PrintHistoryStore
 from school_csm_control_center.storage.survey_store import SurveyStore
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.dashboard_board import DashboardBoard
 from school_csm_control_center.ui.dashboard_print_overlay import DashboardPrintOverlay
+from school_csm_control_center.ui.dashboard_snapshot_codec import decode_dashboard_snapshot
 from school_csm_control_center.ui.history_board import HistoryBoard
 from school_csm_control_center.ui.history_clear_overlay import HistoryClearOverlay
 from school_csm_control_center.ui.mrs_printing_board import MRSPrintingBoard
+from school_csm_control_center.ui.narrative_report_overlay import NarrativeReportOverlay
 from school_csm_control_center.ui.server_board import SurveyServerBoard
 from school_csm_control_center.ui.school_information_board import SchoolInformationBoard
 from school_csm_control_center.ui.icons import action_icon
@@ -67,6 +72,11 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.data_root = storage_root_for(self.project_root)
         self.store = SurveyStore(self.project_root)
         self.print_store = PrintHistoryStore(self.project_root)
+        self.snapshot_store = DashboardSnapshotStore(self.project_root)
+        self.narrative_store = NarrativeReportStore(
+            self.project_root,
+            snapshot_store=self.snapshot_store,
+        )
         try:
             self.print_store.interrupt_incomplete()
         except Exception:
@@ -215,6 +225,14 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.shell,
             project_root=self.project_root,
             print_store=self.print_store,
+            snapshot_store=self.snapshot_store,
+        )
+        self.narrative_overlay = NarrativeReportOverlay(
+            self.shell,
+            project_root=self.project_root,
+            snapshot_store=self.snapshot_store,
+            report_store=self.narrative_store,
+            print_store=self.print_store,
         )
         self.toast = Toast(self.shell)
         self._report_startup(82, "Connecting Control Center actions…")
@@ -261,6 +279,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.dashboard.methodology_requested.connect(self.show_methodology)
         self.history.view_requested.connect(self.view_record)
         self.history.print_view_requested.connect(self.view_print_record)
+        self.history.narrative_requested.connect(self.open_narrative_report)
+        self.history.reprint_requested.connect(self.open_dashboard_reprint)
         self.history.edit_requested.connect(self.drawer.open_for_edit)
         self.history.delete_requested.connect(self.confirm_delete)
         self.history.export_requested.connect(self.export_records)
@@ -278,6 +298,16 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.print_overlay.print_job_completed.connect(self._record_completed_print)
         self.print_overlay.print_failed.connect(
             lambda message: self.toast.show_message(message, kind="error", timeout_ms=6500)
+        )
+        self.narrative_overlay.print_completed.connect(
+            lambda _record, message: self.toast.show_message(
+                message, kind="success", timeout_ms=7000
+            )
+        )
+        self.narrative_overlay.print_failed.connect(
+            lambda message: self.toast.show_message(
+                message, kind="error", timeout_ms=7000
+            )
         )
         self.server_controller.response_received.connect(self._browser_response_received)
         self.server_controller.status_changed.connect(self._server_status_toast)
@@ -476,6 +506,67 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             kind="success",
             timeout_ms=6500,
         )
+
+    def open_dashboard_reprint(self, record: object) -> None:
+        try:
+            source = self._current_print_record(record)
+            eligible, reason = PrintHistoryStore.narrative_eligibility(source)
+            if not eligible:
+                raise ValueError(reason)
+            reference = source.get("dashboard_snapshot")
+            if not isinstance(reference, dict):
+                raise ValueError("The immutable Dashboard snapshot reference is missing.")
+            snapshot, manifest = decode_dashboard_snapshot(self.snapshot_store, reference)
+            snapshot_source = (
+                manifest.get("source")
+                if isinstance(manifest.get("source"), dict)
+                else {}
+            )
+            if str(snapshot_source.get("print_record_id") or "") != str(
+                source.get("id") or ""
+            ):
+                raise ValueError(
+                    "The stored Dashboard belongs to a different print-history record."
+                )
+            self.narrative_overlay.close_overlay()
+            self.print_overlay.open_reprint(source, snapshot)
+        except Exception as exc:
+            self.toast.show_message(
+                f"The stored Dashboard could not be opened for reprinting: {exc}",
+                kind="error",
+                timeout_ms=8000,
+            )
+
+    def open_narrative_report(self, record: object) -> None:
+        try:
+            source = self._current_print_record(record)
+            self.print_overlay.close_overlay()
+            self.narrative_overlay.open_for_print_record(
+                source,
+                operator=getpass.getuser(),
+            )
+        except Exception as exc:
+            self.toast.show_message(
+                f"The Narrative Report could not be opened: {exc}",
+                kind="error",
+                timeout_ms=8000,
+            )
+
+    def _current_print_record(self, record: object) -> dict[str, Any]:
+        """Resolve a History action against the durable audit, not a stale row."""
+
+        supplied = dict(record) if isinstance(record, dict) else {}
+        identity = str(
+            supplied.get("id") or supplied.get("control_number") or ""
+        ).strip()
+        if not identity:
+            raise ValueError("The Dashboard print-history identity is missing.")
+        current = self.print_store.get(identity)
+        if current is None:
+            raise ValueError(
+                "The Dashboard print-history record no longer exists. Refresh History and try again."
+            )
+        return current
 
     def open_clear_history(self) -> None:
         records = self.store.list()
@@ -920,6 +1011,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.prompt.setGeometry(self.shell.rect())
         self.history_clear_overlay.setGeometry(self.shell.rect())
         self.print_overlay.setGeometry(self.shell.rect())
+        self.narrative_overlay.setGeometry(self.shell.rect())
         for overlay in (
             self.mrs_workspace_overlay,
             self.server_workspace_overlay,
@@ -939,6 +1031,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.history_clear_overlay.raise_()
         if self.print_overlay.isVisible():
             self.print_overlay.raise_()
+        if self.narrative_overlay.isVisible():
+            self.narrative_overlay.raise_()
 
     def _sync_window_chrome(self) -> None:
         if not hasattr(self, "title_bar"):

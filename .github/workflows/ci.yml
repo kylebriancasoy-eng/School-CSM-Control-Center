@@ -1,0 +1,54 @@
+name: Continuous integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt pytest
+
+      - name: Compile Python sources
+        run: python -m compileall -q run_school_csm_control_center.py school_csm_control_center scripts
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -q
+
+      - name: Check generated version resource
+        shell: pwsh
+        run: |
+          python scripts/generate_version_info.py | Out-Null
+          git diff --exit-code -- packaging/pyinstaller/version_info.txt
+
+      - name: Compile maintenance installer
+        shell: pwsh
+        run: >-
+          ./scripts/build_installer.ps1
+          -Repository "${{ github.repository }}"
+          -OutputRoot "release/installer-check"
+
+      - name: Upload installer compile check
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-installer-compile-check
+          path: release/installer-check/School-CSM-Control-Center-Setup.exe
+          if-no-files-found: error

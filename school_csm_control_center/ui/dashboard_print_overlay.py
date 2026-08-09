@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import datetime
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ from school_csm_control_center.app_identity import (
 )
 from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.storage.control_center_settings import ControlCenterSettingsStore
+from school_csm_control_center.storage.dashboard_snapshot_store import DashboardSnapshotStore
 from school_csm_control_center.storage.print_history_store import PrintHistoryStore
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.controls import NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSpinBox
@@ -41,6 +43,7 @@ from school_csm_control_center.ui.dashboard_printing import (
     DashboardSnapshot,
     PrintReportMetadata,
 )
+from school_csm_control_center.ui.dashboard_snapshot_codec import encode_dashboard_snapshot
 from school_csm_control_center.ui.overlays import ClickScrim
 from school_csm_control_center.ui.widgets import TooltipIconButton
 
@@ -98,6 +101,7 @@ class DashboardPrintOverlay(QWidget):
         printer_preferences_opener: PrinterPreferencesOpener | None = None,
         project_root: str | Path | None = None,
         print_store: PrintHistoryStore | None = None,
+        snapshot_store: DashboardSnapshotStore | None = None,
     ) -> None:
         super().__init__(parent)
         self.dashboard = dashboard
@@ -105,6 +109,7 @@ class DashboardPrintOverlay(QWidget):
         self.data_root = storage_root_for(self.project_root)
         self.settings_store = ControlCenterSettingsStore(self.project_root)
         self.print_store = print_store
+        self.snapshot_store = snapshot_store or DashboardSnapshotStore(self.project_root)
         self._printer_provider = printer_provider or self._system_printers
         self._print_executor = print_executor or self._execute_native_print
         self._control_number_provider = control_number_provider or self._fallback_control_number
@@ -118,9 +123,15 @@ class DashboardPrintOverlay(QWidget):
         self.report_metadata: PrintReportMetadata | None = None
         self._filter_scope = "All responses"
         self._response_scope_text = "0 of 0 responses"
+        self._frozen_survey_count = 0
+        self._frozen_analysis: dict[str, Any] = {}
+        self._frozen_filters: dict[str, Any] = {}
+        self._frozen_school: dict[str, Any] = {}
         self._syncing = False
         self._audit_record_id = ""
         self._audit_status = ""
+        self._reprint_mode = False
+        self._reprint_source_record: dict[str, Any] = {}
 
         self.setObjectName("dashboard_print_overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -163,9 +174,9 @@ class DashboardPrintOverlay(QWidget):
         header_layout.setSpacing(12)
         heading = QVBoxLayout()
         heading.setSpacing(3)
-        title = QLabel("Print complete Dashboard")
-        title.setObjectName("dashboard_print_title")
-        heading.addWidget(title)
+        self.title_label = QLabel("Print complete Dashboard")
+        self.title_label.setObjectName("dashboard_print_title")
+        heading.addWidget(self.title_label)
         self.scope_label = QLabel("Previewing the complete current Dashboard")
         self.scope_label.setObjectName("dashboard_print_scope")
         self.scope_label.setWordWrap(True)
@@ -491,6 +502,17 @@ class DashboardPrintOverlay(QWidget):
         )
         self._audit_record_id = ""
         self._audit_status = ""
+        self._reprint_mode = False
+        self._reprint_source_record = {}
+        self.title_label.setText("Print complete Dashboard")
+        self.refresh_button.setEnabled(True)
+        self.appearance_combo.setEnabled(True)
+        self.print_button.set_action(
+            "print",
+            "Print complete Dashboard",
+            icon_color=theme.SUCCESS,
+        )
+        self.print_button.set_role("success")
         self.setGeometry(self.parentWidget().rect())
         self._position_children()
         self._filter_scope = str(getattr(self.dashboard, "print_scope_text", lambda: getattr(self.dashboard, "filter_summary_label").text())())
@@ -504,6 +526,16 @@ class DashboardPrintOverlay(QWidget):
                 lambda: [],
             )()
             all_records = getattr(self.dashboard, "_records", current_records)
+            self._frozen_survey_count = len(current_records)
+            self._frozen_analysis = deepcopy(
+                getattr(self.dashboard, "_analysis", {})
+                if isinstance(getattr(self.dashboard, "_analysis", {}), dict)
+                else {}
+            )
+            current_filters = getattr(self.dashboard, "current_filters", lambda: {})()
+            self._frozen_filters = deepcopy(
+                current_filters if isinstance(current_filters, dict) else {}
+            )
             self._response_scope_text = (
                 f"{len(current_records)} of {len(all_records)} responses"
             )
@@ -525,6 +557,19 @@ class DashboardPrintOverlay(QWidget):
             else:
                 control_number = self._control_number_provider(generated_at)
             settings = self.settings_store.load()
+            self._frozen_school = {
+                key: deepcopy(settings.get(key))
+                for key in (
+                    "school_name",
+                    "school_id",
+                    "school_region",
+                    "school_division",
+                    "school_district",
+                    "school_address",
+                    "school_head",
+                    "csm_focal_person",
+                )
+            }
             logo_relative = str(settings.get("school_logo_path") or "").strip()
             school_logo = (
                 self.data_root / logo_relative
@@ -592,6 +637,79 @@ class DashboardPrintOverlay(QWidget):
             Qt.FocusReason.ActiveWindowFocusReason
         )
 
+    def open_reprint(
+        self,
+        record: dict[str, Any],
+        snapshot: DashboardSnapshot,
+    ) -> None:
+        """Open the print workspace with an immutable historical snapshot.
+
+        No new Dashboard control number is reserved. The original control
+        number remains in the rendered snapshot and every terminal reprint
+        attempt is appended to the source print record.
+        """
+
+        eligible, reason = PrintHistoryStore.narrative_eligibility(record)
+        if not eligible:
+            raise RuntimeError(reason)
+        metadata = snapshot.report_metadata
+        if metadata is None:
+            raise RuntimeError("The stored Dashboard snapshot has no print metadata.")
+        expected = str(record.get("control_number") or "").strip().upper()
+        if not expected or metadata.control_number != expected:
+            raise RuntimeError(
+                "The stored Dashboard snapshot does not match its print control number."
+            )
+
+        self._cancel_open_reservation(
+            "A historical Dashboard reprint replaced this print preview."
+        )
+        self._reprint_mode = True
+        self._reprint_source_record = deepcopy(record)
+        self._audit_record_id = str(record.get("id") or expected)
+        self._audit_status = "reprint"
+        self._source_snapshot = snapshot
+        self._snapshot = snapshot
+        self.report_metadata = metadata
+        self._filter_scope = str(
+            record.get("scope") or metadata.filter_scope or "Complete Dashboard"
+        )
+        self._frozen_survey_count = int(record.get("survey_count") or 0)
+        self._response_scope_text = f"{self._frozen_survey_count} stored responses"
+        self._frozen_analysis = {}
+        self._frozen_filters = {}
+        self._frozen_school = {"school_name": metadata.school_name}
+
+        settings = record.get("settings") if isinstance(record.get("settings"), dict) else {}
+        appearance = str(settings.get("appearance_mode") or "standard")
+        appearance_index = self.appearance_combo.findData(appearance)
+        self.appearance_combo.blockSignals(True)
+        try:
+            self.appearance_combo.setCurrentIndex(
+                appearance_index if appearance_index >= 0 else 0
+            )
+        finally:
+            self.appearance_combo.blockSignals(False)
+        self.appearance_combo.setEnabled(False)
+        self.refresh_button.setEnabled(False)
+        self.title_label.setText("Reprint stored Dashboard")
+        self.print_button.set_action(
+            "print", "Reprint Dashboard with original control number", icon_color=theme.SUCCESS
+        )
+        self.print_button.set_role("success")
+        self.scope_label.setText(
+            f"{expected} · immutable stored Dashboard · {self._filter_scope}"
+        )
+        self.setGeometry(self.parentWidget().rect())
+        self._position_children()
+        self.show()
+        self.raise_()
+        self.print_button.setEnabled(False)
+        self._populate_printers()
+        self.preview.setCurrentPage(1)
+        self._refresh_preview()
+        QTimer.singleShot(0, self._fit_preview_page)
+
     def close_overlay(self) -> None:
         self.preview_timer.stop()
         self._cancel_open_reservation(
@@ -628,9 +746,73 @@ class DashboardPrintOverlay(QWidget):
             pass
 
     def _recapture(self) -> None:
+        if self._reprint_mode:
+            self.status_label.setText(
+                "Historical reprints use the immutable stored Dashboard snapshot."
+            )
+            return
         self.print_button.setEnabled(False)
         self.status_label.setText("Refreshing the readable vertical Dashboard report…")
         try:
+            self._filter_scope = str(
+                getattr(
+                    self.dashboard,
+                    "print_scope_text",
+                    lambda: getattr(self.dashboard, "filter_summary_label").text(),
+                )()
+            )
+            current_records = getattr(
+                self.dashboard,
+                "current_filtered_records",
+                lambda: [],
+            )()
+            all_records = getattr(self.dashboard, "_records", current_records)
+            self._frozen_survey_count = len(current_records)
+            current_analysis = getattr(self.dashboard, "_analysis", {})
+            self._frozen_analysis = deepcopy(
+                current_analysis if isinstance(current_analysis, dict) else {}
+            )
+            current_filters = getattr(self.dashboard, "current_filters", lambda: {})()
+            self._frozen_filters = deepcopy(
+                current_filters if isinstance(current_filters, dict) else {}
+            )
+            settings = self.settings_store.load()
+            self._frozen_school = {
+                key: deepcopy(settings.get(key))
+                for key in (
+                    "school_name",
+                    "school_id",
+                    "school_region",
+                    "school_division",
+                    "school_district",
+                    "school_address",
+                    "school_head",
+                    "csm_focal_person",
+                )
+            }
+            self._response_scope_text = (
+                f"{len(current_records)} of {len(all_records)} responses"
+            )
+            if self.report_metadata is None:
+                raise RuntimeError("The print report control number is not available.")
+            old_metadata = self.report_metadata
+            refreshed_school_name = str(settings.get("school_name") or "School")
+            if (
+                old_metadata.school_name != refreshed_school_name
+                or old_metadata.filter_scope != self._filter_scope
+            ):
+                self.report_metadata = PrintReportMetadata(
+                    control_number=old_metadata.control_number,
+                    generated_at=old_metadata.generated_at,
+                    system_name=old_metadata.system_name,
+                    school_name=refreshed_school_name,
+                    filter_scope=self._filter_scope,
+                    school_logo_path=old_metadata.school_logo_path,
+                    deped_logo_path=old_metadata.deped_logo_path,
+                    app_logo_path=old_metadata.app_logo_path,
+                    mosslab_logo_path=old_metadata.mosslab_logo_path,
+                    mosslab_seal_path=old_metadata.mosslab_seal_path,
+                )
             self._source_snapshot = DashboardPrintRenderer.capture(
                 self.dashboard,
                 render_scale=2.0,
@@ -644,6 +826,10 @@ class DashboardPrintOverlay(QWidget):
             self.print_failed.emit(str(exc))
             return
         self.print_button.setEnabled(bool(self.printer_combo.currentData()))
+        self.scope_label.setText(
+            f"{self.report_metadata.control_number} · {self.report_metadata.timestamp_text} · "
+            f"{self._response_scope_text} · {self._filter_scope}"
+        )
         self._refresh_preview()
 
     def _populate_printers(self) -> None:
@@ -1051,7 +1237,6 @@ class DashboardPrintOverlay(QWidget):
     ) -> dict[str, Any]:
         if self.report_metadata is None:
             raise RuntimeError("The print report control number is not available.")
-        current_records = getattr(self.dashboard, "current_filtered_records", lambda: [])()
         margins = {
             key: round(spin.value(), 1)
             for key, spin in self.margin_spins.items()
@@ -1065,7 +1250,7 @@ class DashboardPrintOverlay(QWidget):
             "system_name": self.report_metadata.system_name,
             "barcode_value": self.report_metadata.control_number,
             "scope": self._filter_scope,
-            "survey_count": len(current_records),
+            "survey_count": self._frozen_survey_count,
             "printer_name": printer_name,
             "page_count": total_pages,
             "selected_pages": list(selected_pages),
@@ -1098,7 +1283,39 @@ class DashboardPrintOverlay(QWidget):
             self.status_label.setText("The print control number is not available.")
             return
         try:
-            if self.print_store is not None:
+            if self._reprint_mode:
+                if self.print_store is None:
+                    raise RuntimeError("Dashboard reprint auditing is unavailable.")
+                audit = self.print_store.get(self._audit_record_id)
+                eligible, reason = PrintHistoryStore.narrative_eligibility(audit)
+                if audit is None or not eligible:
+                    raise RuntimeError(reason)
+                current_reference = audit.get("dashboard_snapshot")
+                opened_reference = self._reprint_source_record.get(
+                    "dashboard_snapshot"
+                )
+                if not isinstance(current_reference, dict) or not isinstance(
+                    opened_reference, dict
+                ):
+                    raise RuntimeError("The stored Dashboard snapshot reference is missing.")
+                reference_keys = (
+                    "snapshot_id",
+                    "manifest_path",
+                    "digest_sha256",
+                )
+                if any(
+                    str(current_reference.get(key) or "").strip().casefold()
+                    != str(opened_reference.get(key) or "").strip().casefold()
+                    for key in reference_keys
+                ):
+                    raise RuntimeError(
+                        "The Dashboard snapshot reference changed after this preview was opened."
+                    )
+                self.snapshot_store.verify(current_reference)
+                current_control = str(
+                    audit.get("control_number") or ""
+                ).strip().upper()
+            elif self.print_store is not None:
                 audit = self.print_store.get(self._audit_record_id)
                 if audit is None:
                     raise RuntimeError("The print-audit reservation was not found.")
@@ -1156,7 +1373,33 @@ class DashboardPrintOverlay(QWidget):
                 printer_name=printer_name,
                 selected_pages=pages,
             )
-            if self.print_store is not None:
+            if self.print_store is not None and not self._reprint_mode:
+                image_png, image_meta, report, assets = encode_dashboard_snapshot(
+                    self._snapshot
+                )
+                report.update(
+                    {
+                        "scope": record.get("scope"),
+                        "survey_count": record.get("survey_count"),
+                        "response_scope": self._response_scope_text,
+                        "page_count": record.get("page_count"),
+                        "selected_pages": list(pages),
+                        "copies": record.get("copies"),
+                        "print_settings": deepcopy(record.get("settings") or {}),
+                    }
+                )
+                snapshot_reference = self.snapshot_store.save(
+                    self._audit_record_id,
+                    self.report_metadata.control_number,
+                    analysis=deepcopy(self._frozen_analysis),
+                    filters=deepcopy(self._frozen_filters),
+                    school=deepcopy(self._frozen_school),
+                    report=report,
+                    image_png=image_png,
+                    image_meta=image_meta,
+                    asset_bytes=assets,
+                )
+                record["dashboard_snapshot"] = snapshot_reference
                 self.print_store.mark_submitting(
                     self._audit_record_id,
                     {
@@ -1166,6 +1409,7 @@ class DashboardPrintOverlay(QWidget):
                         "selected_pages": pages,
                         "settings": record.get("settings"),
                         "scope": record.get("scope"),
+                        "dashboard_snapshot": snapshot_reference,
                     },
                 )
                 self._audit_status = "submitting"
@@ -1173,36 +1417,115 @@ class DashboardPrintOverlay(QWidget):
         except Exception as exc:
             message = f"The Dashboard print audit could not be prepared: {exc}"
             self.status_label.setText(message)
-            self._fail_audit(message)
+            if self._reprint_mode and self.print_store is not None:
+                try:
+                    self.print_store.record_reprint_attempt(
+                        self._audit_record_id,
+                        "failed",
+                        {"printer_name": printer_name, "selected_pages": pages},
+                        message=message,
+                        expected_snapshot_reference=self._reprint_source_record.get(
+                            "dashboard_snapshot"
+                        ),
+                    )
+                    self.audit_history_changed.emit()
+                except Exception:
+                    pass
+            else:
+                self._fail_audit(message)
             self.print_failed.emit(message)
             return
         self.status_label.setText(f"Sending {len(pages)} Dashboard page(s) to {printer_name}…")
         self.print_button.setEnabled(False)
         QApplication.processEvents()
         try:
-            printed = self._print_executor(
-                print_printer,
-                self._snapshot,
-                scale_mode=self._scale_mode(),
-                width_percent=self.width_percent_spin.value(),
-                selected_pages=pages,
+            printed = int(
+                self._print_executor(
+                    print_printer,
+                    self._snapshot,
+                    scale_mode=self._scale_mode(),
+                    width_percent=self.width_percent_spin.value(),
+                    selected_pages=pages,
+                )
             )
         except Exception as exc:
             message = f"Dashboard printing failed: {exc}"
             self.status_label.setText(message)
             self.print_button.setEnabled(True)
-            self._fail_audit(message)
+            if self._reprint_mode and self.print_store is not None:
+                try:
+                    self.print_store.record_reprint_attempt(
+                        self._audit_record_id,
+                        "failed",
+                        {"printer_name": printer_name, "selected_pages": pages},
+                        message=message,
+                        expected_snapshot_reference=self._reprint_source_record.get(
+                            "dashboard_snapshot"
+                        ),
+                    )
+                    self.audit_history_changed.emit()
+                except Exception:
+                    pass
+            else:
+                self._fail_audit(message)
             self.print_failed.emit(message)
             return
-        if printed <= 0:
-            message = "Dashboard printing failed: the printer did not accept any pages."
+        if printed != len(pages):
+            message = (
+                "Dashboard printing failed: the printer did not accept any pages."
+                if printed <= 0
+                else "Dashboard printing failed: the printer did not accept all "
+                f"{len(pages)} selected pages."
+            )
             self.status_label.setText(message)
             self.print_button.setEnabled(True)
-            self._fail_audit(message)
+            if self._reprint_mode and self.print_store is not None:
+                try:
+                    self.print_store.record_reprint_attempt(
+                        self._audit_record_id,
+                        "failed",
+                        {
+                            "printer_name": printer_name,
+                            "selected_pages": pages,
+                            "printed_pages": printed,
+                        },
+                        message=message,
+                        expected_snapshot_reference=self._reprint_source_record.get(
+                            "dashboard_snapshot"
+                        ),
+                    )
+                    self.audit_history_changed.emit()
+                except Exception:
+                    pass
+            else:
+                self._fail_audit(message)
             self.print_failed.emit(message)
             return
         try:
-            if self.print_store is not None:
+            if self._reprint_mode:
+                if self.print_store is None:
+                    raise RuntimeError("Dashboard reprint auditing is unavailable.")
+                attempt = self.print_store.record_reprint_attempt(
+                    self._audit_record_id,
+                    "submitted",
+                    {
+                        "printer_name": printer_name,
+                        "selected_pages": pages,
+                        "printed_pages": printed,
+                        "settings": record.get("settings"),
+                        "copies": record.get("copies"),
+                    },
+                    message="Historical Dashboard snapshot accepted by the printer.",
+                    expected_snapshot_reference=self._reprint_source_record.get(
+                        "dashboard_snapshot"
+                    ),
+                )
+                refreshed = self.print_store.get(self._audit_record_id)
+                record = dict(refreshed or self._reprint_source_record)
+                record["last_reprint_attempt"] = attempt
+                self._audit_status = "reprint_submitted"
+                self.audit_history_changed.emit()
+            elif self.print_store is not None:
                 record = self.print_store.mark_submitted(
                     self._audit_record_id,
                     record,
@@ -1212,11 +1535,13 @@ class DashboardPrintOverlay(QWidget):
         except Exception as exc:
             message = f"The Dashboard was printed, but its audit could not be finalized: {exc}"
             self.status_label.setText(message)
-            self._fail_audit(message)
+            if not self._reprint_mode:
+                self._fail_audit(message)
             self.print_failed.emit(message)
             return
+        verb = "reprinted from its stored snapshot and sent" if self._reprint_mode else "sent"
         message = (
-            f"{record['control_number']} sent to {printer_name} "
+            f"{record['control_number']} {verb} to {printer_name} "
             f"({printed} page{'s' if printed != 1 else ''})."
         )
         self.print_job_completed.emit(record, message)

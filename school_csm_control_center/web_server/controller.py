@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date
+from http.client import HTTPConnection
+import json
 from pathlib import Path
 import ipaddress
 import re
@@ -26,7 +28,7 @@ from school_csm_control_center.storage.survey_store import SurveyStore
 from school_csm_control_center.web_server.server import SurveyHTTPServer
 from school_csm_control_center.web_server.captive_portal import CaptivePortalService, remove_probe_hosts
 from school_csm_control_center.web_server.access_codes import (
-    build_access_urls,
+    build_access_capability,
     build_named_portal_url,
     build_direct_portal_url,
     build_wifi_qr_payload,
@@ -39,6 +41,25 @@ from school_csm_control_center.windows_admin import (
 )
 
 
+NETWORK_RESTART_KEYS = (
+    "server_ip",
+    "preferred_port",
+    "network_mode",
+    "access_mode",
+    "hotspot_internet_mode",
+    "school_identifier",
+)
+
+NETWORK_SETTING_LABELS = {
+    "server_ip": "respondent access IP",
+    "preferred_port": "survey server port",
+    "network_mode": "respondent network mode",
+    "access_mode": "access method",
+    "hotspot_internet_mode": "hotspot internet mode",
+    "school_identifier": "school address identifier",
+}
+
+
 class SurveyServerController(QObject):
     status_changed = Signal(str, str)
     survey_status_changed = Signal(str, str)
@@ -49,6 +70,7 @@ class SurveyServerController(QObject):
     urls_changed = Signal(str, str, str, str)
     settings_changed = Signal(object)
     access_status_changed = Signal(object)
+    address_status_changed = Signal(object)
     portal_status_changed = Signal(object)
 
     def __init__(self, store: SurveyStore, project_root: str | Path, parent: QObject | None = None) -> None:
@@ -64,6 +86,10 @@ class SurveyServerController(QObject):
         self._operation_thread: Thread | None = None
         self._server: SurveyHTTPServer | None = None
         self._thread: Thread | None = None
+        self._bound_ip = ""
+        self._active_network_settings: dict[str, Any] = {}
+        self._direct_health_verified = False
+        self._direct_health_detail = "The local survey server is stopped."
         self._response_count = 0
         self._scanner_response_count = 0
         self._port = 0
@@ -78,6 +104,7 @@ class SurveyServerController(QObject):
             "automatic_open": False,
             "http_running": False,
             "dns_running": False,
+            "dns_verified": False,
             "detail": "Captive Portal starts with the local survey server in Laptop Hotspot mode.",
         }
         if not self._settings.get("survey_date"):
@@ -106,14 +133,20 @@ class SurveyServerController(QObject):
         with self._state_lock:
             values = dict(self._settings)
         values["server_running"] = self.running
-        values["local_ip"] = self.selected_local_ip()
-        values["named_hostname"] = self.hostname()
+        values["local_ip"] = self.active_local_ip()
+        capability = self.access_capability()
+        values["configured_hostname"] = self.hostname()
+        values["named_hostname"] = (
+            self.hostname() if bool(capability.get("named_available")) else ""
+        )
         values["active_sessions"] = self._server.active_session_count() if self._server is not None else 0
         values["administrator_active"] = is_administrator()
         values["firewall_status"] = self._firewall_status
         values["firewall_detail"] = self._firewall_detail
         values["hotspot"] = self.hotspot_status()
         values["captive_portal"] = dict(self._portal_status)
+        values["access_capability"] = capability
+        values["network_restart"] = self.network_restart_state()
         values["scanner_operator_count"] = len(self.scanner_operator_store.list_accounts())
         values["scanner_queue"] = self._server.scanner_queue_status() if self._server is not None else {
             "active_jobs": 0,
@@ -212,6 +245,13 @@ class SurveyServerController(QObject):
                 return hotspot
         return addresses[0] if addresses else "127.0.0.1"
 
+    def active_local_ip(self) -> str:
+        """Return the IPv4 address the running server actually verified."""
+
+        if self.running and self._bound_ip:
+            return self._bound_ip
+        return self.selected_local_ip()
+
     def set_server_ip(self, address: str) -> str:
         value = str(address or "").strip()
         candidates = [candidate for _label, candidate in local_ipv4_candidates()]
@@ -222,8 +262,33 @@ class SurveyServerController(QObject):
         return self.selected_local_ip()
 
     def hostname(self) -> str:
-        identifier = str(self._settings.get("school_identifier") or "school-csm")
+        identifier = str(self._effective_network_value("school_identifier") or "school-csm")
         return f"csm.{identifier}.home.arpa"
+
+    def network_restart_state(self) -> dict[str, Any]:
+        """Describe saved network changes that are not active yet."""
+
+        if not self.running or not self._active_network_settings:
+            return {"required": False, "settings": [], "detail": ""}
+        changed = [
+            key
+            for key in NETWORK_RESTART_KEYS
+            if self._settings.get(key) != self._active_network_settings.get(key)
+        ]
+        labels = [NETWORK_SETTING_LABELS.get(key, key) for key in changed]
+        detail = ""
+        if labels:
+            detail = (
+                "Saved network changes are pending for "
+                + ", ".join(labels)
+                + ". Stop and start the local survey server to apply them."
+            )
+        return {"required": bool(changed), "settings": changed, "detail": detail}
+
+    def _effective_network_value(self, key: str) -> Any:
+        if self.running and self._active_network_settings:
+            return self._active_network_settings.get(key, self._settings.get(key))
+        return self._settings.get(key)
 
 
     def set_network_mode(self, mode: str) -> None:
@@ -231,10 +296,9 @@ class SurveyServerController(QObject):
         if value not in {"hotspot", "existing_wifi"}:
             raise ValueError("Network mode must be Laptop Hotspot or Existing Wi-Fi.")
         self._update(network_mode=value)
-        if value == "hotspot":
-            hotspot = self.preferred_hotspot_ip()
-            if hotspot:
-                self._update(server_ip=hotspot)
+        # Never replace an operator-selected adapter merely because Hotspot
+        # mode was chosen. The UI can suggest the detected hotspot address,
+        # but only an explicit selection may change ``server_ip``.
         self._emit_urls()
 
     def set_hotspot_internet_mode(self, mode: str) -> None:
@@ -244,12 +308,14 @@ class SurveyServerController(QObject):
         if value == "share_internet" and str(self._settings.get("access_mode") or "captive_portal") == "captive_portal":
             raise ValueError("Captive Portal mode currently requires Survey Network Only. Select Two-Step QR before sharing laptop internet.")
         self._update(hotspot_internet_mode=value)
+        self._emit_urls()
 
     def set_access_mode(self, mode: str) -> None:
         value = str(mode or "captive_portal").strip().casefold()
         if value not in {"captive_portal", "two_step"}:
             raise ValueError("Access mode must be Captive Portal or Two-Step QR.")
         self._update(access_mode=value, captive_portal_enabled=(value == "captive_portal"))
+        self._emit_urls()
 
     def preferred_hotspot_ip(self) -> str:
         for label, address in local_ipv4_candidates():
@@ -424,13 +490,13 @@ class SurveyServerController(QObject):
             if candidate not in ports:
                 ports.append(candidate)
         for port in ports:
+            bind_address = self.selected_local_ip()
             try:
-                bind_address = self.selected_local_ip()
                 server = SurveyHTTPServer(
                     (bind_address, port),
                     store=self.store,
                     static_root=self.static_root,
-                    settings_provider=self.settings,
+                    settings_provider=self._server_settings,
                     project_root=self.project_root,
                     response_callback=self._handle_response,
                     session_callback=self._handle_session_count,
@@ -441,20 +507,48 @@ class SurveyServerController(QObject):
                 continue
             self._server = server
             self._port = int(server.server_address[1])
+            self._bound_ip = bind_address
+            self._active_network_settings = {
+                key: self._settings.get(key) for key in NETWORK_RESTART_KEYS
+            }
             self._thread = Thread(target=server.serve_forever, name="SchoolCSMLocalSurveyServer", daemon=True)
             self._thread.start()
-            self._emit_urls()
+            healthy, health_detail = verify_http_health(bind_address, self._port)
+            self._direct_health_verified = healthy
+            self._direct_health_detail = health_detail
+            if not healthy:
+                last_error = OSError(health_detail)
+                candidate_thread = self._thread
+                self._server = None
+                self._thread = None
+                self._port = 0
+                self._bound_ip = ""
+                self._active_network_settings = {}
+                try:
+                    server.shutdown()
+                    server.server_close()
+                finally:
+                    if candidate_thread is not None and candidate_thread.is_alive():
+                        candidate_thread.join(timeout=2.0)
+                continue
             portal = self._start_captive_portal_if_enabled()
+            self._emit_urls()
             if firewall.get("ok"):
-                message = f"Local survey server is running on port {self._port}; Windows Firewall access was configured."
+                message = (
+                    f"Local survey server is healthy at {bind_address}:{self._port}; "
+                    "Windows Firewall access was configured."
+                )
             else:
-                message = f"Local survey server is running on port {self._port}, but firewall setup reported: {firewall.get('firewall')}."
+                message = (
+                    f"Local survey server is healthy at {bind_address}:{self._port}, "
+                    f"but firewall setup reported: {firewall.get('firewall')}."
+                )
             if str(self._settings.get("network_mode") or "hotspot") == "hotspot" and not self.preferred_hotspot_ip():
                 message += " Turn on Laptop Hotspot before giving the Wi-Fi QR code to respondents."
-            if portal.get("status") == "Active":
-                message += " Captive Portal automatic opening is active."
+            if portal.get("status") == "Ready":
+                message += " Captive Portal components passed local checks; phone automatic opening remains device-dependent."
             elif str(self._settings.get("access_mode") or "captive_portal") == "captive_portal":
-                message += " Captive Portal is not fully active; use the fallback Survey Form QR."
+                message += " Captive Portal is not fully verified; use the direct-IP Survey Form QR."
             self.status_changed.emit("online", message)
             return self._port
         message = f"Unable to start the local survey server: {last_error}" if last_error else "Unable to start the local survey server."
@@ -471,6 +565,10 @@ class SurveyServerController(QObject):
         self._server = None
         self._thread = None
         self._port = 0
+        self._bound_ip = ""
+        self._active_network_settings = {}
+        self._direct_health_verified = False
+        self._direct_health_detail = "The local survey server is stopped."
         try:
             server.shutdown()
             server.server_close()
@@ -478,51 +576,64 @@ class SurveyServerController(QObject):
             if thread is not None and thread.is_alive():
                 thread.join(timeout=2.0)
         self.active_sessions_changed.emit(0)
-        self.urls_changed.emit("", "", "", "")
+        self._emit_urls()
         self.status_changed.emit("offline", "Local survey server is stopped.")
 
     def captive_portal_target_url(self) -> str:
-        """Return the configured local address used by the phone portal.
-
-        The configured school hostname is preferred when the application owns
-        the hotspot DNS responder. When Windows reserves DNS port 53, the portal
-        falls back to the hotspot IPv4 address so the network-login page does not
-        fail on an unresolved ``csm.<school>.home.arpa`` hostname.
-        """
+        """Return a portal target that cannot depend on unverified DNS."""
 
         if not self._port:
             return ""
-        # The configured local hostname is used only when the app-owned DNS
-        # responder is actually running. Windows hosts-file mappings do not
-        # reliably propagate through Mobile Hotspot DNS to connected phones.
-        # Falling back to the hotspot IPv4 address prevents the portal from
-        # opening and then immediately failing on an unresolved school name.
-        if bool(self._portal_status.get("dns_running")):
+        named_resolution_available = bool(
+            self._captive_portal is not None
+            and self._captive_portal.named_resolution_available
+        )
+        if named_resolution_available:
             return build_named_portal_url(hostname=self.hostname(), port=self._port)
-        return build_direct_portal_url(local_ip=self.selected_local_ip(), port=self._port)
+        return build_direct_portal_url(local_ip=self.active_local_ip(), port=self._port)
 
     def _start_captive_portal_if_enabled(self) -> dict[str, Any]:
         self._stop_captive_portal(emit=False)
-        network_mode = str(self._settings.get("network_mode") or "hotspot").casefold()
-        access_mode = str(self._settings.get("access_mode") or "captive_portal").casefold()
+        network_mode = str(self._effective_network_value("network_mode") or "hotspot").casefold()
+        access_mode = str(self._effective_network_value("access_mode") or "captive_portal").casefold()
         if network_mode != "hotspot" or access_mode != "captive_portal":
             self._portal_status = {
                 "status": "Disabled",
                 "automatic_open": False,
                 "http_running": False,
                 "dns_running": False,
+                "dns_verified": False,
                 "detail": "Captive Portal is disabled for the selected access mode.",
             }
             self.portal_status_changed.emit(dict(self._portal_status))
             return dict(self._portal_status)
-        hotspot_ip = self.preferred_hotspot_ip() or self.selected_local_ip()
+        hotspot_ip = self.active_local_ip()
         if not hotspot_ip or hotspot_ip == "127.0.0.1":
             self._portal_status = {
                 "status": "Hotspot required",
                 "automatic_open": False,
                 "http_running": False,
                 "dns_running": False,
+                "dns_verified": False,
                 "detail": "Turn on Windows Mobile Hotspot and refresh the respondent access IP.",
+            }
+            self.portal_status_changed.emit(dict(self._portal_status))
+            return dict(self._portal_status)
+        selected_is_hotspot = any(
+            address == hotspot_ip and _is_hotspot_candidate(address, label)
+            for label, address in local_ipv4_candidates()
+        )
+        if not selected_is_hotspot:
+            self._portal_status = {
+                "status": "Hotspot IP mismatch",
+                "automatic_open": False,
+                "http_running": False,
+                "dns_running": False,
+                "dns_verified": False,
+                "detail": (
+                    f"The selected respondent IP {hotspot_ip} is not a detected Windows Mobile Hotspot adapter. "
+                    "The direct-IP Survey Form address remains available on its selected network; choose the hotspot adapter and restart to use Captive Portal."
+                ),
             }
             self.portal_status_changed.emit(dict(self._portal_status))
             return dict(self._portal_status)
@@ -533,14 +644,17 @@ class SurveyServerController(QObject):
         )
         status = self._captive_portal.start(http_port=80, dns_port=53)
         self._portal_status = {
-            "status": "Active" if status.automatic_open_available else ("Partial" if status.http_running or status.dns_running or status.probe_hosts_configured else "Unavailable"),
+            "status": "Ready" if status.automatic_open_available else ("Partial" if status.http_running or status.dns_running or status.probe_hosts_configured else "Unavailable"),
             "automatic_open": status.automatic_open_available,
             "http_running": status.http_running,
             "dns_running": status.dns_running,
+            "dns_verified": status.dns_verified,
+            "dns_verification_detail": status.dns_verification_detail,
             "probe_hosts_configured": status.probe_hosts_configured,
             "target_url": status.target_url,
             "detail": status.detail,
         }
+        self._portal_status["target_url"] = self.captive_portal_target_url()
         self.portal_status_changed.emit(dict(self._portal_status))
         return dict(self._portal_status)
 
@@ -553,20 +667,68 @@ class SurveyServerController(QObject):
             "automatic_open": False,
             "http_running": False,
             "dns_running": False,
+            "dns_verified": False,
             "detail": "Captive Portal is stopped.",
         }
         if emit:
             self.portal_status_changed.emit(dict(self._portal_status))
 
     def urls(self) -> tuple[str, str, str, str]:
-        if not self._port:
-            return "", "", "", ""
-        return build_access_urls(
+        capability = self.access_capability()
+        return (
+            str(capability.get("direct_root") or ""),
+            str(capability.get("named_root") or ""),
+            str(capability.get("direct_access_url") or ""),
+            str(capability.get("named_access_url") or ""),
+        )
+
+    def access_capability(self) -> dict[str, Any]:
+        """Return verified respondent-address capabilities and reasons."""
+
+        network_mode = str(self._effective_network_value("network_mode") or "hotspot")
+        access_mode = str(self._effective_network_value("access_mode") or "captive_portal")
+        if self._captive_portal is not None:
+            dns_running = self._captive_portal.dns_listener_running
+            dns_verified = self._captive_portal.named_resolution_available
+        else:
+            dns_running = bool(self._portal_status.get("dns_running"))
+            dns_verified = bool(self._portal_status.get("dns_verified"))
+        if not self.running:
+            named_reason = "Start the local survey server before using a configured school hostname."
+        elif network_mode != "hotspot":
+            named_reason = (
+                "The configured school hostname is hidden on Existing Wi-Fi because this app does not control that network's DNS."
+            )
+        elif access_mode != "captive_portal":
+            named_reason = (
+                "The configured school hostname is hidden in Two-Step QR mode because no app-owned resolver is active."
+            )
+        elif not dns_running:
+            named_reason = (
+                "The configured school hostname is hidden because the app-owned DNS listener could not start."
+            )
+        elif not dns_verified:
+            named_reason = (
+                "The configured school hostname is hidden because the local DNS self-test did not verify it."
+            )
+        else:
+            named_reason = str(self._portal_status.get("dns_verification_detail") or "")
+
+        state = build_access_capability(
             hostname=self.hostname(),
-            local_ip=self.selected_local_ip(),
+            local_ip=self.active_local_ip(),
             port=self._port,
             access_key=str(self._settings.get("public_access_key") or ""),
-        )
+            server_running=self.running,
+            direct_health_verified=self._direct_health_verified,
+            named_resolver_verified=dns_verified,
+            named_reason=named_reason,
+            restart_required=bool(self.network_restart_state().get("required")),
+        ).as_dict()
+        state["direct_health_detail"] = self._direct_health_detail
+        state["network_mode"] = network_mode
+        state["access_mode"] = access_mode
+        return state
 
     def wifi_qr_payload(self) -> str:
         settings = self.settings()
@@ -621,12 +783,72 @@ class SurveyServerController(QObject):
             snapshot = self._persist()
         self.settings_changed.emit(snapshot)
 
+    def _server_settings(self) -> dict[str, Any]:
+        """Return settings with the running server's active network snapshot."""
+
+        values = self.settings()
+        if self.running and self._active_network_settings:
+            for key, value in self._active_network_settings.items():
+                values[key] = value
+            values["captive_portal_enabled"] = (
+                str(values.get("access_mode") or "") == "captive_portal"
+            )
+            values["local_ip"] = self.active_local_ip()
+            capability = self.access_capability()
+            values["named_hostname"] = (
+                self.hostname() if bool(capability.get("named_available")) else ""
+            )
+            values["access_capability"] = capability
+        return values
+
     def _persist(self) -> dict[str, Any]:
         self._settings = self.settings_store.save(self._settings)
         return dict(self._settings)
 
     def _emit_urls(self) -> None:
-        self.urls_changed.emit(*self.urls())
+        capability = self.access_capability()
+        self.urls_changed.emit(
+            str(capability.get("direct_root") or ""),
+            str(capability.get("named_root") or ""),
+            str(capability.get("direct_access_url") or ""),
+            str(capability.get("named_access_url") or ""),
+        )
+        self.address_status_changed.emit(capability)
+
+
+def verify_http_health(
+    local_ip: str,
+    port: int,
+    *,
+    timeout: float = 1.0,
+    attempts: int = 3,
+) -> tuple[bool, str]:
+    """Confirm that the selected IPv4 address reaches this app's health route."""
+
+    try:
+        address = str(ipaddress.IPv4Address(str(local_ip).strip()))
+    except ValueError as exc:
+        return False, f"The selected respondent IPv4 address is invalid: {exc}"
+    last_error = "No health response was received."
+    for attempt in range(max(1, int(attempts))):
+        connection = HTTPConnection(address, int(port), timeout=max(0.1, float(timeout)))
+        try:
+            connection.request("GET", "/healthz", headers={"Connection": "close"})
+            response = connection.getresponse()
+            body = response.read(4096)
+            payload = json.loads(body.decode("utf-8"))
+            if response.status == 200 and payload.get("ok") is True and payload.get("status") == "healthy":
+                return True, f"HTTP health check passed at http://{address}:{int(port)}/healthz."
+            last_error = f"Health route returned HTTP {response.status} or an unexpected response."
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            last_error = str(exc)
+        finally:
+            connection.close()
+        if attempt + 1 < max(1, int(attempts)):
+            time.sleep(0.05)
+    return False, (
+        f"The local server could not verify the selected respondent address {address}:{int(port)}: {last_error}"
+    )
 
 
 def _is_hotspot_candidate(address: str, label: str) -> bool:

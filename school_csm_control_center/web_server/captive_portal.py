@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import secrets
 import subprocess
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -36,6 +37,8 @@ class CaptivePortalStatus:
     probe_hosts_configured: bool
     target_url: str
     detail: str
+    dns_verified: bool = False
+    dns_verification_detail: str = ""
 
     @property
     def automatic_open_available(self) -> bool:
@@ -43,7 +46,7 @@ class CaptivePortalStatus:
         # it does not prove that phones connected to Windows Mobile Hotspot
         # receive the same DNS answer. Automatic opening is reported only when
         # the redirect listener and the app-owned DNS responder are both live.
-        return self.http_running and self.dns_running
+        return self.http_running and self.dns_running and self.dns_verified
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -154,6 +157,69 @@ def build_dns_response(packet: bytes, answer_ip: str) -> bytes:
     return header + question + answer
 
 
+def build_dns_query(hostname: str, transaction_id: bytes | None = None) -> bytes:
+    """Return a minimal A-record query used by the resolver self-test."""
+
+    normalized = str(hostname or "").strip().casefold().rstrip(".")
+    labels = normalized.split(".") if normalized else []
+    if not labels or any(not label or len(label.encode("ascii")) > 63 for label in labels):
+        raise ValueError("A valid hostname is required for the DNS self-test.")
+    transaction = transaction_id or secrets.token_bytes(2)
+    if len(transaction) != 2:
+        raise ValueError("DNS transaction IDs must contain exactly two bytes.")
+    encoded_name = b"".join(
+        bytes([len(label.encode("ascii"))]) + label.encode("ascii") for label in labels
+    ) + b"\x00"
+    return transaction + struct.pack("!HHHHH", 0x0100, 1, 0, 0, 0) + encoded_name + struct.pack("!HH", 1, 1)
+
+
+def verify_dns_resolution(
+    *,
+    hostname: str,
+    expected_ip: str,
+    resolver_ip: str,
+    resolver_port: int = 53,
+    timeout: float = 0.75,
+) -> tuple[bool, str]:
+    """Verify that the app-owned resolver answers its configured hostname.
+
+    This is intentionally a local component check. It does not claim that a
+    particular phone will accept Windows Mobile Hotspot's DNS configuration.
+    """
+
+    try:
+        expected = str(ipaddress.IPv4Address(expected_ip))
+        resolver = str(ipaddress.IPv4Address(resolver_ip))
+        transaction = secrets.token_bytes(2)
+        query = build_dns_query(hostname, transaction)
+    except (ValueError, UnicodeEncodeError) as exc:
+        return False, f"Local DNS self-test could not be prepared: {exc}"
+
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client.settimeout(max(0.1, float(timeout)))
+    try:
+        client.sendto(query, (resolver, int(resolver_port)))
+        response, _peer = client.recvfrom(2048)
+    except OSError as exc:
+        return False, f"Local DNS self-test did not receive an answer: {exc}"
+    finally:
+        client.close()
+
+    if len(response) < 12 or response[:2] != transaction:
+        return False, "Local DNS self-test received an invalid transaction response."
+    try:
+        answer_count = struct.unpack("!H", response[6:8])[0]
+    except struct.error:
+        return False, "Local DNS self-test received a malformed response."
+    packed_expected = socket.inet_aton(expected)
+    if answer_count < 1 or not response.endswith(packed_expected):
+        return False, f"Local DNS self-test did not map the school hostname to {expected}."
+    return True, (
+        f"The app-owned DNS responder mapped {str(hostname).rstrip('.')} to {expected} in its local self-test. "
+        "Connected-device DNS behavior remains dependent on Windows Mobile Hotspot and the phone."
+    )
+
+
 CAPTIVE_PROBE_HOSTS = (
     # Android / Google
     "connectivitycheck.gstatic.com",
@@ -196,11 +262,9 @@ def configure_probe_hosts(
 ) -> tuple[bool, str]:
     """Map captive-portal probes and configured local names to the hotspot IP.
 
-    The configured ``csm.<school>.home.arpa`` hostname is included so that,
-    when Windows Internet Connection Sharing uses the host resolver as its DNS
-    source, the phone can follow the captive-portal redirect without falling
-    back to the raw IPv4 address. The behavior remains adapter-dependent, so a
-    direct-IP fallback is retained.
+    These entries affect the laptop resolver only. Windows Internet Connection
+    Sharing does not reliably propagate them to phones, so their presence is
+    never used as proof that a configured ``.home.arpa`` name is available.
     """
 
     path = Path(hosts_path or default_windows_hosts_path())
@@ -219,7 +283,7 @@ def configure_probe_hosts(
         text = cleaned.rstrip() + "\n\n" + "\n".join(block) + "\n"
         path.write_text(text, encoding="utf-8")
         _flush_windows_dns()
-        return True, f"Captive-portal and configured local-name mappings were added to {path}."
+        return True, f"Laptop-only captive-portal probe mappings were added to {path}."
     except OSError as exc:
         return False, f"Probe-host mapping failed: {exc}"
 
@@ -297,6 +361,16 @@ class CaptivePortalService:
         self._dns_thread: Thread | None = None
         self._errors: list[str] = []
         self._probe_hosts_configured = False
+        self._dns_verified = False
+        self._dns_verification_detail = "Local DNS has not been tested."
+
+    @property
+    def dns_listener_running(self) -> bool:
+        return bool(self._dns_thread and self._dns_thread.is_alive())
+
+    @property
+    def named_resolution_available(self) -> bool:
+        return bool(self.dns_listener_running and self._dns_verified)
 
     def start(self, *, http_port: int = 80, dns_port: int = 53) -> CaptivePortalStatus:
         self.stop()
@@ -331,6 +405,21 @@ class CaptivePortalService:
             self._dns_thread = None
             self._errors.append(f"DNS port {dns_port} unavailable: {exc}")
 
+        if self._dns_thread and self._dns_thread.is_alive() and self._dns_server is not None:
+            test_hostname = self.local_hostnames[0] if self.local_hostnames else "school-csm-health.local"
+            actual_dns_port = int(self._dns_server.server_address[1])
+            self._dns_verified, self._dns_verification_detail = verify_dns_resolution(
+                hostname=test_hostname,
+                expected_ip=self.hotspot_ip,
+                resolver_ip=self.hotspot_ip,
+                resolver_port=actual_dns_port,
+            )
+            if not self._dns_verified:
+                self._errors.append(self._dns_verification_detail)
+        else:
+            self._dns_verified = False
+            self._dns_verification_detail = "The app-owned DNS listener is not running."
+
         if not (self._dns_thread and self._dns_thread.is_alive()) and (os.name == "nt" or self.hosts_path is not None):
             configured, detail = configure_probe_hosts(self.hotspot_ip, self.hosts_path, self.local_hostnames)
             self._probe_hosts_configured = configured
@@ -358,20 +447,31 @@ class CaptivePortalService:
         if self._probe_hosts_configured:
             remove_probe_hosts(self.hosts_path)
         self._probe_hosts_configured = False
+        self._dns_verified = False
+        self._dns_verification_detail = "Local DNS is stopped."
 
     def status(self) -> CaptivePortalStatus:
         http_running = bool(self._http_thread and self._http_thread.is_alive())
-        dns_running = bool(self._dns_thread and self._dns_thread.is_alive())
+        dns_running = self.dns_listener_running
         probe_hosts = bool(self._probe_hosts_configured)
-        if http_running and dns_running:
-            detail = "Captive Portal HTTP redirect and app-owned DNS interception are active (experimental)."
+        dns_verified = bool(dns_running and self._dns_verified)
+        if http_running and dns_verified:
+            detail = (
+                "The captive-portal redirect and app-owned DNS responder passed their local checks. "
+                "Automatic network-login opening remains device-dependent; the direct-IP QR is the primary reliable address."
+            )
+        elif http_running and dns_running:
+            detail = (
+                "The captive-portal listeners started, but the local DNS self-test did not verify the configured school hostname. "
+                "The named address is hidden; use the direct-IP Survey Form QR."
+            )
         elif http_running and probe_hosts:
             detail = (
                 "Captive Portal HTTP redirect is running, but Windows probe-host mappings are only a best-effort fallback. "
-                "Automatic opening on phones is not guaranteed; use the configured-address QR when no network-login notification appears."
+                "Automatic opening on phones is not guaranteed; use the direct-IP Survey Form QR when no network-login notification appears."
             )
         elif http_running or dns_running or probe_hosts:
-            detail = "Captive Portal started partially; use the configured-address or direct-IP Survey Form QR."
+            detail = "Captive Portal started partially; use the direct-IP Survey Form QR."
         else:
             detail = "Captive Portal is unavailable; use the fallback Survey Form QR."
         if self._errors:
@@ -382,4 +482,6 @@ class CaptivePortalService:
             probe_hosts_configured=probe_hosts,
             target_url=str(self.target_provider() or ""),
             detail=detail,
+            dns_verified=dns_verified,
+            dns_verification_detail=self._dns_verification_detail,
         )

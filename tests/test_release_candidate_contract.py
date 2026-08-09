@@ -6,9 +6,9 @@ import unittest
 import school_csm_control_center
 
 
-class DevelopmentBuildContractTests(unittest.TestCase):
-    def test_package_version_is_v030_development_build_eleven(self) -> None:
-        self.assertEqual(school_csm_control_center.__version__, "0.3.0-dev11")
+class ReleaseContractTests(unittest.TestCase):
+    def test_package_version_is_v040(self) -> None:
+        self.assertEqual(school_csm_control_center.__version__, "0.4.0")
 
     def test_manual_corner_editor_starts_without_marker_center_prefill(self) -> None:
         root = Path(__file__).parents[1]

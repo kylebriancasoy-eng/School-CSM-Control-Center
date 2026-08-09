@@ -105,6 +105,20 @@ class LocalSurveyServerTests(unittest.TestCase):
         self.assertEqual(len(config["service_catalog"]), 18)
         self.assertNotIn("region_04", {item["code"] for item in config["regions"]})
 
+    def test_health_route_reports_real_server_liveness_without_a_session(self) -> None:
+        with urlopen(f"{self.base}/healthz", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+        self.assertEqual(
+            payload,
+            {
+                "ok": True,
+                "status": "healthy",
+                "service": "school-csm-control-center",
+            },
+        )
+
 
     def test_captive_portal_route_creates_session_without_public_key(self) -> None:
         opener = build_opener(HTTPCookieProcessor(CookieJar()))

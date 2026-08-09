@@ -2,10 +2,41 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
 from typing import Final
 
 
 SUPPORTED_WIFI_SECURITY: Final[set[str]] = {"WPA", "WEP", "NOPASS"}
+
+
+@dataclass(frozen=True)
+class RespondentAccessCapability:
+    """An honest snapshot of the addresses that may be given to respondents.
+
+    A configured hostname is not itself a capability.  It becomes usable only
+    after a resolver controlled by the application has answered a local DNS
+    self-test.  The direct IPv4 URL is therefore the primary address and the
+    named URL is an optional convenience.
+    """
+
+    server_running: bool
+    direct_available: bool
+    direct_verified: bool
+    direct_root: str
+    direct_access_url: str
+    direct_reason: str
+    named_available: bool
+    named_verified: bool
+    named_hostname: str
+    named_root: str
+    named_access_url: str
+    named_reason: str
+    primary_kind: str
+    primary_url: str
+    restart_required: bool = False
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def wifi_escape(value: str) -> str:
@@ -77,16 +108,90 @@ def build_access_urls(
     local_ip: str,
     port: int,
     access_key: str,
+    named_available: bool = True,
 ) -> tuple[str, str, str, str]:
-    """Return direct root, named root, direct access, and named access URLs."""
+    """Return direct root, named root, direct access, and named access URLs.
+
+    ``named_available`` defaults to ``True`` for compatibility with callers
+    that use this pure formatter. Runtime code must pass the result of its DNS
+    capability check. When that check is false, both named values are empty so
+    an unresolved ``.home.arpa`` address cannot leak into the UI or QR output.
+    """
 
     suffix = port_suffix(port)
-    direct_root = f"http://{str(local_ip).strip()}{suffix}"
-    named_root = f"http://{str(hostname).strip()}{suffix}"
+    normalized_ip = str(local_ip).strip()
+    normalized_hostname = str(hostname).strip()
+    direct_root = f"http://{normalized_ip}{suffix}" if normalized_ip else ""
+    named_root = (
+        f"http://{normalized_hostname}{suffix}"
+        if bool(named_available) and normalized_hostname
+        else ""
+    )
     key = str(access_key or "").strip()
-    direct_access = f"{direct_root}/access/{key}"
-    named_access = f"{named_root}/access/{key}"
+    direct_access = f"{direct_root}/access/{key}" if direct_root else ""
+    named_access = f"{named_root}/access/{key}" if named_root else ""
     return direct_root, named_root, direct_access, named_access
+
+
+def build_access_capability(
+    *,
+    hostname: str,
+    local_ip: str,
+    port: int,
+    access_key: str,
+    server_running: bool,
+    direct_health_verified: bool,
+    named_resolver_verified: bool,
+    named_reason: str = "",
+    restart_required: bool = False,
+) -> RespondentAccessCapability:
+    """Build respondent-address state without claiming unverified access."""
+
+    running = bool(server_running and int(port) > 0)
+    direct_verified = bool(running and direct_health_verified)
+    named_verified = bool(direct_verified and named_resolver_verified)
+    direct_root, named_root, direct_access, named_access = build_access_urls(
+        hostname=hostname,
+        local_ip=local_ip,
+        port=port,
+        access_key=access_key,
+        named_available=named_verified,
+    )
+    if not running:
+        direct_reason = "Start the local survey server to create a respondent address."
+    elif not direct_verified:
+        direct_reason = "The server health check has not confirmed this laptop IPv4 address."
+    else:
+        direct_reason = "The server answered its HTTP health check on this laptop IPv4 address."
+
+    if named_verified:
+        resolved_named_reason = (
+            named_reason
+            or "The app-owned local DNS responder passed its hostname self-test. Device support can still vary."
+        )
+    else:
+        resolved_named_reason = named_reason or (
+            "The configured school hostname is hidden because no verified local DNS resolver is available."
+        )
+
+    primary_url = direct_access if direct_verified else ""
+    return RespondentAccessCapability(
+        server_running=running,
+        direct_available=direct_verified,
+        direct_verified=direct_verified,
+        direct_root=direct_root if direct_verified else "",
+        direct_access_url=direct_access if direct_verified else "",
+        direct_reason=direct_reason,
+        named_available=named_verified,
+        named_verified=named_verified,
+        named_hostname=str(hostname or "").strip(),
+        named_root=named_root,
+        named_access_url=named_access,
+        named_reason=resolved_named_reason,
+        primary_kind="direct_ipv4" if direct_verified else "unavailable",
+        primary_url=primary_url,
+        restart_required=bool(restart_required),
+    )
 
 
 def build_named_portal_url(*, hostname: str, port: int) -> str:

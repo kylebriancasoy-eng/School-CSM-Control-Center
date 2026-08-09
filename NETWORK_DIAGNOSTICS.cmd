@@ -15,9 +15,13 @@ echo.
 echo Expected default arrangement:
 echo   Survey Form server: TCP 8080
 echo   Captive Portal redirect: TCP 80
-echo   Captive Portal DNS: UDP 53, or Windows probe-host fallback
+echo   Optional app-owned DNS: UDP 53
 echo.
 echo The phone must connect to the laptop-created Mobile Hotspot.
-echo Use the hotspot adapter IPv4 address shown in the Control Center.
+echo Use the direct IPv4 address shown as verified in the Control Center.
+echo A configured .home.arpa address must not be used unless the Control Center
+echo says its app-owned DNS responder passed the local self-test. Windows hosts
+echo entries affect this laptop only and do not prove that phones can resolve it.
+echo The server health route is: http://RESPONDENT-IP:PORT/healthz
 echo.
 pause

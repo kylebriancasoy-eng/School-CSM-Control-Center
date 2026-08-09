@@ -307,6 +307,16 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/healthz":
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "status": "healthy",
+                    "service": "school-csm-control-center",
+                },
+            )
+            return
         if path.startswith("/access/"):
             self._begin_access(path.removeprefix("/access/"))
             return

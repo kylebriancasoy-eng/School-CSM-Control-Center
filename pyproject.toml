@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "school-csm-control-center"
+dynamic = ["version"]
+description = "Offline-first School Client Satisfaction Measurement control center"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+authors = [{ name = "MoSSLab" }]
+dependencies = [
+  "PySide6>=6.6",
+  "qrcode[pil]>=7.4",
+  "Pillow>=10",
+  "numpy>=1.26",
+  "opencv-contrib-python-headless>=4.10",
+  "openai>=2.46,<3",
+]
+
+[project.optional-dependencies]
+build = ["PyInstaller>=6.11,<7"]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+school-csm-control-center = "run_school_csm_control_center:main"
+
+[tool.setuptools]
+py-modules = ["run_school_csm_control_center"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "school_csm_control_center.version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["school_csm_control_center*"]
+
+[tool.setuptools.package-data]
+school_csm_control_center = [
+  "mosslab_splash/*.json",
+  "mosslab_splash/assets/*.png",
+  "mosslab_ui/*.json",
+  "mosslab_ui/assets/*.png",
+  "web_server/static/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

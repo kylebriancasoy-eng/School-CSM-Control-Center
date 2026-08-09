@@ -1,0 +1,9 @@
+namespace MoSSLab.SchoolCSM.Installer
+{
+    internal static class BuildConfig
+    {
+        internal const string Repository = "@@REPOSITORY@@";
+        internal const string InstallerVersion = "@@INSTALLER_VERSION@@";
+        internal const string ManifestUrl = "https://github.com/@@REPOSITORY@@/releases/latest/download/release.json";
+    }
+}

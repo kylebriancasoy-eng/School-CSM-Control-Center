@@ -318,6 +318,41 @@ class PrintHistoryLifecycleIntegrationTests(unittest.TestCase):
             "The preview should show the vertical multi-page report as one all-pages view.",
         )
 
+    def test_snapshot_reprint_retains_control_and_does_not_consume_sequence(self) -> None:
+        first_executor = _Executor()
+        self.overlay._print_executor = first_executor
+        self._open_preview()
+        original_control = self.overlay.report_metadata.control_number
+        QTest.mouseClick(self.overlay.print_button, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+
+        original = self.window.print_store.list()[0]
+        self.assertEqual(original["status"], "submitted")
+        self.assertIn("dashboard_snapshot", original)
+        self.assertTrue(self.window.snapshot_store.verify(original["dashboard_snapshot"]))
+
+        reprint_executor = _Executor()
+        self.overlay._print_executor = reprint_executor
+        self.window.open_dashboard_reprint(original)
+        self.app.processEvents()
+        self.assertTrue(self.overlay.isVisible())
+        self.assertTrue(self.overlay._reprint_mode)
+        self.assertEqual(self.overlay.report_metadata.control_number, original_control)
+        QTest.mouseClick(self.overlay.print_button, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+
+        records = self.window.print_store.list()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["control_number"], original_control)
+        self.assertEqual(len(records[0].get("reprint_attempts", [])), 1)
+        self.assertEqual(records[0]["reprint_attempts"][0]["outcome"], "submitted")
+
+        self._open_preview()
+        self.assertEqual(
+            self.overlay.report_metadata.control_number,
+            "CSMS-PRN-2026-07-0002",
+        )
+
 
 class PrintReportDecorationTests(unittest.TestCase):
     @classmethod

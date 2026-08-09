@@ -27,7 +27,7 @@ class PrintHistoryStore:
     """Reserve audit identities before preview and retain every terminal outcome."""
 
     FILE_TYPE = "School CSM Control Center Dashboard Print History"
-    SCHEMA_VERSION = "2.0"
+    SCHEMA_VERSION = "3.0"
     CONTROL_PREFIX = "CSMS-PRN"
     STATUSES = {
         "reserved",
@@ -39,6 +39,7 @@ class PrintHistoryStore:
         "interrupted",
     }
     TERMINAL_STATUSES = {"confirmed", "failed", "cancelled", "interrupted"}
+    SUCCESS_STATUSES = {"submitted", "confirmed"}
     ALLOWED_TRANSITIONS = {
         "reserved": {"submitting", "submitted", "cancelled", "failed", "interrupted"},
         "submitting": {"submitted", "failed", "cancelled", "interrupted"},
@@ -82,6 +83,39 @@ class PrintHistoryStore:
 
     def list_all(self) -> list[dict[str, Any]]:
         return self.list()
+
+    @classmethod
+    def narrative_eligibility(
+        cls, record: Mapping[str, Any] | None
+    ) -> tuple[bool, str]:
+        """Return whether a print can be reprinted or used for a narrative.
+
+        Build 11 records remain readable after migration, but a historical row
+        without a durable snapshot must never be reconstructed from live data.
+        ``submitted`` is the current accepted-by-spooler success state, while
+        ``confirmed`` covers legacy and explicitly confirmed successful rows.
+        """
+
+        if not isinstance(record, Mapping):
+            return False, "Dashboard print record is unavailable."
+        status = str(record.get("status") or "confirmed").strip().casefold()
+        if status not in cls.SUCCESS_STATUSES:
+            return False, f"Dashboard print status is {status or 'unavailable'}."
+        snapshot = record.get("dashboard_snapshot")
+        if not isinstance(snapshot, Mapping):
+            return False, "Snapshot unavailable for this legacy print record."
+        if not _clean_text(snapshot.get("snapshot_id")):
+            return False, "Snapshot identity is unavailable."
+        manifest_path = _clean_text(snapshot.get("manifest_path"))
+        if not manifest_path:
+            return False, "Snapshot manifest is unavailable."
+        parsed_path = Path(manifest_path)
+        if parsed_path.is_absolute() or ".." in parsed_path.parts:
+            return False, "Snapshot manifest path is unsafe."
+        digest = _clean_text(snapshot.get("digest_sha256")).casefold()
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            return False, "Snapshot integrity information is unavailable."
+        return True, "Snapshot available."
 
     def get(self, record_id_or_control: str) -> dict[str, Any] | None:
         wanted = str(record_id_or_control or "").strip()
@@ -258,6 +292,71 @@ class PrintHistoryStore:
     ) -> dict[str, Any]:
         return self.transition_status(record_id_or_control, "confirmed", updates)
 
+    def record_reprint_attempt(
+        self,
+        record_id_or_control: str,
+        outcome: str,
+        details: Mapping[str, Any] | None = None,
+        *,
+        message: str = "",
+        expected_snapshot_reference: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append one immutable reprint audit to the original print record.
+
+        A reprint deliberately keeps the original Dashboard control number and
+        therefore never consumes a new print-history sequence number.
+        """
+
+        normalized_outcome = str(outcome or "").strip().casefold()
+        if normalized_outcome not in {"submitted", "failed", "cancelled"}:
+            raise PrintHistoryStoreError(
+                "A reprint outcome must be submitted, failed, or cancelled."
+            )
+        with self._lock:
+            document = self._read_document()
+            self._raise_if_corrupt()
+            record = self._find_record(document, record_id_or_control)
+            eligible, reason = self.narrative_eligibility(record)
+            if not eligible:
+                raise PrintHistoryStoreError(
+                    f"This Dashboard print cannot be reprinted: {reason}"
+                )
+            if expected_snapshot_reference is not None:
+                expected_reference = _normalize_snapshot_reference(
+                    expected_snapshot_reference
+                )
+                current_reference = _normalize_snapshot_reference(
+                    record.get("dashboard_snapshot")
+                )
+                identity_keys = ("snapshot_id", "manifest_path", "digest_sha256")
+                if any(
+                    str(current_reference.get(key) or "").casefold()
+                    != str(expected_reference.get(key) or "").casefold()
+                    for key in identity_keys
+                ):
+                    raise PrintHistoryStoreError(
+                        "The Dashboard snapshot changed during the reprint; no "
+                        "successful reprint audit was recorded."
+                    )
+            now = _local_now()
+            supplied = dict(details or {})
+            attempt = {
+                "id": str(uuid4()),
+                "original_control_number": str(record.get("control_number") or ""),
+                "attempted_at": now,
+                "outcome": normalized_outcome,
+                "message": _clean_text(message or supplied.pop("message", "")),
+                "details": _json_value(supplied),
+            }
+            attempts = record.get("reprint_attempts")
+            if not isinstance(attempts, list):
+                attempts = []
+                record["reprint_attempts"] = attempts
+            attempts.append(attempt)
+            record["updated_at"] = now
+            self._write_document(document)
+            return deepcopy(attempt)
+
     def mark_failed(
         self,
         record_id_or_control: str,
@@ -342,6 +441,33 @@ class PrintHistoryStore:
                 None,
             )
             if existing is not None:
+                current_status = str(
+                    existing.get("status") or "confirmed"
+                ).strip().casefold()
+                if current_status in self.SUCCESS_STATUSES:
+                    if record.get("generated_at") not in (None, "") and str(
+                        existing.get("generated_at") or ""
+                    ) != generated_at:
+                        raise PrintHistoryStoreError(
+                            "That successful Dashboard control number already has "
+                            "different print evidence. Print history was left unchanged."
+                        )
+                    normalized = self._normalize_success(
+                        {**existing, **record},
+                        control_number=printed_control,
+                        generated_at=str(existing.get("generated_at") or generated_at),
+                    )
+                    conflicts = [
+                        key
+                        for key, value in normalized.items()
+                        if key in existing and existing.get(key) != value
+                    ]
+                    if conflicts:
+                        raise PrintHistoryStoreError(
+                            "That successful Dashboard control number already has "
+                            "different print evidence. Print history was left unchanged."
+                        )
+                    return deepcopy(existing)
                 # Release and reuse the public transition logic; the lock is
                 # process-reentrant and remains cross-process exclusive.
                 return self.transition_status(
@@ -444,6 +570,9 @@ class PrintHistoryStore:
             normalized["survey_count"] = _nonnegative_int(
                 record.get("survey_count"), "Survey count"
             )
+        snapshot = record.get("dashboard_snapshot")
+        if snapshot is not None:
+            normalized["dashboard_snapshot"] = _normalize_snapshot_reference(snapshot)
         return normalized
 
     def _merge_audit_updates(
@@ -464,10 +593,15 @@ class PrintHistoryStore:
             "driver_job_id",
             "spooler_job_id",
             "confirmation_note",
+            "dashboard_snapshot",
         }
         for key in allowed:
             if key in updates:
-                record[key] = _json_value(updates[key])
+                record[key] = (
+                    _normalize_snapshot_reference(updates[key])
+                    if key == "dashboard_snapshot"
+                    else _json_value(updates[key])
+                )
 
     def _next_control_number(
         self,
@@ -528,6 +662,16 @@ class PrintHistoryStore:
         elif isinstance(parsed, dict):
             document = parsed
             records = parsed.get("records", [])
+            file_type = str(parsed.get("file_type") or "").strip()
+            if file_type and file_type != self.FILE_TYPE:
+                self._set_read_error("The print-history file type is not recognized.")
+                return self._blank_document()
+            schema = str(parsed.get("schema_version") or "").strip()
+            if schema and schema not in {"1.0", "2.0", self.SCHEMA_VERSION}:
+                self._set_read_error(
+                    "The print-history schema version is not supported."
+                )
+                return self._blank_document()
         else:
             self._set_read_error(
                 "The print-history file root is not an object or list."
@@ -562,7 +706,7 @@ class PrintHistoryStore:
         payload["schema_version"] = self.SCHEMA_VERSION
         payload["updated_at"] = _local_now()
         try:
-            atomic_write_json(self.path, payload)
+            atomic_write_json(self.path, payload, allow_nan=False)
         except (OSError, TypeError, ValueError) as exc:
             raise PrintHistoryStoreError(
                 f"Unable to save Dashboard print history to {self.path}: {exc}"
@@ -637,6 +781,40 @@ def _normalize_selected_pages(value: Any) -> list[int]:
     if not pages:
         raise ValueError("Selected pages must include at least one page.")
     return pages
+
+
+def _normalize_snapshot_reference(value: Any) -> dict[str, Any]:
+    """Validate the portable identity of immutable Dashboard evidence.
+
+    The snapshot store performs the full manifest/blob verification when the
+    evidence is opened.  Print history still validates the reference before it
+    is persisted so malformed or path-traversing references cannot become part
+    of the audit record.
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValueError("The Dashboard snapshot reference must be a mapping.")
+    normalized = _json_value(value)
+    if not isinstance(normalized, dict):  # Defensive; mappings normalize to dicts.
+        raise ValueError("The Dashboard snapshot reference must be a mapping.")
+
+    snapshot_id = _clean_text(normalized.get("snapshot_id"))
+    if not snapshot_id:
+        raise ValueError("The Dashboard snapshot identity is required.")
+    manifest_path = _clean_text(normalized.get("manifest_path"))
+    if not manifest_path:
+        raise ValueError("The Dashboard snapshot manifest path is required.")
+    parsed_path = Path(manifest_path)
+    if parsed_path.is_absolute() or ".." in parsed_path.parts:
+        raise ValueError("The Dashboard snapshot manifest path must be relative and safe.")
+    digest = _clean_text(normalized.get("digest_sha256")).casefold()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("The Dashboard snapshot SHA-256 digest is invalid.")
+
+    normalized["snapshot_id"] = snapshot_id
+    normalized["manifest_path"] = manifest_path.replace("\\", "/")
+    normalized["digest_sha256"] = digest
+    return normalized
 
 
 def _clean_text(value: Any) -> str:

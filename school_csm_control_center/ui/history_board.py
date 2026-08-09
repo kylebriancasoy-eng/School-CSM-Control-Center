@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from school_csm_control_center.services.analysis_service import AnalysisService
+from school_csm_control_center.storage.print_history_store import PrintHistoryStore
 from school_csm_control_center.school_services import (
     normalize_service_values,
     service_display,
@@ -35,6 +36,8 @@ from school_csm_control_center.ui.widgets import EmptyState, TooltipIconButton
 class HistoryBoard(QFrame):
     view_requested = Signal(object)
     print_view_requested = Signal(object)
+    narrative_requested = Signal(object)
+    reprint_requested = Signal(object)
     edit_requested = Signal(object)
     delete_requested = Signal(object)
     export_requested = Signal(object)
@@ -217,7 +220,7 @@ class HistoryBoard(QFrame):
         self.empty_state.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         root.addWidget(self.empty_state, 1)
 
-        self.prints_table = QTableWidget(0, 8)
+        self.prints_table = QTableWidget(0, 9)
         self.prints_table.setObjectName("history_prints_table")
         self.prints_table.setHorizontalHeaderLabels(
             [
@@ -229,6 +232,7 @@ class HistoryBoard(QFrame):
                 "Paper",
                 "Orientation",
                 "Barcode",
+                "Actions",
             ]
         )
         self.prints_table.setEditTriggers(
@@ -252,6 +256,9 @@ class HistoryBoard(QFrame):
         )
         self.prints_table.horizontalHeader().setSectionResizeMode(
             7, QHeaderView.ResizeMode.Stretch
+        )
+        self.prints_table.horizontalHeader().setSectionResizeMode(
+            8, QHeaderView.ResizeMode.ResizeToContents
         )
         self.prints_table.setIconSize(QSize(128, 24))
         self.prints_table.setSortingEnabled(True)
@@ -550,6 +557,31 @@ class HistoryBoard(QFrame):
                     item.setIcon(_barcode_icon(barcode_value))
                 item.setToolTip(details if column == 7 else str(value))
                 self.prints_table.setItem(row_index, column, item)
+            eligible, reason = PrintHistoryStore.narrative_eligibility(record)
+            actions = QWidget()
+            actions.setObjectName("history_print_actions")
+            action_layout = QHBoxLayout(actions)
+            action_layout.setContentsMargins(3, 2, 3, 2)
+            action_layout.setSpacing(4)
+            narrative_button = TooltipIconButton(
+                "history",
+                "Narrative Report" if eligible else f"Narrative Report unavailable: {reason}",
+            )
+            narrative_button.setEnabled(eligible)
+            narrative_button.clicked.connect(
+                lambda _checked=False, source=dict(record): self.narrative_requested.emit(source)
+            )
+            action_layout.addWidget(narrative_button)
+            reprint_button = TooltipIconButton(
+                "print",
+                "Reprint Dashboard" if eligible else f"Reprint Dashboard unavailable: {reason}",
+            )
+            reprint_button.setEnabled(eligible)
+            reprint_button.clicked.connect(
+                lambda _checked=False, source=dict(record): self.reprint_requested.emit(source)
+            )
+            action_layout.addWidget(reprint_button)
+            self.prints_table.setCellWidget(row_index, 8, actions)
         self.prints_table.setSortingEnabled(True)
         self.prints_table.clearSelection()
         self.prints_table.setCurrentCell(-1, -1)

@@ -35,7 +35,6 @@ if "%CAPTIVE_PORTAL%"=="1" (
   rem Captive Portal DNS interception is optional. Do not fail normal server
   rem startup if Windows reserves or rejects the DNS rule.
   call :ADD_UDP_RULE 53
-  call :ADD_TCP_RULE 53
 )
 
 echo Firewall access configured for local-subnet respondent devices.

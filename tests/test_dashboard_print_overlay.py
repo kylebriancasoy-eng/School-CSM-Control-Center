@@ -61,8 +61,14 @@ class _FakePrinterInfo:
 
 
 class _RecordingExecutor:
-    def __init__(self, *, failure: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure: Exception | None = None,
+        accepted_pages: int | None = None,
+    ) -> None:
         self.failure = failure
+        self.accepted_pages = accepted_pages
         self.calls: list[tuple[QPrinter, DashboardSnapshot, dict[str, object]]] = []
 
     def __call__(
@@ -74,7 +80,11 @@ class _RecordingExecutor:
         self.calls.append((printer, snapshot, dict(options)))
         if self.failure is not None:
             raise self.failure
-        return len(options.get("selected_pages", []))
+        return (
+            self.accepted_pages
+            if self.accepted_pages is not None
+            else len(options.get("selected_pages", []))
+        )
 
 
 class DashboardPrintOverlayTests(unittest.TestCase):
@@ -343,6 +353,25 @@ class DashboardPrintOverlayTests(unittest.TestCase):
         self.assertIn("offline", failures[0])
         self.assertIn("Dashboard printing failed", overlay.status_label.text())
         self._assert_no_dialogs()
+
+    def test_partial_output_is_not_reported_as_a_successful_dashboard_print(self) -> None:
+        executor = _RecordingExecutor(accepted_pages=1)
+        overlay = self._overlay(printers=[_FakePrinterInfo()], executor=executor)
+        completed: list[str] = []
+        failures: list[str] = []
+        overlay.print_completed.connect(completed.append)
+        overlay.print_failed.connect(failures.append)
+        overlay.open_overlay()
+        self.app.processEvents()
+
+        QTest.mouseClick(overlay.print_button, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+
+        self.assertEqual(len(executor.calls), 1)
+        self.assertEqual(completed, [])
+        self.assertEqual(len(failures), 1)
+        self.assertIn("did not accept all 3 selected pages", failures[0])
+        self.assertTrue(overlay.isVisible())
 
     def test_close_button_and_escape_close_the_same_child_overlay(self) -> None:
         overlay = self._overlay(printers=[])

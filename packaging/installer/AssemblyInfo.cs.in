@@ -1,0 +1,12 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+
+[assembly: AssemblyTitle("School CSM Control Center Setup")]
+[assembly: AssemblyDescription("Online installer and maintenance utility for School CSM Control Center")]
+[assembly: AssemblyCompany("MoSSLab")]
+[assembly: AssemblyProduct("School CSM Control Center")]
+[assembly: AssemblyCopyright("Copyright MoSSLab")]
+[assembly: ComVisible(false)]
+[assembly: AssemblyVersion("@@INSTALLER_VERSION@@")]
+[assembly: AssemblyFileVersion("@@INSTALLER_VERSION@@")]
+[assembly: AssemblyInformationalVersion("@@INSTALLER_VERSION@@")]

@@ -1,0 +1,98 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z tag to publish"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt "PyInstaller>=6.11,<7" pytest
+
+      - name: Verify release tag and run tests
+        shell: pwsh
+        run: |
+          $expected = python -c "import runpy; print(runpy.run_path('school_csm_control_center/version.py')['RELEASE_TAG'])"
+          if ($env:RELEASE_TAG -ne $expected.Trim()) { throw "Tag $env:RELEASE_TAG does not match application version $expected" }
+          python -m unittest discover -s tests -q
+
+      - name: Import optional Authenticode certificate
+        id: signing
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
+            "thumbprint=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "mosslab-signing.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item -LiteralPath $pfxPath -Force
+          $signingCertificate = $certificate | Where-Object HasPrivateKey | Select-Object -First 1
+          if ($null -eq $signingCertificate) { throw "The supplied PFX does not contain a signing certificate with a private key." }
+          "thumbprint=$($signingCertificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build checksummed release
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Repository = "${{ github.repository }}"
+            Tag = $env:RELEASE_TAG
+            OutputRoot = "release"
+            Clean = $true
+          }
+          $thumbprint = "${{ steps.signing.outputs.thumbprint }}"
+          if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+            $arguments.CertificateSha1 = $thumbprint
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -File | Sort-Object FullName -Descending | Select-Object -First 1
+            if ($null -eq $signTool) { throw "signtool.exe was not found on the runner." }
+            $arguments.SignToolPath = $signTool.FullName
+          }
+          ./scripts/build_release.ps1 @arguments
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-csm-control-center-${{ env.RELEASE_TAG }}
+          path: release/artifacts/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath release/artifacts -File | ForEach-Object FullName
+          gh release create $env:RELEASE_TAG $assets --verify-tag --generate-notes --title "School CSM Control Center $env:RELEASE_TAG"

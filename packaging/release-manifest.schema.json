@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "School CSM Control Center release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "applicationId",
+    "version",
+    "windowsVersion",
+    "tag",
+    "publishedAt",
+    "releasePage",
+    "package",
+    "installer"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "applicationId": { "const": "MoSSLab.SchoolCSMControlCenter" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "windowsVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "tag": { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "releasePage": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "package": { "$ref": "#/$defs/packageDownload" },
+    "installer": { "$ref": "#/$defs/installerDownload" }
+  },
+  "$defs": {
+    "packageDownload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "url", "sha256", "sizeBytes", "format", "entryPoint", "entryPointSha256"],
+      "properties": {
+        "fileName": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "format": { "const": "zip" },
+        "entryPoint": { "const": "School CSM Control Center.exe" },
+        "entryPointSha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
+      }
+    },
+    "installerDownload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "url", "sha256", "sizeBytes"],
+      "properties": {
+        "fileName": { "const": "School-CSM-Control-Center-Setup.exe" },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

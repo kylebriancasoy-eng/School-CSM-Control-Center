@@ -1,4 +1,67 @@
-# DepEd Client Satisfaction Measurement System v0.3.0 Development Build 11
+# School CSM Control Center 0.4.0
+
+School CSM Control Center is an offline-first Windows application for collecting,
+scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
+results.
+
+## Operator installation
+
+Operators install and run only compiled Windows programs. They do not need Python
+and should not open the source-tree command files.
+
+1. Download `School-CSM-Control-Center-Setup.exe` from the repository's latest
+   GitHub Release.
+2. Open Setup and approve the Windows administrator prompt.
+3. Select **Install**. The application is placed in
+   `C:\Program Files (x86)\MoSSLab\School CSM Control Center`.
+4. Start **School CSM Control Center** from its desktop or Start menu shortcut.
+
+The same Setup program provides **Check for Update**, **Repair**, **Roll Back**,
+and **Uninstall**. Every downloaded release is checked against its published size
+and SHA-256 checksum before it can replace the installed application. See
+[`docs/INSTALLATION.md`](docs/INSTALLATION.md) for the complete operator guide.
+
+Survey records, settings, print evidence, narrative revisions, exports, logs, and
+backups remain in `Documents\MoSSLab Data\School CSM Control Center`. Normal
+install, update, repair, rollback, and uninstall operations preserve that folder
+and the optional OpenAI API key. Removal happens only when the operator explicitly
+selects the saved-data removal option during uninstall.
+
+## 0.4.0 highlights
+
+- Every successful Dashboard print retains an immutable, checksummed snapshot of
+  the exact rendered Dashboard, aggregate data, filters, school identity, graphs,
+  and branding used for that print.
+- Successful print-history rows provide **Narrative Report** and **Reprint
+  Dashboard** actions. Historical reprints use only the stored snapshot and retain
+  the original Dashboard print control number.
+- Narrative Reports work locally without an account or internet connection. They
+  support fixed-section editing, immutable revisions, explicit approval,
+  approval invalidation after edits, audited prints/reprints, repeated Dashboard
+  control numbers, required signatures, and the mandatory validity statement.
+- Optional OpenAI-assisted drafting is used only when the operator selects it.
+  It sends aggregate snapshot values, requests structured output, rejects unknown
+  numerical claims, and uses the operator's own API key stored in Windows
+  Credential Manager. The app never asks for an OpenAI or ChatGPT password.
+- Direct IPv4 access is the reliable primary local Survey Form address and must
+  pass the built-in health check before it is advertised. The friendly
+  `.home.arpa` address is shown only when the app-owned DNS responder is actually
+  running and passes its resolution self-test.
+- The end-user package contains a compiled EXE and runtime assets only. Online
+  Setup performs verified install/update/repair, keeps a verified rollback copy,
+  and automatically restores the previous installation if replacement fails.
+
+## Repository and releases
+
+The repository contains application sources, automated tests, a PyInstaller
+one-folder definition, a dependency-free .NET Framework online maintenance
+program, deterministic release/checksum tools, and GitHub Actions workflows.
+Maintainer instructions are in [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Development Build 11 baseline and historical release notes
+
+Version 0.4.0 was developed from the verified v0.3.0 Development Build 11
+baseline. The notes below are retained as historical implementation context.
 
 ## Development Build 11 — durable shared storage and operational hardening
 
@@ -359,46 +422,39 @@ WIFI:T:WPA;S:<hotspot name>;P:<hotspot password>;;
 
 `H:true` is added only for a hidden network. A secured Wi-Fi QR is generated only after both the hotspot name and password are entered.
 
-## Configured local address
+## Local Survey Form addresses
 
-The preferred manual Survey Form address remains:
-
-```text
-http://csm.[school-identifier].home.arpa:8080/access/[key]
-```
-
-For Calapi Elementary School:
-
-```text
-http://csm.calapies.home.arpa:8080/access/[key]
-```
-
-The direct-IP fallback remains available:
+The health-checked direct IPv4 URL is the primary address shown to operators and
+encoded into the reliable fallback QR:
 
 ```text
 http://192.168.137.1:8080/access/[key]
 ```
 
-## Start
+The optional friendly address has this form:
 
-1. Install Python 3.11 or newer.
-2. Install requirements:
+```text
+http://csm.[school-identifier].home.arpa:8080/access/[key]
+```
 
-   ```text
-   pip install -r requirements.txt
-   ```
+For example:
 
-3. Run:
+```text
+http://csm.calapies.home.arpa:8080/access/[key]
+```
 
-   ```text
-   START_SCHOOL_CSM_CONTROL_CENTER.cmd
-   ```
+It is displayed only after the app-owned DNS listener starts and resolves the name
+back to the selected server address. Windows Internet Connection Sharing or the
+phone's resolver may still prevent friendly-name use, so it is never presented as
+the guaranteed path.
 
-4. Approve the Windows administrator prompt.
-5. Open **Survey Server and Access**.
-6. Open Windows Mobile Hotspot settings and turn on the laptop hotspot.
-7. Enter the exact same hotspot name and password in the Control Center.
-8. Keep these selected:
+## Start a respondent session
+
+1. Open the installed **School CSM Control Center** EXE.
+2. Open **Survey Server and Access**.
+3. Open Windows Mobile Hotspot settings and turn on the laptop hotspot.
+4. Enter the exact same hotspot name and password in the Control Center.
+5. Keep these selected:
 
    ```text
    Respondent network: Laptop Hotspot
@@ -406,9 +462,10 @@ http://192.168.137.1:8080/access/[key]
    Internet access: Survey Network Only
    ```
 
-9. Set the Survey Form to **Online**.
-10. Click the Start Server icon.
-11. Scan the primary hotspot QR and approve the connection prompt.
+6. Set the Survey Form to **Online**.
+7. Click the Start Server icon and approve the narrowly scoped firewall prompt
+   when Windows requests it.
+8. Scan the primary hotspot QR and approve the connection prompt.
 
 When the phone displays a network-login notification, open it to continue to the Survey Form. If no notification appears and the Control Center reports **Partial** or **Unavailable**, scan the configured-address QR or direct-IP QR.
 
@@ -420,25 +477,30 @@ When the phone displays a network-login notification, open it to continue to the
 - English, Filipino, and Waray-Waray Survey Form.
 - Automatic recording and analysis of valid browser responses.
 - Online, Offline, and Under Maintenance Survey Form statuses.
-- Configurable school identifier in `csm.[school-identifier].home.arpa`.
+- Optional configurable school identifier in `csm.[school-identifier].home.arpa`
+  when app-owned DNS is verified.
 - Laptop Hotspot as the default respondent network mode.
 - Captive Portal as the default access mode.
 - Port-80 connectivity-check redirector.
 - Wildcard local DNS responder on UDP port 53 when available.
-- Windows hosts-file fallback when port 53 is reserved.
+- Direct IPv4 health-checked primary access when DNS is reserved or unavailable.
 - Five-minute sessions that expire after successful submission or timeout.
-- Automatic execution of `ALLOW_SCHOOL_CSM_FIREWALL.cmd` when the server starts.
+- Compiled, narrowly scoped Windows Firewall configuration when the server starts.
 - Server startup remains independent of firewall or captive-portal verification results.
 
-## Repair and diagnostics
+## Developer diagnostics
 
-- `ALLOW_SCHOOL_CSM_FIREWALL.cmd` remains available as an emergency repair utility.
-- `NETWORK_DIAGNOSTICS.cmd` shows IPv4 addresses and listening ports 80, 8080, and 53.
-- `REMOVE_CAPTIVE_PORTAL_HOSTS.cmd` removes marked captive-portal mappings if Windows or the application closes unexpectedly.
+The source repository retains developer-only diagnostics such as
+`NETWORK_DIAGNOSTICS.cmd`. They are excluded from the compiled operator package.
+Operators use Setup's **Repair** action and the in-app status explanations instead.
 
 ## Important limitation
 
-Windows Mobile Hotspot does not provide a guaranteed programmable captive-portal facility. Automatic opening depends on the phone's connectivity-check behavior and whether the application can provide DNS interception on the hotspot interface. The configured-address and direct-IP QR codes remain necessary fallbacks on unsupported Windows adapters or phones.
+Windows Mobile Hotspot does not provide a guaranteed programmable captive-portal
+facility. Automatic opening depends on the phone's connectivity-check behavior
+and whether the application can provide DNS interception on the hotspot interface.
+The direct-IP QR remains the reliable fallback on unsupported Windows adapters or
+phones.
 
 
 ## v0.1.15 startup and server visual-stability update

@@ -21,6 +21,7 @@ from school_csm_control_center.runtime_paths import (
 )
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
+from school_csm_control_center.version import __version__
 
 
 def _install_qt_message_logging() -> None:
@@ -62,6 +63,7 @@ def run(project_root: str | Path, *, window_mode: str = "maximized") -> int:
     splash = MoSSLabStartupSplash(
         FORMAL_APPLICATION_NAME,
         APPLICATION_SUBTITLE,
+        version=f"Version {__version__}",
     )
     splash.set_progress(8, "Initializing application identity…")
     splash.show()
