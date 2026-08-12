@@ -36,7 +36,13 @@ def _install_qt_message_logging() -> None:
     qInstallMessageHandler(handler)
 
 
-def run(project_root: str | Path, *, window_mode: str = "maximized") -> int:
+def run(
+    project_root: str | Path,
+    *,
+    window_mode: str = "maximized",
+    start_hidden: bool = False,
+    auto_start_server: bool = False,
+) -> int:
     logger = logging.getLogger("school_csm_startup")
     project_root = Path(project_root).expanduser().resolve()
     runtime_paths = configured_runtime_paths()
@@ -59,24 +65,30 @@ def run(project_root: str | Path, *, window_mode: str = "maximized") -> int:
     # Show the finished MoSSLab opening screen immediately and keep the main
     # window hidden until all boards, records, and styles have been prepared.
     # This avoids the blank/partially painted maximized frame seen at startup.
-    logger.info("Creating MoSSLab startup splash.")
-    splash = MoSSLabStartupSplash(
-        FORMAL_APPLICATION_NAME,
-        APPLICATION_SUBTITLE,
-        version=f"Version {__version__}",
-    )
-    splash.set_progress(8, "Initializing application identity…")
-    splash.show()
-    app.processEvents()
+    splash: MoSSLabStartupSplash | None = None
+    if not start_hidden:
+        logger.info("Creating MoSSLab startup splash.")
+        splash = MoSSLabStartupSplash(
+            FORMAL_APPLICATION_NAME,
+            APPLICATION_SUBTITLE,
+            version=f"Version {__version__}",
+        )
+        splash.set_progress(8, "Initializing application identity…")
+        splash.show()
+        app.processEvents()
+    else:
+        logger.info("Windows background launch requested; suppressing startup splash.")
 
     def report_progress(value: int, message: str) -> None:
         logger.info("Startup progress %s%% — %s", value, message)
-        splash.set_progress(value, message)
-        app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        if splash is not None:
+            splash.set_progress(value, message)
+            app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
     report_progress(16, "Loading local records and settings…")
     logger.info("Constructing the main Control Center window.")
     window = SchoolCSMControlCenterWindow(project_root, startup_progress=report_progress)
+    app.aboutToQuit.connect(window.prepare_for_application_quit)
     logger.info("Main Control Center window constructed.")
     report_progress(94, "Preparing the main workspace…")
 
@@ -98,12 +110,28 @@ def run(project_root: str | Path, *, window_mode: str = "maximized") -> int:
         report_progress(100, "Ready")
 
         def finish_startup() -> None:
-            splash.finish(window)
+            if splash is not None:
+                splash.finish(window)
             window.raise_()
             window.activateWindow()
 
         QTimer.singleShot(140, finish_startup)
 
-    QTimer.singleShot(0, reveal_window)
+    background_ready, background_detail = window.background_startup_readiness()
+    if start_hidden and background_ready:
+        logger.info("Starting hidden in the Windows notification area.")
+        # Create the hidden native window handle so a later desktop-shortcut
+        # launch can find and restore this single running instance.
+        window.winId()
+        window.system_tray.show()
+        if auto_start_server:
+            QTimer.singleShot(0, window.start_saved_server_unattended)
+    else:
+        if start_hidden:
+            logger.warning(
+                "Background launch fell back to the visible window: %s",
+                background_detail,
+            )
+        QTimer.singleShot(0, reveal_window)
     logger.info("Entering the Qt event loop.")
     return app.exec()

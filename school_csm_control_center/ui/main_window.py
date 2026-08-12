@@ -6,9 +6,10 @@ import getpass
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QTimer, Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QEvent, QTimer, QUrl, Qt
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QFileDialog,
     QHBoxLayout,
@@ -50,6 +51,7 @@ from school_csm_control_center.ui.school_information_board import SchoolInformat
 from school_csm_control_center.ui.icons import action_icon
 from school_csm_control_center.ui.overlays import OverlayPrompt, Toast, WorkspaceOverlay
 from school_csm_control_center.ui.survey_drawer import SurveyEntryOverlay
+from school_csm_control_center.ui.system_tray import ControlCenterSystemTray
 from school_csm_control_center.ui.title_bar import BrandedTitleBar, WindowResizeHandle
 from school_csm_control_center.ui.widgets import TooltipIconButton
 from school_csm_control_center.web_server import SurveyServerController
@@ -235,8 +237,22 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             print_store=self.print_store,
         )
         self.toast = Toast(self.shell)
+        self._explicit_exit_requested = False
+        self._shutdown_started = False
+        self._background_notice_shown = False
+        self._background_startup_enabled = bool(
+            self.server_controller.settings().get(
+                "background_server_startup_enabled", False
+            )
+        )
+        self.system_tray = ControlCenterSystemTray(self.windowIcon(), self)
+        self.system_tray.set_background_startup_checked(
+            self._background_startup_enabled
+        )
         self._report_startup(82, "Connecting Control Center actions…")
         self._connect_actions()
+        self._apply_background_lifecycle()
+        self._tray_urls_changed(*self.server_controller.urls())
         self._report_startup(87, "Applying interface styling…")
         self._apply_styles()
         self._report_startup(91, "Loading saved responses and live analysis…")
@@ -311,6 +327,23 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         )
         self.server_controller.response_received.connect(self._browser_response_received)
         self.server_controller.status_changed.connect(self._server_status_toast)
+        self.server_controller.status_changed.connect(self._tray_server_status_changed)
+        self.server_controller.urls_changed.connect(self._tray_urls_changed)
+        self.server_board.background_startup_requested.connect(
+            self._set_background_startup
+        )
+        self.system_tray.open_requested.connect(self.restore_from_tray)
+        self.system_tray.start_server_requested.connect(
+            self.start_saved_server_unattended
+        )
+        self.system_tray.stop_server_requested.connect(
+            self.server_controller.stop_async
+        )
+        self.system_tray.open_survey_requested.connect(self._open_survey_url)
+        self.system_tray.background_startup_toggled.connect(
+            self._set_background_startup
+        )
+        self.system_tray.exit_requested.connect(self.exit_application)
         self.school_information.school_information_saved.connect(self._school_information_saved)
         self.school_information.notice_requested.connect(
             lambda message, kind: self.toast.show_message(message, kind=kind, timeout_ms=6500)
@@ -482,6 +515,153 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.toast.show_message(message, kind="success", timeout_ms=4500)
         elif status == "error":
             self.toast.show_message(message, kind="error", timeout_ms=7000)
+
+    @property
+    def background_startup_enabled(self) -> bool:
+        return bool(self._background_startup_enabled)
+
+    def background_startup_readiness(self) -> tuple[bool, str]:
+        """Return whether a Windows sign-in launch may remain hidden."""
+
+        if not self._background_startup_enabled:
+            return False, "Background startup is disabled in Server Settings."
+        if not self.system_tray.available:
+            return False, "The Windows notification area is not available."
+        settings = self.server_controller.settings()
+        if not str(settings.get("school_name") or "").strip() or not str(
+            settings.get("school_id") or ""
+        ).strip():
+            return False, "School Information must be completed before background startup."
+        return True, "Ready for background startup."
+
+    def _set_background_startup(self, enabled: bool) -> None:
+        requested = bool(enabled)
+        previous = self._background_startup_enabled
+        try:
+            actual = bool(
+                self.server_controller.set_background_server_startup(requested)
+            )
+        except Exception as exc:
+            self._background_startup_enabled = previous
+            detail = str(exc).strip() or "Windows could not change the startup setting."
+            self.server_board.set_background_startup_enabled(previous, detail)
+            self.system_tray.set_background_startup_checked(previous)
+            self._apply_background_lifecycle()
+            self.toast.show_message(detail, kind="error", timeout_ms=7000)
+            self.system_tray.show_status_message(
+                "Startup setting was not changed",
+                detail,
+                warning=True,
+            )
+            return
+
+        self._background_startup_enabled = actual
+        detail = (
+            "The Control Center and Survey Server will start in the notification area when this Windows account signs in."
+            if actual
+            else "Automatic background startup is disabled."
+        )
+        self.server_board.set_background_startup_enabled(actual, detail)
+        self.system_tray.set_background_startup_checked(actual)
+        self._apply_background_lifecycle()
+        self.toast.show_message(detail, kind="success")
+
+    def _apply_background_lifecycle(self) -> None:
+        keep_alive = self._background_startup_enabled and self.system_tray.available
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(not keep_alive)
+        close_description = (
+            "Hide to the Windows notification area"
+            if keep_alive
+            else f"Close {SHORT_APPLICATION_NAME}"
+        )
+        self.title_bar.close_button.set_action(
+            "close",
+            close_description,
+            icon_color=theme.DANGER,
+        )
+
+    def restore_from_tray(self) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+        self._background_notice_shown = False
+
+    def start_saved_server_unattended(self) -> bool:
+        settings = self.server_controller.settings()
+        if not str(settings.get("school_name") or "").strip() or not str(
+            settings.get("school_id") or ""
+        ).strip():
+            detail = "Complete School Information before starting the Survey Server."
+            self.restore_from_tray()
+            self.show_board("school_information")
+            self.toast.show_message(detail, kind="warning", timeout_ms=6500)
+            self.system_tray.show_status_message(
+                "Survey Server needs setup", detail, warning=True
+            )
+            return False
+        if self.server_controller.running:
+            return True
+        preferred_port = int(settings.get("preferred_port") or 8080)
+        started = self.server_controller.start_async(
+            preferred_port,
+            8080,
+            configure_firewall=False,
+        )
+        if not started and not self.server_controller.running:
+            detail = "A Survey Server start or stop operation is already in progress."
+            self.system_tray.show_status_message(
+                "Survey Server", detail, warning=True
+            )
+        return bool(started or self.server_controller.running)
+
+    def _tray_server_status_changed(self, status: str, message: str) -> None:
+        self.system_tray.set_server_state(status, message)
+        if str(status).casefold() == "error":
+            self.system_tray.show_status_message(
+                "Survey Server could not start",
+                message,
+                warning=True,
+                timeout_ms=7000,
+            )
+
+    def _tray_urls_changed(
+        self,
+        direct_root: str,
+        _named_root: str,
+        direct_access_url: str,
+        _named_access_url: str,
+    ) -> None:
+        self.system_tray.set_direct_survey_url(
+            str(direct_access_url or direct_root or "")
+        )
+
+    @staticmethod
+    def _open_survey_url(url: str) -> None:
+        value = str(url or "").strip()
+        if value.casefold().startswith(("http://", "https://")):
+            QDesktopServices.openUrl(QUrl(value))
+
+    def prepare_for_application_quit(self) -> None:
+        if self._shutdown_started:
+            return
+        self._shutdown_started = True
+        self.system_tray.hide()
+        self.server_controller.request_shutdown()
+
+    def exit_application(self) -> None:
+        self._explicit_exit_requested = True
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+        self.prepare_for_application_quit()
+        self.close()
+        if app is not None:
+            app.quit()
 
     def refresh_all(self) -> None:
         records = self.store.list()
@@ -1053,8 +1233,18 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._layout_resize_handles()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
-        if hasattr(self, "server_controller"):
-            self.server_controller.stop()
+        if (
+            not self._explicit_exit_requested
+            and self._background_startup_enabled
+            and self.system_tray.available
+        ):
+            event.ignore()
+            self.hide()
+            if not self._background_notice_shown:
+                self.system_tray.show_background_notice()
+                self._background_notice_shown = True
+            return
+        self.prepare_for_application_quit()
         super().closeEvent(event)
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API

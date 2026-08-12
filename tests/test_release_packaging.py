@@ -91,9 +91,9 @@ class ReleasePackagingTests(unittest.TestCase):
             )
             manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["applicationId"], "MoSSLab.SchoolCSMControlCenter")
-            self.assertEqual(manifest["version"], "0.4.0")
-            self.assertEqual(manifest["tag"], "v0.4.0")
-            self.assertIn("/releases/download/v0.4.0/", manifest["package"]["url"])
+            self.assertEqual(manifest["version"], "0.4.1")
+            self.assertEqual(manifest["tag"], "v0.4.1")
+            self.assertIn("/releases/download/v0.4.1/", manifest["package"]["url"])
             self.assertEqual(
                 manifest["package"]["entryPoint"], "School CSM Control Center.exe"
             )
@@ -241,6 +241,9 @@ class ReleasePackagingTests(unittest.TestCase):
         installer = (REPO_ROOT / "packaging" / "installer" / "InstallerEngine.cs").read_text(
             encoding="utf-8"
         )
+        windows = (REPO_ROOT / "packaging" / "installer" / "WindowsIntegration.cs").read_text(
+            encoding="utf-8"
+        )
         program = (REPO_ROOT / "packaging" / "installer" / "Program.cs").read_text(
             encoding="utf-8"
         )
@@ -251,6 +254,42 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertIn("entry.ExternalAttributes", installer)
         self.assertIn("DeleteDirectoryNoFollow", installer)
         self.assertIn('@"Global\\MoSSLab.SchoolCSMControlCenter.Maintenance"', program)
+
+        self.assertIn(
+            'FirewallRuleName = "School CSM Control Center - Private Local Survey"',
+            windows,
+        )
+        self.assertIn(
+            'StartupValueName = "MoSSLab.SchoolCSMControlCenter"',
+            windows,
+        )
+        self.assertIn('"ApplicationName", InstallerEngine.ApplicationExecutable', windows)
+        self.assertIn('"Protocol", FirewallProtocolAny', windows)
+        self.assertIn('"Profiles", FirewallProfilePrivate', windows)
+        self.assertIn('"RemoteAddresses", "LocalSubnet"', windows)
+        self.assertIn('"Direction", FirewallDirectionInbound', windows)
+        self.assertNotIn('"Profiles", 4', windows)
+        for legacy_rule in (
+            "School CSM Control Center TCP 80",
+            "School CSM Control Center TCP 8080",
+            "School CSM Control Center TCP 53",
+            "School CSM Control Center UDP 53",
+        ):
+            self.assertIn(f'"{legacy_rule}"', windows)
+        self.assertIn('Registry.CurrentUser.OpenSubKey(StartupRunKey, true)', windows)
+        self.assertIn('key.DeleteValue(StartupValueName, false)', windows)
+        self.assertNotIn('Registry.CurrentUser.DeleteSubKey', windows)
+
+        self.assertGreaterEqual(
+            installer.count("WindowsIntegration.ConfigureFirewallRule();"),
+            3,
+        )
+        self.assertGreaterEqual(
+            installer.count("WindowsIntegration.RemoveFirewallRules();"),
+            2,
+        )
+        self.assertIn("WindowsIntegration.RemoveCurrentUserStartupRegistration();", installer)
+        self.assertIn("notification-area tray", installer)
 
 
 if __name__ == "__main__":

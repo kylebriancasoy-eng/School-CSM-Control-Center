@@ -1,4 +1,4 @@
-# School CSM Control Center 0.4.0
+# School CSM Control Center 0.4.1
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -26,6 +26,20 @@ backups remain in `Documents\MoSSLab Data\School CSM Control Center`. Normal
 install, update, repair, rollback, and uninstall operations preserve that folder
 and the optional OpenAI API key. Removal happens only when the operator explicitly
 selects the saved-data removal option during uninstall.
+
+## 0.4.1 highlights
+
+- Server Settings now provides an opt-in **Start with Windows and run Survey
+  Server in background** switch. It starts the compiled app in the Windows
+  notification area and starts the saved local server automatically.
+- The notification-area menu shows server status and provides Open Control
+  Center, Start Server, Stop Server, Open Survey Form, startup-toggle, and
+  explicit Exit actions. Closing the window keeps the server running only while
+  background startup is enabled.
+- Setup authorizes the installed EXE for Private, local-subnet access once, so
+  automatic server startup does not repeatedly request administrator approval.
+  The rule and per-user startup entry are removed by uninstall while saved CSM
+  data remains preserved.
 
 ## 0.4.0 highlights
 

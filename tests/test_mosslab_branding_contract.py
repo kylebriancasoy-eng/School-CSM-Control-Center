@@ -21,7 +21,10 @@ class MoSSLabBrandingContractTests(unittest.TestCase):
         source = (ROOT / "school_csm_control_center" / "app.py").read_text(encoding="utf-8")
         self.assertIn("MoSSLabStartupSplash", source)
         self.assertIn("school_csm_control_center.mosslab_ui", source)
-        self.assertIn("FORMAL_APPLICATION_NAME,\n        APPLICATION_SUBTITLE,", source)
+        self.assertRegex(
+            source,
+            r"FORMAL_APPLICATION_NAME,\s+APPLICATION_SUBTITLE,",
+        )
         self.assertIn("QTimer.singleShot(0, reveal_window)", source)
         self.assertIn("splash.finish(window)", source)
 

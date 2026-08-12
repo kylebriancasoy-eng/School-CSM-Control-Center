@@ -12,7 +12,7 @@ import secrets
 import socket
 import subprocess
 import time
-from threading import RLock, Thread
+from threading import Event, RLock, Thread
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
@@ -33,6 +33,7 @@ from school_csm_control_center.web_server.access_codes import (
     build_direct_portal_url,
     build_wifi_qr_payload,
 )
+from school_csm_control_center.windows_startup import set_enabled as set_windows_startup_enabled
 from school_csm_control_center.windows_admin import (
     hidden_process_creation_flags,
     is_administrator,
@@ -82,8 +83,11 @@ class SurveyServerController(QObject):
         self.scanner_operator_store = ScannerOperatorStore(self.project_root)
         self._state_lock = RLock()
         self._operation_lock = RLock()
+        self._server_lifecycle_lock = RLock()
         self._operation = ""
         self._operation_thread: Thread | None = None
+        self._shutdown_requested = Event()
+        self._application_shutdown = False
         self._server: SurveyHTTPServer | None = None
         self._thread: Thread | None = None
         self._bound_ip = ""
@@ -174,16 +178,28 @@ class SurveyServerController(QObject):
         with self._operation_lock:
             return bool(self._operation)
 
-    def start_async(self, preferred_port: int | None = None, fallback_port: int = 8080) -> bool:
+    def start_async(
+        self,
+        preferred_port: int | None = None,
+        fallback_port: int = 8080,
+        *,
+        configure_firewall: bool = True,
+    ) -> bool:
         """Start firewall/server/portal work outside the Qt GUI thread."""
         with self._operation_lock:
-            if self.running or self._operation:
+            if self._application_shutdown or self.running or self._operation:
                 return False
+            self._shutdown_requested.clear()
             self._operation = "starting"
-        self.status_changed.emit("starting", "Preparing Windows Firewall and the local survey server…")
+        start_message = (
+            "Preparing Windows Firewall and the local survey server…"
+            if configure_firewall
+            else "Starting the local survey server with network access authorized by Setup…"
+        )
+        self.status_changed.emit("starting", start_message)
         worker = Thread(
             target=self._start_worker,
-            args=(preferred_port, fallback_port),
+            args=(preferred_port, fallback_port, configure_firewall),
             name="SchoolCSMServerStartup",
             daemon=True,
         )
@@ -191,9 +207,18 @@ class SurveyServerController(QObject):
         worker.start()
         return True
 
-    def _start_worker(self, preferred_port: int | None, fallback_port: int) -> None:
+    def _start_worker(
+        self,
+        preferred_port: int | None,
+        fallback_port: int,
+        configure_firewall: bool,
+    ) -> None:
         try:
-            self.start(preferred_port, fallback_port)
+            self.start(
+                preferred_port,
+                fallback_port,
+                configure_firewall=configure_firewall,
+            )
         except OSError:
             # start() already emitted the actionable error message.
             pass
@@ -222,6 +247,21 @@ class SurveyServerController(QObject):
         self._operation_thread = worker
         worker.start()
         return True
+
+    def request_shutdown(self) -> None:
+        """Cancel an in-flight start and stop any active network services.
+
+        The notification-area Exit action can arrive while the background
+        worker is still checking the firewall or binding the HTTP server.  The
+        event is checked at every material start boundary so that worker can
+        never bring a new server online after the application has begun
+        shutting down.
+        """
+
+        with self._operation_lock:
+            self._application_shutdown = True
+            self._shutdown_requested.set()
+        self.stop()
 
     def _stop_worker(self) -> None:
         try:
@@ -260,6 +300,46 @@ class SurveyServerController(QObject):
         self._update(server_ip=value)
         self._emit_urls()
         return self.selected_local_ip()
+
+    def set_preferred_port(self, value: int) -> int:
+        port = int(value)
+        if not 1 <= port <= 65535:
+            raise ValueError("The preferred server port must be between 1 and 65535.")
+        self._update(preferred_port=port)
+        return port
+
+    def set_background_server_startup(
+        self,
+        enabled: bool,
+        *,
+        registry: Any | None = None,
+        executable: str | Path | None = None,
+    ) -> bool:
+        """Register startup first, then persist only the resulting state."""
+
+        previous = bool(self._settings.get("background_server_startup_enabled", False))
+        state = set_windows_startup_enabled(
+            bool(enabled),
+            registry=registry,
+            executable=executable,
+        )
+        try:
+            self._update(background_server_startup_enabled=state)
+        except Exception:
+            # Do not leave Windows launching an option that the durable app
+            # settings failed to record (or vice versa).
+            with self._state_lock:
+                self._settings["background_server_startup_enabled"] = previous
+            try:
+                set_windows_startup_enabled(
+                    previous,
+                    registry=registry,
+                    executable=executable,
+                )
+            except Exception:
+                pass
+            raise
+        return state
 
     def hostname(self) -> str:
         identifier = str(self._effective_network_value("school_identifier") or "school-csm")
@@ -466,10 +546,24 @@ class SurveyServerController(QObject):
             self._server.revoke_scanner_sessions_for_user(str(account.get("user_id") or ""))
         return account
 
-    def start(self, preferred_port: int | None = None, fallback_port: int = 8080) -> int:
+    def start(
+        self,
+        preferred_port: int | None = None,
+        fallback_port: int = 8080,
+        *,
+        configure_firewall: bool = True,
+    ) -> int:
         if self.running:
             return self._port
-        self.status_changed.emit("starting", "Configuring Windows Firewall and starting the local survey server…")
+        if self._application_shutdown or self._shutdown_requested.is_set():
+            self.status_changed.emit("offline", "Local survey server startup was cancelled.")
+            return 0
+        start_message = (
+            "Configuring Windows Firewall and starting the local survey server…"
+            if configure_firewall
+            else "Starting the local survey server with network access authorized by Setup…"
+        )
+        self.status_changed.emit("starting", start_message)
         with self._state_lock:
             self._response_count = 0
             self._scanner_response_count = 0
@@ -483,13 +577,32 @@ class SurveyServerController(QObject):
         ):
             preferred = 8080
         self._update(preferred_port=preferred)
-        firewall = self.configure_firewall(preferred, fallback_port)
+        if configure_firewall:
+            firewall = self.configure_firewall(preferred, fallback_port)
+        else:
+            self._firewall_status = "Preauthorized"
+            self._firewall_detail = (
+                "Runtime firewall changes were skipped because network access is authorized during Setup."
+            )
+            firewall = {
+                "administrator": "Setup authorization",
+                "firewall": self._firewall_status,
+                "detail": self._firewall_detail,
+                "ok": True,
+            }
+            self.access_status_changed.emit(dict(firewall))
+        if self._shutdown_requested.is_set():
+            self.status_changed.emit("offline", "Local survey server startup was cancelled.")
+            return 0
         last_error: OSError | None = None
         ports: list[int] = []
         for candidate in (preferred, fallback_port):
             if candidate not in ports:
                 ports.append(candidate)
         for port in ports:
+            if self._shutdown_requested.is_set():
+                self.status_changed.emit("offline", "Local survey server startup was cancelled.")
+                return 0
             bind_address = self.selected_local_ip()
             try:
                 server = SurveyHTTPServer(
@@ -505,14 +618,26 @@ class SurveyServerController(QObject):
             except OSError as exc:
                 last_error = exc
                 continue
-            self._server = server
-            self._port = int(server.server_address[1])
-            self._bound_ip = bind_address
-            self._active_network_settings = {
-                key: self._settings.get(key) for key in NETWORK_RESTART_KEYS
-            }
-            self._thread = Thread(target=server.serve_forever, name="SchoolCSMLocalSurveyServer", daemon=True)
-            self._thread.start()
+            if self._shutdown_requested.is_set():
+                server.server_close()
+                self.status_changed.emit("offline", "Local survey server startup was cancelled.")
+                return 0
+            with self._server_lifecycle_lock:
+                self._server = server
+                self._port = int(server.server_address[1])
+                self._bound_ip = bind_address
+                self._active_network_settings = {
+                    key: self._settings.get(key) for key in NETWORK_RESTART_KEYS
+                }
+                self._thread = Thread(
+                    target=server.serve_forever,
+                    name="SchoolCSMLocalSurveyServer",
+                    daemon=True,
+                )
+                self._thread.start()
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return 0
             healthy, health_detail = verify_http_health(bind_address, self._port)
             self._direct_health_verified = healthy
             self._direct_health_detail = health_detail
@@ -531,9 +656,17 @@ class SurveyServerController(QObject):
                     if candidate_thread is not None and candidate_thread.is_alive():
                         candidate_thread.join(timeout=2.0)
                 continue
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return 0
             portal = self._start_captive_portal_if_enabled()
             self._emit_urls()
-            if firewall.get("ok"):
+            if not configure_firewall:
+                message = (
+                    f"Local survey server is healthy at {bind_address}:{self._port}; "
+                    "network access uses the authorization prepared by Setup."
+                )
+            elif firewall.get("ok"):
                 message = (
                     f"Local survey server is healthy at {bind_address}:{self._port}; "
                     "Windows Firewall access was configured."
@@ -549,7 +682,13 @@ class SurveyServerController(QObject):
                 message += " Captive Portal components passed local checks; phone automatic opening remains device-dependent."
             elif str(self._settings.get("access_mode") or "captive_portal") == "captive_portal":
                 message += " Captive Portal is not fully verified; use the direct-IP Survey Form QR."
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return 0
             self.status_changed.emit("online", message)
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return 0
             return self._port
         message = f"Unable to start the local survey server: {last_error}" if last_error else "Unable to start the local survey server."
         self.status_changed.emit("error", message)
@@ -557,18 +696,19 @@ class SurveyServerController(QObject):
 
     def stop(self) -> None:
         self._stop_captive_portal()
-        server = self._server
-        thread = self._thread
-        if server is None:
-            self.status_changed.emit("offline", "Local survey server is stopped.")
-            return
-        self._server = None
-        self._thread = None
-        self._port = 0
-        self._bound_ip = ""
-        self._active_network_settings = {}
-        self._direct_health_verified = False
-        self._direct_health_detail = "The local survey server is stopped."
+        with self._server_lifecycle_lock:
+            server = self._server
+            thread = self._thread
+            if server is None:
+                self.status_changed.emit("offline", "Local survey server is stopped.")
+                return
+            self._server = None
+            self._thread = None
+            self._port = 0
+            self._bound_ip = ""
+            self._active_network_settings = {}
+            self._direct_health_verified = False
+            self._direct_health_detail = "The local survey server is stopped."
         try:
             server.shutdown()
             server.server_close()

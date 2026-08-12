@@ -5,7 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QDate, QUrl, Qt
+from PySide6.QtCore import QDate, QSignalBlocker, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,6 +31,8 @@ from school_csm_control_center.web_server.controller import SurveyServerControll
 
 class SurveyServerBoard(QWidget):
     """Server, Survey Form status, local address, and QR access controls."""
+
+    background_startup_requested = Signal(bool)
 
     def __init__(self, controller: SurveyServerController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -131,6 +133,35 @@ class SurveyServerBoard(QWidget):
         buttons.addWidget(self.start_button)
         grid.addLayout(buttons, 9, 0, 1, 3)
         layout.addWidget(settings_card)
+
+        background_card = self._card("Background operation")
+        background = background_card.layout()
+        background_title = QLabel("Start the app and survey server with Windows")
+        background_title.setObjectName("background_startup_title")
+        background_helper = QLabel(
+            "When enabled, the installed app starts hidden in the Windows notification area and starts the local survey server automatically. Setup authorizes Private-network access so Windows does not request permission again at sign-in."
+        )
+        background_helper.setObjectName("server_note")
+        background_helper.setWordWrap(True)
+        self.background_startup_switch = QCheckBox("OFF")
+        self.background_startup_switch.setObjectName("background_startup_switch")
+        self.background_startup_switch.setFixedSize(84, 36)
+        self.background_startup_switch.setAccessibleName(
+            "Start the app and survey server with Windows"
+        )
+        self.background_startup_switch.setAccessibleDescription(
+            "Enable or disable automatic background startup and unattended local server startup."
+        )
+        self.background_startup_switch.setToolTip(
+            "Start hidden in the notification area and start the survey server when this Windows account signs in"
+        )
+        self.background_startup_state = QLabel("Disabled")
+        self.background_startup_state.setObjectName("background_startup_state")
+        background.addWidget(background_title, 1, 0, 1, 2)
+        background.addWidget(self.background_startup_switch, 1, 2, Qt.AlignmentFlag.AlignRight)
+        background.addWidget(self.background_startup_state, 2, 2, Qt.AlignmentFlag.AlignRight)
+        background.addWidget(background_helper, 2, 0, 1, 2)
+        layout.addWidget(background_card)
 
         network_card = self._card("Laptop hotspot and captive portal")
         net = network_card.layout()
@@ -383,6 +414,7 @@ class SurveyServerBoard(QWidget):
         self.copy_scanner_endpoint.clicked.connect(lambda: QApplication.clipboard().setText(self.scanner_endpoint.text()))
         self.open_scanner_remote.clicked.connect(self._open_scanner_remote)
         self.scanner_processing_slider.valueChanged.connect(self._scanner_limit_changed)
+        self.background_startup_switch.toggled.connect(self._background_startup_toggled)
         self.scanner_remote_enabled.toggled.connect(lambda _checked: self._sync_scanner_status())
         self.scanner_intake_enabled.toggled.connect(lambda _checked: self._sync_scanner_status())
         self.operator_combo.currentIndexChanged.connect(self._operator_selected)
@@ -405,7 +437,14 @@ class SurveyServerBoard(QWidget):
         self.apply_settings(on_success=self._start_server_after_settings)
 
     def _start_server_after_settings(self) -> None:
-        started = self.controller.start_async(self.port_spin.value(), 8080)
+        background_enabled = bool(
+            self.controller.settings().get("background_server_startup_enabled", False)
+        )
+        started = self.controller.start_async(
+            self.port_spin.value(),
+            8080,
+            configure_firewall=not background_enabled,
+        )
         if not started and not self.controller.running:
             self.status_detail.setText("A server start or stop operation is already in progress.")
 
@@ -438,6 +477,7 @@ class SurveyServerBoard(QWidget):
             return False
         try:
             self.controller.set_active_mode(str(self.mode_combo.currentData() or "onsite"))
+            self.controller.set_preferred_port(self.port_spin.value())
             self.controller.set_server_ip(str(self.server_ip_combo.currentData() or ""))
             self.controller.set_survey_date(self.date_edit.date().toString("yyyy-MM-dd"))
             normalized = self.controller.set_school_identifier(self.identifier.text())
@@ -488,6 +528,9 @@ class SurveyServerBoard(QWidget):
         self.scanner_intake_enabled.setChecked(bool(settings.get("scanner_intake_enabled", True)))
         self.scanner_store_preview.setChecked(bool(settings.get("scanner_store_preview", True)))
         self.scanner_processing_slider.setValue(max(1, min(10, int(settings.get("scanner_processing_limit") or 1))))
+        self.sync_background_startup(
+            bool(settings.get("background_server_startup_enabled", False))
+        )
         self._scanner_limit_changed(self.scanner_processing_slider.value())
         self._load_scanner_operators()
         self._sync_scanner_status()
@@ -495,6 +538,38 @@ class SurveyServerBoard(QWidget):
         self._portal_status_changed(dict(settings.get("captive_portal") or {}))
         self._address_status_changed(dict(settings.get("access_capability") or {}))
         self._render_wifi_qr()
+
+    def sync_background_startup(self, enabled: bool) -> None:
+        """Reflect persisted/actual startup state without re-requesting a change."""
+
+        blocker = QSignalBlocker(self.background_startup_switch)
+        self.background_startup_switch.setChecked(bool(enabled))
+        del blocker
+        self._render_background_startup(bool(enabled))
+
+    def set_background_startup_enabled(
+        self,
+        enabled: bool,
+        detail: str = "",
+    ) -> None:
+        """Public lifecycle hook for safely reconciling switch/tray state."""
+
+        self.sync_background_startup(bool(enabled))
+        message = str(detail or "").strip()
+        self.background_startup_state.setToolTip(message)
+        if message:
+            self.status_detail.setText(message)
+
+    def _background_startup_toggled(self, enabled: bool) -> None:
+        self._render_background_startup(bool(enabled))
+        self.background_startup_requested.emit(bool(enabled))
+
+    def _render_background_startup(self, enabled: bool) -> None:
+        self.background_startup_switch.setText("ON" if enabled else "OFF")
+        self.background_startup_state.setText("Enabled" if enabled else "Disabled")
+        self.background_startup_state.setProperty("enabledState", bool(enabled))
+        self.background_startup_state.style().unpolish(self.background_startup_state)
+        self.background_startup_state.style().polish(self.background_startup_state)
 
     def _server_status_changed(self, status: str, message: str) -> None:
         labels = {
@@ -975,6 +1050,14 @@ class SurveyServerBoard(QWidget):
             QLabel#server_metric[state="offline"] {{ color: {theme.DANGER}; }}
             QLabel#server_metric[state="maintenance"] {{ color: {theme.WARNING}; }}
             QLabel#server_note {{ color: {theme.TEXT_SECONDARY}; font-size: 13px; }}
+            QLabel#background_startup_title {{ color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: 750; }}
+            QLabel#background_startup_state {{ color: {theme.TEXT_MUTED}; font-size: 12px; font-weight: 750; }}
+            QLabel#background_startup_state[enabledState="true"] {{ color: {theme.SUCCESS}; }}
+            QCheckBox#background_startup_switch {{ color: {theme.TEXT_SECONDARY}; background: {theme.CARD_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 18px; padding-left: 10px; spacing: 7px; font-size: 11px; font-weight: 900; }}
+            QCheckBox#background_startup_switch:hover {{ border-color: {theme.ACCENT_CYAN}; }}
+            QCheckBox#background_startup_switch:checked {{ color: #031B20; background: {theme.SUCCESS}; border-color: {theme.SUCCESS}; }}
+            QCheckBox#background_startup_switch::indicator {{ width: 16px; height: 16px; border: 1px solid {theme.CARD_BORDER}; border-radius: 8px; background: {theme.TEXT_MUTED}; }}
+            QCheckBox#background_startup_switch::indicator:checked {{ border-color: #FFFFFF; background: #FFFFFF; }}
             QLabel#server_qr {{ background: white; color: #425466; border: 8px solid white; border-radius: 12px; }}
             QLineEdit, QComboBox, QDateEdit, QSpinBox {{ min-height: 40px; color: {theme.TEXT_PRIMARY}; background: {theme.CARD_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 8px; padding: 4px 10px; }}
             QCheckBox {{ color: {theme.TEXT_PRIMARY}; background: transparent; spacing: 8px; }}

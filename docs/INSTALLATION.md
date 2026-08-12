@@ -29,6 +29,26 @@ Install, update, repair, and rollback never intentionally modify the Documents d
 
 The current PySide6 runtime is 64-bit and requires 64-bit Windows 10 or Windows 11. The application is placed in the requested `Program Files (x86)` organizational path even though its bundled Python runtime is 64-bit.
 
+## Background server and notification-area controls
+
+Open **Survey Server and Respondent Access** and enable **Start with Windows and
+run Survey Server in background** to start the compiled Control Center at Windows
+sign-in, keep it in the notification area, and start the saved Survey Server
+automatically. This preference is off by default and applies only to the current
+Windows account.
+
+While enabled, closing the main window hides it without stopping the server. Use
+the notification-area icon to open the Control Center, see server status, start or
+stop the server, open the verified Survey Form address, change the startup
+preference, or choose **Exit** to stop the server and close the application.
+
+Setup configures an app-specific inbound Windows Firewall rule during its normal
+administrator-approved install or update. The rule is limited to the installed
+EXE, the Private profile, and the local subnet. Automatic background startup does
+not bypass Windows security or silently elevate the application. If an
+administrator or security policy removes the rule, use Setup's **Repair** action
+before accepting respondent connections.
+
 ## Update, repair, and rollback
 
 Open **Settings > Apps > Installed apps**, choose School CSM Control Center, and select **Modify**, or reopen the setup file.

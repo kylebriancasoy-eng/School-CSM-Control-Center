@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 import faulthandler
 import importlib.metadata
@@ -14,6 +15,20 @@ import traceback
 
 
 _LOG_FILE_HANDLE = None
+
+
+def parse_startup_arguments(argv: list[str] | None = None) -> tuple[bool, bool]:
+    """Return ``(start_hidden, auto_start_server)`` for supported launch flags."""
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--background", action="store_true")
+    parser.add_argument("--auto-start-server", action="store_true")
+    parser.add_argument("--show", action="store_true")
+    options, _unknown = parser.parse_known_args(
+        list(sys.argv[1:] if argv is None else argv)
+    )
+    start_hidden = bool(options.background and not options.show)
+    return start_hidden, bool(options.auto_start_server and start_hidden)
 
 
 def _safe_write(path: Path, text: str) -> None:
@@ -165,6 +180,7 @@ def _log_environment(
 
 
 def main() -> int:
+    start_hidden, auto_start_server = parse_startup_arguments()
     project_root = Path(__file__).resolve().parent
     try:
         from school_csm_control_center.runtime_paths import (
@@ -189,12 +205,22 @@ def main() -> int:
         from school_csm_control_center.runtime_instance import (
             AlreadyRunningError,
             SingleInstanceGuard,
+            activate_existing_window,
         )
         instance_guard = SingleInstanceGuard(runtime_paths.single_instance_lock)
         instance_guard.acquire()
     except AlreadyRunningError as exc:
         logger.info("%s", exc)
-        _show_fatal_message(str(exc), log_path)
+        from school_csm_control_center.app_identity import SHORT_APPLICATION_NAME
+
+        if activate_existing_window(SHORT_APPLICATION_NAME):
+            logger.info("Activated the existing Control Center window.")
+            return 0
+        _show_fatal_message(
+            str(exc)
+            + "\n\nUse the School CSM icon in the Windows notification area to open it.",
+            log_path,
+        )
         return 5
     except Exception as exc:
         logger.exception("Unable to establish single-instance protection.")
@@ -233,7 +259,13 @@ def main() -> int:
         from school_csm_control_center.app import run
         logger.info("Application module imported successfully.")
 
-        result = int(run(project_root))
+        result = int(
+            run(
+                project_root,
+                start_hidden=start_hidden,
+                auto_start_server=auto_start_server,
+            )
+        )
         logger.info("Qt event loop ended with return code %s.", result)
         return result
     except ModuleNotFoundError as exc:

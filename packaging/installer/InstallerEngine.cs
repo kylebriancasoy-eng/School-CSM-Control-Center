@@ -78,6 +78,8 @@ namespace MoSSLab.SchoolCSM.Installer
             if (IsInstalled && current != null && current == manifest.ParsedVersion)
             {
                 PersistCurrentSetup();
+                Report("Refreshing private-network firewall access for the installed application...");
+                WindowsIntegration.ConfigureFirewallRule();
                 WindowsIntegration.WriteUninstallRegistration(currentText, DirectorySize(InstallRoot));
                 Report("Version " + manifest.VersionText + " is already installed. Use Repair if its files need to be restored.");
                 return;
@@ -146,6 +148,26 @@ namespace MoSSLab.SchoolCSM.Installer
             EnsureApplicationClosed();
             Report("Preparing to remove the application...");
             PreserveLegacyMutableData();
+            try
+            {
+                Report("Removing application-owned Windows startup and firewall entries...");
+                WindowsIntegration.RemoveFirewallRules();
+                WindowsIntegration.RemoveCurrentUserStartupRegistration();
+            }
+            catch
+            {
+                if (File.Exists(ApplicationExecutable))
+                {
+                    try
+                    {
+                        WindowsIntegration.ConfigureFirewallRule();
+                    }
+                    catch
+                    {
+                    }
+                }
+                throw;
+            }
             if (Directory.Exists(InstallRoot))
             {
                 DeleteWithin(InstallRoot, VendorProgramFilesRoot);
@@ -266,6 +288,8 @@ namespace MoSSLab.SchoolCSM.Installer
                 Directory.Move(programStage, InstallRoot);
                 installedNew = true;
                 VerifyExtractedEntryPoint(InstallRoot, manifest.Package);
+                Report("Configuring private-local-subnet firewall access for the verified application...");
+                WindowsIntegration.ConfigureFirewallRule();
                 File.WriteAllBytes(Path.Combine(InstallRoot, ".release.json"), manifest.ToBytes());
                 WriteBytesAtomically(InstalledManifestPath, manifest.ToBytes());
                 WindowsIntegration.CreateShortcuts();
@@ -308,11 +332,13 @@ namespace MoSSLab.SchoolCSM.Installer
                         {
                             DeleteFileIfPresent(InstalledManifestPath);
                         }
+                        WindowsIntegration.ConfigureFirewallRule();
                         WindowsIntegration.CreateShortcuts();
                         WindowsIntegration.WriteUninstallRegistration(previousVersion, DirectorySize(InstallRoot));
                     }
                     else
                     {
+                        WindowsIntegration.RemoveFirewallRules();
                         DeleteFileIfPresent(InstalledManifestPath);
                         WindowsIntegration.RemoveShortcuts();
                         WindowsIntegration.RemoveUninstallRegistration();
@@ -706,7 +732,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 if (processes.Any(process => !process.HasExited))
                 {
                     throw new InvalidOperationException(
-                        "School CSM Control Center is running. Close it, then try again.");
+                        "School CSM Control Center is running. Exit it completely from the Windows notification-area tray, then try again.");
                 }
             }
             finally

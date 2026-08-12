@@ -54,6 +54,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "scanner_session_max_seconds": 28800,
     "scanner_failed_login_limit": 5,
     "scanner_lockout_seconds": 900,
+    "background_server_startup_enabled": False,
 }
 
 IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
