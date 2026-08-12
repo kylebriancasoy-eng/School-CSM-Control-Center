@@ -1,4 +1,4 @@
-# School CSM Control Center 0.4.1
+# School CSM Control Center 0.4.2
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -26,6 +26,15 @@ backups remain in `Documents\MoSSLab Data\School CSM Control Center`. Normal
 install, update, repair, rollback, and uninstall operations preserve that folder
 and the optional OpenAI API key. Removal happens only when the operator explicitly
 selects the saved-data removal option during uninstall.
+
+## 0.4.2 highlights
+
+- Setup now survives temporary GitHub connection closures with five bounded
+  attempts and clear retry messages instead of immediately aborting an install.
+- An interrupted application-package transfer continues from its verified
+  partial byte position when the server supports ranges, or safely restarts when
+  it does not. The completed package must still match the release's exact size
+  and SHA-256 checksum before extraction or installation.
 
 ## 0.4.1 highlights
 

@@ -2,7 +2,7 @@
 param(
     [string]$Repository = $env:GITHUB_REPOSITORY,
     [string]$OutputRoot = "",
-    [string]$InstallerVersion = "1.0.0.0",
+    [string]$InstallerVersion = "1.0.1.0",
     [string]$CSharpCompiler = "",
     [string]$SignToolPath = "",
     [string]$CertificateSha1 = "",
@@ -46,6 +46,7 @@ $sourceFiles = @(
     (Join-Path $installerSource "Program.cs"),
     (Join-Path $installerSource "ReleaseManifest.cs"),
     (Join-Path $installerSource "WindowsIntegration.cs"),
+    (Join-Path $installerSource "ResilientDownloader.cs"),
     (Join-Path $installerSource "InstallerEngine.cs"),
     (Join-Path $installerSource "MaintenanceForm.cs"),
     $generatedPath,

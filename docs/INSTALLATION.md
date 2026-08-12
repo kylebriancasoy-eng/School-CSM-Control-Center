@@ -10,7 +10,7 @@ School CSM Control Center is distributed as one setup program. Operators do not 
 4. Select **Install**.
 5. When setup finishes, open **School CSM Control Center** from the desktop or Start menu shortcut.
 
-The setup program downloads the application package over HTTPS with a strict size limit, checks its published size and SHA-256 checksum, rejects unsafe paths, links, reparse points, and Windows-ambiguous names, extracts it in a staging area, checks the compiled application again, and only then replaces the installed copy.
+The setup program downloads the application package over HTTPS with a strict size limit, checks its published size and SHA-256 checksum, rejects unsafe paths, links, reparse points, and Windows-ambiguous names, extracts it in a staging area, checks the compiled application again, and only then replaces the installed copy. Temporary connection closures are retried up to five times. An interrupted package download continues from its partial byte position when GitHub supports it, while all size and checksum checks remain mandatory.
 
 An internet connection is needed for install, update, and repair. Normal survey collection and analysis remain local and can run without internet.
 
@@ -89,6 +89,7 @@ Exit code `0` means success, `2` means invalid or unconfigured setup, `3` means 
 
 - If setup says it is not connected to a repository, the file was a development compile check. Download setup from the [public releases page](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases).
 - If setup says the application is running, close School CSM Control Center and retry.
+- If all five GitHub download attempts fail, confirm that the internet connection, proxy, and security software permit `github.com`, then reopen the latest Setup and select **Install** again.
 - If checksum verification fails, do not bypass it. Download setup again and confirm that the GitHub release is complete.
 - Maintenance details are recorded in `C:\ProgramData\MoSSLab\School CSM Control Center\Maintenance\maintenance.log`.
 - Application startup details are recorded in `Documents\MoSSLab Data\School CSM Control Center\logs\control-center.log`.

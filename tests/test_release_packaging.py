@@ -91,9 +91,9 @@ class ReleasePackagingTests(unittest.TestCase):
             )
             manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["applicationId"], "MoSSLab.SchoolCSMControlCenter")
-            self.assertEqual(manifest["version"], "0.4.1")
-            self.assertEqual(manifest["tag"], "v0.4.1")
-            self.assertIn("/releases/download/v0.4.1/", manifest["package"]["url"])
+            self.assertEqual(manifest["version"], "0.4.2")
+            self.assertEqual(manifest["tag"], "v0.4.2")
+            self.assertIn("/releases/download/v0.4.2/", manifest["package"]["url"])
             self.assertEqual(
                 manifest["package"]["entryPoint"], "School CSM Control Center.exe"
             )
@@ -247,10 +247,19 @@ class ReleasePackagingTests(unittest.TestCase):
         program = (REPO_ROOT / "packaging" / "installer" / "Program.cs").read_text(
             encoding="utf-8"
         )
+        downloader = (
+            REPO_ROOT / "packaging" / "installer" / "ResilientDownloader.cs"
+        ).read_text(encoding="utf-8")
+        build_installer = (REPO_ROOT / "scripts" / "build_installer.ps1").read_text(
+            encoding="utf-8"
+        )
+        app_manifest = (REPO_ROOT / "packaging" / "installer" / "app.manifest").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('ProgramFilesX86(), "MoSSLab"', installer)
         self.assertIn('OpenAiCredentialTarget = "MoSSLab.SchoolCSMControlCenter.OpenAIApiKey"', installer)
         self.assertIn("VerifyLocalPackage", installer)
-        self.assertIn("CopyWithLimit", installer)
+        self.assertIn("CopyWithLimit", downloader)
         self.assertIn("entry.ExternalAttributes", installer)
         self.assertIn("DeleteDirectoryNoFollow", installer)
         self.assertIn('@"Global\\MoSSLab.SchoolCSMControlCenter.Maintenance"', program)
@@ -290,6 +299,18 @@ class ReleasePackagingTests(unittest.TestCase):
         )
         self.assertIn("WindowsIntegration.RemoveCurrentUserStartupRegistration();", installer)
         self.assertIn("notification-area tray", installer)
+        self.assertIn("MaximumAttempts = 5", downloader)
+        self.assertIn("request.AddRange(rangeStart)", downloader)
+        self.assertIn("TryParseContentRange", downloader)
+        self.assertIn("GitHub connection was interrupted", downloader)
+        self.assertIn("KeepAlive = false", downloader)
+        self.assertIn('"ResilientDownloader.cs"', build_installer)
+        self.assertIn('InstallerVersion = "1.0.1.0"', build_installer)
+        self.assertIn('assemblyIdentity version="1.0.1.0"', app_manifest)
+        self.assertIn("engine.RecordFailure(error);", program)
+        self.assertIn("engine.RecordFailure(completed.Error);", (
+            REPO_ROOT / "packaging" / "installer" / "MaintenanceForm.cs"
+        ).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net;
 
 namespace MoSSLab.SchoolCSM.Installer
 {
@@ -40,6 +39,21 @@ namespace MoSSLab.SchoolCSM.Installer
         internal static readonly string MaintenanceLogPath = Path.Combine(MaintenanceRoot, "maintenance.log");
 
         internal event Action<string> StatusChanged;
+
+        internal void RecordFailure(Exception error)
+        {
+            string message = error == null ? "Unknown error." : error.Message;
+            if (String.IsNullOrWhiteSpace(message))
+            {
+                message = "Unknown error.";
+            }
+            message = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (message.Length > 500)
+            {
+                message = message.Substring(0, 500) + "...";
+            }
+            Report("Maintenance operation failed: " + message);
+        }
 
         internal bool IsInstalled
         {
@@ -375,14 +389,11 @@ namespace MoSSLab.SchoolCSM.Installer
         private ReleaseManifest DownloadLatestManifest()
         {
             Report("Checking the latest GitHub release...");
-            byte[] bytes;
-            using (WebClient client = CreateWebClient())
-            using (Stream input = client.OpenRead(BuildConfig.ManifestUrl))
-            using (MemoryStream output = new MemoryStream())
-            {
-                CopyWithLimit(input, output, MaximumManifestBytes, "The release manifest is unexpectedly large.");
-                bytes = output.ToArray();
-            }
+            ResilientDownloader downloader = new ResilientDownloader(Report);
+            byte[] bytes = downloader.DownloadBytes(
+                BuildConfig.ManifestUrl,
+                MaximumManifestBytes,
+                "the release manifest");
             ReleaseManifest manifest = ReleaseManifest.Read(bytes);
             manifest.Validate(BuildConfig.Repository);
             return manifest;
@@ -395,16 +406,12 @@ namespace MoSSLab.SchoolCSM.Installer
                 throw new InvalidDataException("The published package is unexpectedly large.");
             }
             Report("Downloading " + package.FileName + "...");
-            using (WebClient client = CreateWebClient())
-            using (Stream input = client.OpenRead(package.Url))
-            using (FileStream output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                CopyWithLimit(
-                    input,
-                    output,
-                    package.SizeBytes,
-                    "The downloaded package is larger than the release manifest declares.");
-            }
+            ResilientDownloader downloader = new ResilientDownloader(Report);
+            downloader.DownloadFile(
+                package.Url,
+                destination,
+                package.SizeBytes,
+                "the application package");
             FileInfo info = new FileInfo(destination);
             if (info.Length != package.SizeBytes)
             {
@@ -453,20 +460,6 @@ namespace MoSSLab.SchoolCSM.Installer
                 DeleteFileIfPresent(InstalledPackagePath);
                 Report("The application is ready, but its optional rollback package could not be cached: " + cacheError.Message);
             }
-        }
-
-        private static WebClient CreateWebClient()
-        {
-            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-            WebClient client = new WebClient();
-            if (client.Proxy != null)
-            {
-                client.Proxy.Credentials = CredentialCache.DefaultCredentials;
-            }
-            client.Headers[HttpRequestHeader.UserAgent] =
-                "MoSSLab-School-CSM-Installer/" + BuildConfig.InstallerVersion;
-            client.Headers[HttpRequestHeader.Accept] = "application/octet-stream, application/json";
-            return client;
         }
 
         private static void ExtractCheckedZip(string archivePath, string destination)
@@ -577,26 +570,6 @@ namespace MoSSLab.SchoolCSM.Installer
                 return number >= '1' && number <= '9';
             }
             return false;
-        }
-
-        private static void CopyWithLimit(Stream input, Stream output, long maximumBytes, string errorMessage)
-        {
-            if (input == null)
-            {
-                throw new IOException("The download server returned no data.");
-            }
-            byte[] buffer = new byte[1024 * 1024];
-            long total = 0;
-            int read;
-            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                if (total > maximumBytes - read)
-                {
-                    throw new InvalidDataException(errorMessage);
-                }
-                output.Write(buffer, 0, read);
-                total += read;
-            }
         }
 
         private static void VerifyExtractedEntryPoint(string root, ReleaseAsset package)

@@ -265,6 +265,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 RefreshState();
                 if (completed.Error != null)
                 {
+                    engine.RecordFailure(completed.Error);
                     status.Text = "The operation did not complete.";
                     MessageBox.Show(
                         completed.Error.Message + Environment.NewLine + Environment.NewLine +

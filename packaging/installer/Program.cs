@@ -151,6 +151,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 }
                 catch (Exception error)
                 {
+                    engine.RecordFailure(error);
                     if (!commandLine.Quiet)
                     {
                         MessageBox.Show(
