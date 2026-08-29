@@ -13,6 +13,7 @@ from school_csm_control_center.app_identity import (
     SHORT_APPLICATION_NAME,
     apply_application_identity,
     configure_windows_taskbar_identity,
+    load_application_icon,
 )
 from school_csm_control_center.mosslab_ui import MoSSLabStartupSplash
 from school_csm_control_center.runtime_paths import (
@@ -21,6 +22,7 @@ from school_csm_control_center.runtime_paths import (
 )
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
+from school_csm_control_center.ui.retired_installation import RetiredInstallationWindow
 from school_csm_control_center.version import __version__
 
 
@@ -134,4 +136,28 @@ def run(
             )
         QTimer.singleShot(0, reveal_window)
     logger.info("Entering the Qt event loop.")
+    return app.exec()
+
+
+def run_retired_installation(
+    project_root: str | Path,
+    retirement_record: dict,
+) -> int:
+    """Run only the forced retirement screen, never the ordinary workspace."""
+
+    project_root = Path(project_root).expanduser().resolve()
+    configure_windows_taskbar_identity()
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationName(SHORT_APPLICATION_NAME)
+    app.setApplicationDisplayName(FORMAL_APPLICATION_NAME)
+    app.setOrganizationName("Department of Education")
+    apply_application_identity(app, project_root)
+    theme.apply_theme(app)
+    window = RetiredInstallationWindow(
+        retirement_record,
+        icon=load_application_icon(project_root),
+    )
+    window.show()
+    window.raise_()
+    window.activateWindow()
     return app.exec()

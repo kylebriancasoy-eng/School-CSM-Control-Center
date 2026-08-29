@@ -149,6 +149,23 @@ class HistoryPrintsUiTests(unittest.TestCase):
         self.assertEqual(self.board.search_input.text(), "government")
         self.assertEqual(self.board.table.rowCount(), survey_count)
 
+    def test_narrative_action_is_visibly_labeled_in_every_print_row(self) -> None:
+        self.board.show_section("prints")
+        self.app.processEvents()
+
+        for row_index in range(self.board.prints_table.rowCount()):
+            actions = self.board.prints_table.cellWidget(row_index, 8)
+            self.assertIsNotNone(actions)
+            narrative_button = next(
+                button
+                for button in actions.findChildren(TooltipIconButton)
+                if button.text() == "Narrative"
+            )
+            self.assertEqual(narrative_button.icon_name, "edit")
+            self.assertGreaterEqual(narrative_button.width(), 110)
+            self.assertIn("Narrative Report", narrative_button.toolTip())
+            self.assertFalse(narrative_button.icon().isNull())
+
 
 if __name__ == "__main__":
     unittest.main()

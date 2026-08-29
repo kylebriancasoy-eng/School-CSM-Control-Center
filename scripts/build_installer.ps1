@@ -45,6 +45,7 @@ $outputExe = Join-Path $OutputRoot "School-CSM-Control-Center-Setup.exe"
 $sourceFiles = @(
     (Join-Path $installerSource "Program.cs"),
     (Join-Path $installerSource "ReleaseManifest.cs"),
+    (Join-Path $installerSource "ProviderConfiguration.cs"),
     (Join-Path $installerSource "WindowsIntegration.cs"),
     (Join-Path $installerSource "ResilientDownloader.cs"),
     (Join-Path $installerSource "InstallerEngine.cs"),

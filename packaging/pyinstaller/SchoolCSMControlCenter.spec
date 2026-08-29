@@ -44,13 +44,35 @@ datas += [
     (str(repo_root / "School CSM Control Center Icon.ico"), "."),
     (str(repo_root / "School CSM Control Center Icon.png"), "."),
 ]
-datas += copy_metadata("openai")
+
+# The frozen launcher uses importlib.metadata for its startup diagnostics, and
+# the OpenAI SDK also reads its installed distribution metadata.  PyInstaller
+# does not include dist-info automatically for every imported package.
+METADATA_DISTRIBUTIONS = (
+    "PySide6",
+    "qrcode",
+    "Pillow",
+    "numpy",
+    "opencv-contrib-python-headless",
+    "openai",
+    "cryptography",
+)
+for distribution in METADATA_DISTRIBUTIONS:
+    datas += copy_metadata(distribution)
+
+cloudflared = repo_root / "vendor" / "cloudflared" / "cloudflared.exe"
+if not cloudflared.is_file():
+    raise FileNotFoundError(
+        "The pinned Internet Gateway component is missing. "
+        "Run scripts/fetch_cloudflared.py before building."
+    )
+binaries = [(str(cloudflared), "vendor/cloudflared")]
 
 
 analysis = Analysis(
     [str(entry_point)],
     pathex=[str(repo_root)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=[
         "PySide6.QtPrintSupport",

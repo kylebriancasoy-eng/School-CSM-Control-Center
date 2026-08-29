@@ -1,6 +1,8 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center is distributed as one setup program. Operators do not need Python and do not run command files or source files.
+School CSM Control Center 0.5.0 is distributed as one setup program. Operators
+run only the compiled Setup EXE and application EXE. Python does not need to be
+installed, and operators do not run command files or source files.
 
 ## Install
 
@@ -12,7 +14,10 @@ School CSM Control Center is distributed as one setup program. Operators do not 
 
 The setup program downloads the application package over HTTPS with a strict size limit, checks its published size and SHA-256 checksum, rejects unsafe paths, links, reparse points, and Windows-ambiguous names, extracts it in a staging area, checks the compiled application again, and only then replaces the installed copy. Temporary connection closures are retried up to five times. An interrupted package download continues from its partial byte position when GitHub supports it, while all size and checksum checks remain mandatory.
 
-An internet connection is needed for install, update, and repair. Normal survey collection and analysis remain local and can run without internet.
+An internet connection is needed for install, update, and repair. Survey
+collection, scanning, analysis, printing, and narrative reports remain local and
+can run without internet. The optional Internet Gateway also falls back to local
+operation when its provider or tunnel is unavailable.
 
 The online setup uses anonymous HTTPS downloads, so its GitHub release assets must be publicly downloadable. It never asks an operator for GitHub credentials.
 
@@ -23,11 +28,58 @@ The online setup uses anonymous HTTPS downloads, so its GitHub release assets mu
 | Compiled application | `C:\Program Files (x86)\MoSSLab\School CSM Control Center` | Yes |
 | Survey records, settings, exports, logs, and backups | `Documents\MoSSLab Data\School CSM Control Center` | No |
 | Maintenance staging and rollback cache | `C:\ProgramData\MoSSLab\School CSM Control Center\Maintenance` | Yes; the small setup program and diagnostic log may remain when setup uninstalls itself |
+| Deployment-owned Internet Gateway provider configuration | `C:\ProgramData\MoSSLab\School CSM Control Center\Configuration\internet_gateway_provider.json` | No |
 | Optional OpenAI API key | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.OpenAIApiKey` | No |
+| Internet Gateway tunnel credential | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential` | No |
+| Internet Gateway installation secret | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret` | No |
+| Internet Gateway device private key | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey` | No |
 
 Install, update, repair, and rollback never intentionally modify the Documents data folder. Before replacing an older installation, setup also copies any legacy `data`, `exports`, `logs`, or `backups` folders found beside the old program into the stable Documents location without overwriting different files. Conflicts are retained under `migration\installer-conflicts`.
 
+Setup also preserves a valid administrator-installed
+`internet_gateway_provider.json` across install, update, repair, rollback, and
+uninstall. If an older deployment placed the file beside the application EXE,
+Setup copies the exact validated file into the durable ProgramData location
+before changing Program Files. A sidecar file beside the EXE has deliberate
+runtime precedence when both locations exist. The public GitHub release does not
+contain a production provider file.
+
 The current PySide6 runtime is 64-bit and requires 64-bit Windows 10 or Windows 11. The application is placed in the requested `Program Files (x86)` organizational path even though its bundled Python runtime is 64-bit.
+
+## Optional Internet Gateway
+
+The application starts in **Local Only** mode. Local Survey and Scanner access
+does not require Internet Gateway registration. A deployment administrator must
+first install the non-secret provider configuration described in
+[`INTERNET_GATEWAY.md`](INTERNET_GATEWAY.md); the managed domain, registration
+service, authorization public keys, and exact trusted proxy IP addresses belong
+to that deployment and are not supplied by the public repository.
+
+After the provider file is installed, save the official School ID, open **Survey
+Server and Respondent Access > Internet Gateway**, and choose **Set Up Internet
+Gateway**. First registration uses an administrator-issued one-time activation
+code and a passkey created in the provider's HTTPS page. The one-time completion
+code returns the device credentials to the Control Center. The app saves the
+credentials and registration state before confirming delivery. If confirmation
+is interrupted, enter the same unexpired code again; the service permits only a
+small bounded number of deliveries to that exact installation. Start the local
+Survey Server; the outbound tunnel starts only after local health and a fresh
+signed authorization check succeed.
+
+For replacement computers, use one of these encrypted formats:
+
+- `.mossmig` is a live-device **Server and Data** package bound to the destination
+  installation ID. Create it on the active source computer while the Survey
+  Server is stopped.
+- `.mossbak` is a portable recovery backup used by **Server and Data from
+  backup**. It is not destination-bound and is intended for backup-assisted
+  recovery when the original server cannot perform a live transfer.
+
+Both workflows generate a fresh 256-bit key that is shown only once and is not
+saved by the Control Center. Record the key securely and deliver it through a
+different trusted channel from the encrypted file. The destination validates
+and commits the restored data before opening the passkey-authorized server
+cutover. Do not rename another backup or ZIP file to either extension.
 
 ## Background server and notification-area controls
 
@@ -56,7 +108,15 @@ Open **Settings > Apps > Installed apps**, choose School CSM Control Center, and
 - **Check for Update** downloads and installs the latest GitHub release.
 - **Repair** redownloads the exact release recorded for the current installation and restores its compiled files. Saved data is untouched.
 - **Roll Back** restores the previous verified application copy when one is available. The replaced version becomes the next rollback copy.
-- **Uninstall** removes the compiled application, shortcuts, registration, and maintenance cache while preserving saved data and credentials.
+- **Uninstall** removes the compiled application, shortcuts, Windows startup and
+  firewall entries, registration, and maintenance cache while preserving saved
+  data, credentials, and the provider configuration.
+
+If an invalid provider configuration is found beside the installed EXE, Setup
+moves it to the ProgramData Configuration quarantine folder before uninstalling.
+If that preservation step fails, uninstall stops before deleting application
+files. An invalid configuration already in ProgramData remains outside the
+application-removal boundary and is left for the deployment administrator.
 
 The application must be closed before any maintenance operation.
 
@@ -64,11 +124,24 @@ The application must be closed before any maintenance operation.
 
 Saved data is never selected for removal automatically. To remove it for the Windows account running setup:
 
-1. Open setup and select the checkbox **When uninstalling, also remove my saved records and OpenAI API key**.
+1. Open setup and select the checkbox **When uninstalling, also remove my saved
+   records and application credentials**.
 2. Select **Uninstall**.
 3. Read the warning and confirm.
 
-This deletes only the standard Documents data folder for the current Windows account and the named Credential Manager entry. Data stored in a managed custom location or under another Windows account is left in place and must be handled by its owner or administrator.
+This deletes only the standard Documents data folder for the current Windows
+account and these four exact Credential Manager targets:
+
+- `MoSSLab.SchoolCSMControlCenter.OpenAIApiKey`
+- `MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential`
+- `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret`
+- `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey`
+
+Data stored in a managed custom location or under another Windows account is
+left in place and must be handled by its owner or administrator. The deployment
+provider configuration in ProgramData is machine-wide and is retained even by
+explicit current-account data removal; only a deployment administrator should
+replace or remove it.
 
 ## Command-line maintenance
 
@@ -91,6 +164,11 @@ Exit code `0` means success, `2` means invalid or unconfigured setup, `3` means 
 - If setup says the application is running, close School CSM Control Center and retry.
 - If all five GitHub download attempts fail, confirm that the internet connection, proxy, and security software permit `github.com`, then reopen the latest Setup and select **Install** again.
 - If checksum verification fails, do not bypass it. Download setup again and confirm that the GitHub release is complete.
+- If Internet Gateway remains **Local Only**, ask the deployment administrator
+  to validate the ProgramData provider file. Do not copy secrets into it or use
+  `internet_gateway_provider.example.json` as a production file.
+- If the tunnel component fails its integrity check, use Setup's **Repair**
+  action. Do not download or substitute a different `cloudflared.exe` manually.
 - Maintenance details are recorded in `C:\ProgramData\MoSSLab\School CSM Control Center\Maintenance\maintenance.log`.
 - Application startup details are recorded in `Documents\MoSSLab Data\School CSM Control Center\logs\control-center.log`.
 

@@ -4,3 +4,4 @@ Pillow>=10.0
 numpy>=1.26
 opencv-contrib-python-headless>=4.10
 openai>=2.46,<3
+cryptography>=49,<50

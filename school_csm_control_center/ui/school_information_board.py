@@ -41,6 +41,7 @@ class SchoolInformationBoard(QFrame):
         self.data_root = storage_root_for(self.project_root)
         self.settings_store = ControlCenterSettingsStore(self.project_root)
         self.logo_target = self.data_root / "data" / "csm_survey" / "school_logo.png"
+        self._registered_school_id = ""
         self._build_ui()
         self.load_settings()
         self._apply_styles()
@@ -228,6 +229,11 @@ class SchoolInformationBoard(QFrame):
     def save_settings(self) -> dict[str, Any]:
         settings = self.settings_store.load()
         school_id = validate_school_id(self._clean(self.school_id.text()), required=True)
+        if self._registered_school_id and school_id != self._registered_school_id:
+            self.school_id.setText(self._registered_school_id)
+            raise ValueError(
+                "School ID is locked because this installation is registered for Internet Gateway access. Use Server Transfer for another device or contact the gateway administrator to correct an official School ID."
+            )
         settings.update(
             {
                 "school_name": self._clean(self.school_name.text()) or "School",
@@ -251,6 +257,23 @@ class SchoolInformationBoard(QFrame):
         self._refresh_logo_preview(saved)
         self.school_information_saved.emit(saved)
         return saved
+
+    def set_registered_school_id(self, school_id: str = "") -> None:
+        """Lock the routing identity after Internet Gateway registration."""
+
+        self._registered_school_id = self._clean(school_id)
+        locked = bool(self._registered_school_id)
+        if locked:
+            self.school_id.setText(self._registered_school_id)
+            self.school_id.setToolTip(
+                "Locked to the School ID registered for Internet Gateway routing"
+            )
+        else:
+            self.school_id.setToolTip("Official School ID")
+        self.school_id.setReadOnly(locked)
+        self.school_id.setProperty("gatewayIdentityLocked", locked)
+        self.school_id.style().unpolish(self.school_id)
+        self.school_id.style().polish(self.school_id)
 
     def upload_logo(self) -> None:
         source_name, _selected_filter = QFileDialog.getOpenFileName(

@@ -14,13 +14,21 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repoRoot "release\build"
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
-$repoPrefix = $repoRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-if (-not $OutputRoot.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "OutputRoot must be a dedicated directory inside the repository."
+$releaseRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "release"))
+$releasePrefix = $releaseRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if (-not $OutputRoot.StartsWith($releasePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputRoot must be a dedicated directory inside the repository's release directory."
 }
 $workRoot = Join-Path $OutputRoot "pyinstaller-work"
 $distRoot = Join-Path $OutputRoot "app"
 $specPath = Join-Path $repoRoot "packaging\pyinstaller\SchoolCSMControlCenter.spec"
+$requirementsLock = Join-Path $repoRoot "requirements-lock.txt"
+$dependencyVerifier = Join-Path $repoRoot "scripts\verify_build_environment.py"
+
+& $Python $dependencyVerifier --requirements $requirementsLock
+if ($LASTEXITCODE -ne 0) {
+    throw "The Python build environment does not satisfy the locked release dependencies."
+}
 
 if ($Clean -and (Test-Path -LiteralPath $OutputRoot)) {
     Remove-Item -LiteralPath $OutputRoot -Recurse -Force
@@ -30,13 +38,32 @@ New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 & $Python (Join-Path $repoRoot "scripts\generate_version_info.py") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Could not generate Windows version information." }
 
+& $Python (Join-Path $repoRoot "scripts\fetch_cloudflared.py") | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not fetch or verify the pinned Internet Gateway component." }
+
 & $Python -m PyInstaller --noconfirm --clean --workpath $workRoot --distpath $distRoot $specPath
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
+
+$pyinstallerWarnings = Join-Path $workRoot "SchoolCSMControlCenter\warn-SchoolCSMControlCenter.txt"
+& $Python $dependencyVerifier --warnings-only --pyinstaller-warnings $pyinstallerWarnings
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller omitted a required runtime dependency."
+}
 
 $appDirectory = Join-Path $distRoot "School CSM Control Center"
 $appExecutable = Join-Path $appDirectory "School CSM Control Center.exe"
 if (-not (Test-Path -LiteralPath $appExecutable -PathType Leaf)) {
     throw "Expected executable was not created: $appExecutable"
+}
+$sourceTunnel = Join-Path $repoRoot "vendor\cloudflared\cloudflared.exe"
+$bundledTunnel = Join-Path $appDirectory "vendor\cloudflared\cloudflared.exe"
+if (-not (Test-Path -LiteralPath $bundledTunnel -PathType Leaf)) {
+    throw "The compiled application is missing the verified Internet Gateway component: $bundledTunnel"
+}
+$sourceTunnelHash = (Get-FileHash -LiteralPath $sourceTunnel -Algorithm SHA256).Hash
+$bundledTunnelHash = (Get-FileHash -LiteralPath $bundledTunnel -Algorithm SHA256).Hash
+if ($sourceTunnelHash -ne $bundledTunnelHash) {
+    throw "The bundled Internet Gateway component does not match the verified build input."
 }
 
 $allowedOpenCvRuntimeModules = @(

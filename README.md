@@ -1,4 +1,4 @@
-# School CSM Control Center 0.4.2
+# School CSM Control Center 0.5.0
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -23,9 +23,50 @@ and SHA-256 checksum before it can replace the installed application. See
 
 Survey records, settings, print evidence, narrative revisions, exports, logs, and
 backups remain in `Documents\MoSSLab Data\School CSM Control Center`. Normal
-install, update, repair, rollback, and uninstall operations preserve that folder
-and the optional OpenAI API key. Removal happens only when the operator explicitly
-selects the saved-data removal option during uninstall.
+install, update, repair, rollback, and uninstall operations preserve that folder,
+the optional OpenAI API key, Internet Gateway device credentials, and an
+administrator-installed provider configuration. The uninstall data-removal option
+must be selected explicitly; it removes the current account's standard saved-data
+folder and named application credentials, but retains the machine-wide provider
+configuration.
+
+## 0.5.0 highlights
+
+- The optional Internet Gateway adds a stable School-ID HTTPS address while the
+  school computer remains the authoritative server and data store. With no valid
+  deployment provider configuration, the application stays **Local Only** and
+  makes no registration-service or tunnel requests.
+- Browser-based Windows Hello or security-key passkeys authorize initial Internet
+  Server registration, additional administrator passkeys, and one-active-server
+  transfer. The Control Center does not collect OpenAI, ChatGPT, GitHub, or
+  gateway passwords.
+- Registration and transfer credentials are committed with the corresponding
+  authorization change, delivered only to the destination installation, and
+  acknowledged only after Windows Credential Manager and local registration
+  state have been saved. An interrupted response can safely retry the same
+  short-lived code without creating a second registration or transfer.
+- A live source server can create an encrypted, destination-bound `.mossmig`
+  Server-and-Data package. A separately prepared encrypted `.mossbak` portable
+  recovery backup supports backup-assisted replacement when the source computer
+  is unavailable. Each 256-bit key is shown once and must travel separately from
+  its file.
+- Imports decrypt only into inert staging, enforce manifest, identity, version,
+  path, hash, and record-count checks, and atomically activate data with rollback
+  evidence before Internet Server authority can move. School-owned scanner
+  previews are included in both migration and recovery-backup round trips.
+- A saved `ACTIVE` label never enables Internet listening by itself. Each app
+  process must complete a fresh signed provider check before the server may bind
+  its private tunnel origin; failed or lost authorization stops the tunnel and
+  returns the local server to its selected-interface binding.
+- Public access-session creation, submissions, scanner operations, and
+  installation-secret checks use bounded stores and throttles that do not retain
+  raw client addresses.
+- The compiled Windows package includes the integrity-pinned tunnel connector;
+  operators still run only the application EXE and Setup EXE and do not need
+  Python installed.
+- Provider endpoints, managed domain, public signing keys, Cloudflare secrets,
+  and production hosting remain deployment-owned and are intentionally absent
+  from the public release.
 
 ## 0.4.2 highlights
 

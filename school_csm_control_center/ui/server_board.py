@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.controls import NoWheelComboBox, NoWheelDateEdit, NoWheelSpinBox
 from school_csm_control_center.ui.overlays import OverlayPrompt
+from school_csm_control_center.ui.internet_gateway_panel import InternetGatewayPanel
 from school_csm_control_center.ui.widgets import TooltipIconButton
 from school_csm_control_center.web_server.controller import SurveyServerController
 
@@ -34,9 +35,16 @@ class SurveyServerBoard(QWidget):
 
     background_startup_requested = Signal(bool)
 
-    def __init__(self, controller: SurveyServerController, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        controller: SurveyServerController,
+        parent: QWidget | None = None,
+        *,
+        gateway_controller: Any | None = None,
+    ) -> None:
         super().__init__(parent)
         self.controller = controller
+        self.gateway_controller = gateway_controller
         self._named_access_url = ""
         self._direct_access_url = ""
         self._wifi_payload = ""
@@ -58,7 +66,7 @@ class SurveyServerBoard(QWidget):
         title = QLabel("Survey Server and Access")
         title.setObjectName("server_title")
         subtitle = QLabel(
-            "Operate the local CSM Survey Form, control its public status, configure the school address, and generate network and survey QR codes."
+            "Operate the local CSM Survey Form and optionally publish the same service through the managed Internet Gateway. Local access remains independent."
         )
         subtitle.setWordWrap(True)
         subtitle.setObjectName("server_subtitle")
@@ -139,7 +147,7 @@ class SurveyServerBoard(QWidget):
         background_title = QLabel("Start the app and survey server with Windows")
         background_title.setObjectName("background_startup_title")
         background_helper = QLabel(
-            "When enabled, the installed app starts hidden in the Windows notification area and starts the local survey server automatically. Setup authorizes Private-network access so Windows does not request permission again at sign-in."
+            "When enabled, the installed app starts hidden in the Windows notification area and starts the local survey server automatically. If this device has an active Internet Gateway registration, it reconnects only after local server health and device authorization are verified. Setup authorizes Private-network access so Windows does not request permission again at sign-in."
         )
         background_helper.setObjectName("server_note")
         background_helper.setWordWrap(True)
@@ -150,10 +158,10 @@ class SurveyServerBoard(QWidget):
             "Start the app and survey server with Windows"
         )
         self.background_startup_switch.setAccessibleDescription(
-            "Enable or disable automatic background startup and unattended local server startup."
+            "Enable or disable automatic background startup, unattended local server startup, and verified Internet Gateway reconnect for a registered device."
         )
         self.background_startup_switch.setToolTip(
-            "Start hidden in the notification area and start the survey server when this Windows account signs in"
+            "Start hidden, start the local survey server, then reconnect an authorized Internet Gateway"
         )
         self.background_startup_state = QLabel("Disabled")
         self.background_startup_state.setObjectName("background_startup_state")
@@ -162,6 +170,14 @@ class SurveyServerBoard(QWidget):
         background.addWidget(self.background_startup_state, 2, 2, Qt.AlignmentFlag.AlignRight)
         background.addWidget(background_helper, 2, 0, 1, 2)
         layout.addWidget(background_card)
+
+        self.internet_gateway = InternetGatewayPanel()
+        layout.addWidget(self.internet_gateway)
+        if self.gateway_controller is not None:
+            self.internet_gateway.apply_state(self.gateway_controller.state())
+            self.gateway_controller.state_changed.connect(
+                self.internet_gateway.apply_state
+            )
 
         network_card = self._card("Laptop hotspot and captive portal")
         net = network_card.layout()

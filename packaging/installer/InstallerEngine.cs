@@ -13,7 +13,11 @@ namespace MoSSLab.SchoolCSM.Installer
         internal const string DisplayName = "School CSM Control Center";
         internal const string ApplicationExeName = "School CSM Control Center.exe";
         internal const string SetupExeName = "School-CSM-Control-Center-Setup.exe";
+        internal const string ProviderConfigurationFileName = "internet_gateway_provider.json";
         internal const string OpenAiCredentialTarget = "MoSSLab.SchoolCSMControlCenter.OpenAIApiKey";
+        internal const string GatewayTunnelCredentialTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential";
+        internal const string GatewayInstallationSecretTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret";
+        internal const string GatewayDevicePrivateKeyTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey";
 
         private const long MaximumPackageBytes = 2L * 1024 * 1024 * 1024;
         private const long MaximumExtractedBytes = 4L * 1024 * 1024 * 1024;
@@ -30,6 +34,14 @@ namespace MoSSLab.SchoolCSM.Installer
             DisplayName,
             "Maintenance");
         internal static readonly string MaintenanceExecutable = Path.Combine(MaintenanceRoot, SetupExeName);
+        internal static readonly string ProviderConfigurationRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "MoSSLab",
+            DisplayName,
+            "Configuration");
+        internal static readonly string ProviderConfigurationPath = Path.Combine(
+            ProviderConfigurationRoot,
+            ProviderConfigurationFileName);
         internal static readonly string StagingRoot = Path.Combine(MaintenanceRoot, "staging");
         internal static readonly string RollbackRoot = Path.Combine(MaintenanceRoot, "rollback");
         internal static readonly string InstalledManifestPath = Path.Combine(MaintenanceRoot, "installed-release.json");
@@ -161,6 +173,7 @@ namespace MoSSLab.SchoolCSM.Installer
         {
             EnsureApplicationClosed();
             Report("Preparing to remove the application...");
+            PreserveProviderConfiguration(true);
             PreserveLegacyMutableData();
             try
             {
@@ -194,10 +207,10 @@ namespace MoSSLab.SchoolCSM.Installer
                 string dataRoot = StandardUserDataRoot();
                 Report("Removing saved records for the current Windows account...");
                 DeleteExactUserData(dataRoot);
-                if (!WindowsIntegration.DeleteOpenAiCredential())
+                if (!WindowsIntegration.DeleteCurrentUserCredentials())
                 {
                     throw new InvalidOperationException(
-                        "The application was removed, but Windows could not remove the saved OpenAI API key.");
+                        "The application was removed, but Windows could not remove all saved credentials for this account.");
                 }
             }
             else
@@ -223,6 +236,47 @@ namespace MoSSLab.SchoolCSM.Installer
             });
         }
 
+        internal void WaitForApplicationExit(int processId)
+        {
+            Process process;
+            try
+            {
+                process = Process.GetProcessById(processId);
+            }
+            catch (ArgumentException)
+            {
+                return;
+            }
+            using (process)
+            {
+                if (process.HasExited)
+                {
+                    return;
+                }
+                string expected = Path.GetFileNameWithoutExtension(ApplicationExeName);
+                string actual;
+                try
+                {
+                    actual = process.ProcessName;
+                }
+                catch (InvalidOperationException)
+                {
+                    return;
+                }
+                if (!String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "The requested process is not School CSM Control Center. Setup will not wait for it.");
+                }
+                Report("Waiting for the retired School CSM Control Center process to exit...");
+                if (!process.HasExited && !process.WaitForExit(30000))
+                {
+                    throw new InvalidOperationException(
+                        "School CSM Control Center did not exit. Choose Exit in the retirement notice, then try uninstalling again.");
+                }
+            }
+        }
+
         private void DeployDownloadedRelease(ReleaseManifest manifest, string operation, bool rotateRollback)
         {
             string working = CreateUniqueDirectory(StagingRoot, "release");
@@ -246,6 +300,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
         private void DeployDirectory(string source, ReleaseManifest manifest, string operation, bool rotateRollback)
         {
+            PreserveProviderConfiguration();
             PreserveLegacyMutableData();
             Directory.CreateDirectory(VendorProgramFilesRoot);
             Directory.CreateDirectory(MaintenanceRoot);
@@ -630,6 +685,109 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 Report("Preserved " + copied + " legacy data file(s) under Documents before replacement.");
             }
+        }
+
+        private void PreserveProviderConfiguration(bool quarantineInvalid = false)
+        {
+            string installedPath = Path.Combine(InstallRoot, ProviderConfigurationFileName);
+            string source = File.Exists(installedPath)
+                ? installedPath
+                : (File.Exists(ProviderConfigurationPath) ? ProviderConfigurationPath : String.Empty);
+            if (String.IsNullOrEmpty(source))
+            {
+                return;
+            }
+
+            byte[] exactBytes;
+            try
+            {
+                exactBytes = ProviderConfiguration.ReadValidated(source);
+            }
+            catch (Exception error)
+            {
+                if (quarantineInvalid)
+                {
+                    QuarantineInvalidProviderConfiguration(source, error);
+                    return;
+                }
+                throw new InvalidDataException(
+                    "Setup will not remove or replace the administrator-installed Internet Gateway " +
+                    "provider configuration because it is invalid. Correct or safely copy the file, then retry.",
+                    error);
+            }
+            if (!String.Equals(
+                Path.GetFullPath(source),
+                Path.GetFullPath(ProviderConfigurationPath),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.CreateDirectory(ProviderConfigurationRoot);
+                WriteBytesAtomically(ProviderConfigurationPath, exactBytes);
+                Report("Preserved the validated Internet Gateway provider configuration in ProgramData.");
+            }
+        }
+
+        private void QuarantineInvalidProviderConfiguration(string source, Exception validationError)
+        {
+            bool sourceWillBeDeleted = IsPathWithin(source, InstallRoot);
+            try
+            {
+                FileInfo file = new FileInfo(source);
+                if (!file.Exists)
+                {
+                    Report("The invalid Internet Gateway provider configuration disappeared before it could be preserved.");
+                    return;
+                }
+                if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    if (sourceWillBeDeleted)
+                    {
+                        throw new InvalidDataException(
+                            "The invalid Internet Gateway provider configuration is redirected " +
+                            "and cannot be safely preserved before removing the application.");
+                    }
+                    Report(
+                        "The invalid Internet Gateway provider configuration is redirected. " +
+                        "Setup will not follow or copy the redirected file during uninstall.");
+                    return;
+                }
+
+                string quarantineRoot = Path.Combine(ProviderConfigurationRoot, "Quarantine");
+                Directory.CreateDirectory(quarantineRoot);
+                string quarantineName = String.Format(
+                    "internet_gateway_provider.invalid-{0}-{1}.json",
+                    DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"),
+                    Guid.NewGuid().ToString("N").Substring(0, 8));
+                string quarantinePath = Path.Combine(quarantineRoot, quarantineName);
+                File.Move(source, quarantinePath);
+                Report(
+                    "The invalid Internet Gateway provider configuration was preserved in the " +
+                    "ProgramData Configuration\\Quarantine folder. Uninstall will continue.");
+            }
+            catch (Exception quarantineError)
+            {
+                if (sourceWillBeDeleted)
+                {
+                    throw new InvalidOperationException(
+                        "Setup could not preserve the invalid Internet Gateway provider " +
+                        "configuration outside the application folder. Uninstall was stopped " +
+                        "before removing any application files. Correct or safely copy the " +
+                        "configuration, then try again.",
+                        new AggregateException(validationError, quarantineError));
+                }
+                Report(
+                    "The Internet Gateway provider configuration is invalid and could not be moved " +
+                    "to quarantine. It is already outside the application removal boundary, so Setup " +
+                    "left it in place and will continue uninstalling. " +
+                    quarantineError.Message);
+            }
+        }
+
+        private static bool IsPathWithin(string path, string parent)
+        {
+            string fullPath = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string fullParent = EnsureTrailingSeparator(Path.GetFullPath(parent));
+            return fullPath.StartsWith(fullParent, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void CopyDirectory(string source, string destination)

@@ -13,7 +13,7 @@ import socket
 import subprocess
 import time
 from threading import Event, RLock, Thread
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from PySide6.QtCore import QObject, Signal
 
@@ -74,7 +74,14 @@ class SurveyServerController(QObject):
     address_status_changed = Signal(object)
     portal_status_changed = Signal(object)
 
-    def __init__(self, store: SurveyStore, project_root: str | Path, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        store: SurveyStore,
+        project_root: str | Path,
+        parent: QObject | None = None,
+        *,
+        runtime_settings_provider: Callable[[], Mapping[str, Any]] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.store = store
         self.project_root = Path(project_root)
@@ -89,8 +96,10 @@ class SurveyServerController(QObject):
         self._shutdown_requested = Event()
         self._application_shutdown = False
         self._server: SurveyHTTPServer | None = None
+        self._runtime_settings_provider = runtime_settings_provider
         self._thread: Thread | None = None
         self._bound_ip = ""
+        self._listener_ip = ""
         self._active_network_settings: dict[str, Any] = {}
         self._direct_health_verified = False
         self._direct_health_detail = "The local survey server is stopped."
@@ -137,6 +146,8 @@ class SurveyServerController(QObject):
         with self._state_lock:
             values = dict(self._settings)
         values["server_running"] = self.running
+        values["server_port"] = self._port
+        values["tunnel_origin_url"] = self.tunnel_origin_url()
         values["local_ip"] = self.active_local_ip()
         capability = self.access_capability()
         values["configured_hostname"] = self.hostname()
@@ -158,6 +169,48 @@ class SurveyServerController(QObject):
             "processing_limit": int(values.get("scanner_processing_limit") or 1),
         }
         return values
+
+    def set_runtime_settings_provider(
+        self,
+        provider: Callable[[], Mapping[str, Any]] | None,
+    ) -> None:
+        """Inject non-persistent request policy such as Gateway host routing.
+
+        The callback is never evaluated during construction and is not written
+        to ``control_center_settings.json``.  This keeps Local-Only startup free
+        of provider access and avoids mixing device authorization with school
+        settings.
+        """
+
+        self._runtime_settings_provider = provider
+
+    def _runtime_settings(self) -> dict[str, Any]:
+        provider = self._runtime_settings_provider
+        if provider is None:
+            return {}
+        try:
+            value = provider()
+        except Exception:
+            return {}
+        return dict(value) if isinstance(value, Mapping) else {}
+
+    def tunnel_origin_url(self) -> str:
+        """Return the loopback-only tunnel origin while the server is running."""
+
+        if (
+            not self.running
+            or self._listener_ip not in {"0.0.0.0", "127.0.0.1", "::"}
+            or not bool(
+                self._runtime_settings().get("internet_gateway_enabled")
+            )
+        ):
+            return ""
+        return f"http://127.0.0.1:{self._port}"
+
+    def wildcard_listener_active(self) -> bool:
+        """Return whether this process still owns a multi-interface listener."""
+
+        return bool(self.running and self._listener_ip in {"0.0.0.0", "::"})
 
     def reload_persistent_settings(self) -> dict[str, Any]:
         """Reload school/profile settings without interrupting a running server."""
@@ -603,10 +656,17 @@ class SurveyServerController(QObject):
             if self._shutdown_requested.is_set():
                 self.status_changed.emit("offline", "Local survey server startup was cancelled.")
                 return 0
-            bind_address = self.selected_local_ip()
+            respondent_address = self.selected_local_ip()
+            gateway_listener = bool(
+                self._runtime_settings().get("internet_gateway_enabled")
+            )
+            # A wildcard listener preserves the selected LAN/hotspot address
+            # while also accepting the tunnel process only through loopback.
+            # Local-Only installations retain the narrower selected-IP bind.
+            listener_address = "0.0.0.0" if gateway_listener else respondent_address
             try:
                 server = SurveyHTTPServer(
-                    (bind_address, port),
+                    (listener_address, port),
                     store=self.store,
                     static_root=self.static_root,
                     settings_provider=self._server_settings,
@@ -625,7 +685,8 @@ class SurveyServerController(QObject):
             with self._server_lifecycle_lock:
                 self._server = server
                 self._port = int(server.server_address[1])
-                self._bound_ip = bind_address
+                self._bound_ip = respondent_address
+                self._listener_ip = listener_address
                 self._active_network_settings = {
                     key: self._settings.get(key) for key in NETWORK_RESTART_KEYS
                 }
@@ -638,7 +699,17 @@ class SurveyServerController(QObject):
             if self._shutdown_requested.is_set():
                 self.stop()
                 return 0
-            healthy, health_detail = verify_http_health(bind_address, self._port)
+            healthy, health_detail = verify_http_health(respondent_address, self._port)
+            if healthy and gateway_listener:
+                loopback_healthy, loopback_detail = verify_http_health(
+                    "127.0.0.1", self._port
+                )
+                if not loopback_healthy:
+                    healthy = False
+                    health_detail = (
+                        "The local Survey Server is reachable on the respondent "
+                        f"network but not through its secure tunnel origin: {loopback_detail}"
+                    )
             self._direct_health_verified = healthy
             self._direct_health_detail = health_detail
             if not healthy:
@@ -648,6 +719,7 @@ class SurveyServerController(QObject):
                 self._thread = None
                 self._port = 0
                 self._bound_ip = ""
+                self._listener_ip = ""
                 self._active_network_settings = {}
                 try:
                     server.shutdown()
@@ -663,17 +735,17 @@ class SurveyServerController(QObject):
             self._emit_urls()
             if not configure_firewall:
                 message = (
-                    f"Local survey server is healthy at {bind_address}:{self._port}; "
+                    f"Local survey server is healthy at {respondent_address}:{self._port}; "
                     "network access uses the authorization prepared by Setup."
                 )
             elif firewall.get("ok"):
                 message = (
-                    f"Local survey server is healthy at {bind_address}:{self._port}; "
+                    f"Local survey server is healthy at {respondent_address}:{self._port}; "
                     "Windows Firewall access was configured."
                 )
             else:
                 message = (
-                    f"Local survey server is healthy at {bind_address}:{self._port}, "
+                    f"Local survey server is healthy at {respondent_address}:{self._port}, "
                     f"but firewall setup reported: {firewall.get('firewall')}."
                 )
             if str(self._settings.get("network_mode") or "hotspot") == "hotspot" and not self.preferred_hotspot_ip():
@@ -706,6 +778,7 @@ class SurveyServerController(QObject):
             self._thread = None
             self._port = 0
             self._bound_ip = ""
+            self._listener_ip = ""
             self._active_network_settings = {}
             self._direct_health_verified = False
             self._direct_health_detail = "The local survey server is stopped."
@@ -939,6 +1012,10 @@ class SurveyServerController(QObject):
                 self.hostname() if bool(capability.get("named_available")) else ""
             )
             values["access_capability"] = capability
+        # Runtime Gateway policy is evaluated per request by SurveyHTTPServer.
+        # It contains only a public hostname, an enable flag, and trusted proxy
+        # addresses; credentials never cross this boundary.
+        values.update(self._runtime_settings())
         return values
 
     def _persist(self) -> dict[str, Any]:

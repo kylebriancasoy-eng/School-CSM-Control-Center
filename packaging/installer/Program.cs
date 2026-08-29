@@ -21,13 +21,15 @@ namespace MoSSLab.SchoolCSM.Installer
         internal MaintenanceCommand Command;
         internal bool RemoveUserData;
         internal bool Quiet;
+        internal int WaitForProcessId;
 
         internal static CommandLine Parse(string[] arguments)
         {
             CommandLine parsed = new CommandLine();
             List<MaintenanceCommand> commands = new List<MaintenanceCommand>();
-            foreach (string raw in arguments)
+            for (int index = 0; index < arguments.Length; index++)
             {
+                string raw = arguments[index];
                 string argument = (raw ?? String.Empty).Trim().ToLowerInvariant();
                 switch (argument)
                 {
@@ -50,12 +52,20 @@ namespace MoSSLab.SchoolCSM.Installer
                     case "--quiet":
                         parsed.Quiet = true;
                         break;
+                    case "--wait-for-pid":
+                        if (index + 1 >= arguments.Length ||
+                            !Int32.TryParse(arguments[++index], out parsed.WaitForProcessId) ||
+                            parsed.WaitForProcessId <= 0)
+                        {
+                            throw new ArgumentException("--wait-for-pid requires a positive process ID.");
+                        }
+                        break;
                     case "--help":
                     case "-h":
                     case "/?":
                         throw new ArgumentException(
                             "Options: --install, --update, --repair, --rollback, --uninstall, " +
-                            "--remove-user-data (with uninstall), --quiet");
+                            "--remove-user-data (with uninstall), --wait-for-pid <id>, --quiet");
                     default:
                         throw new ArgumentException("Unknown setup option: " + raw);
                 }
@@ -72,6 +82,10 @@ namespace MoSSLab.SchoolCSM.Installer
             if (parsed.Quiet && parsed.Command == MaintenanceCommand.None)
             {
                 throw new ArgumentException("--quiet requires an explicit maintenance operation.");
+            }
+            if (parsed.WaitForProcessId > 0 && parsed.Command != MaintenanceCommand.Uninstall)
+            {
+                throw new ArgumentException("--wait-for-pid is accepted only together with --uninstall.");
             }
             return parsed;
         }
@@ -138,6 +152,10 @@ namespace MoSSLab.SchoolCSM.Installer
 
                 try
                 {
+                    if (commandLine.WaitForProcessId > 0)
+                    {
+                        engine.WaitForApplicationExit(commandLine.WaitForProcessId);
+                    }
                     RunCommand(engine, commandLine.Command, commandLine.RemoveUserData);
                     if (!commandLine.Quiet)
                     {

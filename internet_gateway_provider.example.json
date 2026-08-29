@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "provider_name": "Organization-managed School CSM Internet Gateway",
+  "registration_service_url": "https://registration.example.gov.ph",
+  "managed_domain": "csm.example.gov.ph",
+  "authorization_signing_keys": [
+    {
+      "key_id": "replace-with-provider-key-id",
+      "public_key_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  ],
+  "trusted_proxy_addresses": [
+    "127.0.0.1",
+    "::1"
+  ]
+}

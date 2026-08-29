@@ -42,6 +42,14 @@ from school_csm_control_center.storage.scanner_security import (
     ScannerOperatorStore,
 )
 from school_csm_control_center.storage.survey_store import DuplicateControlNumberError, SurveyStore
+from school_csm_control_center.web_server.internet_security import (
+    BoundedRateLimiter,
+    configured_rate_limit,
+    InternetRequestPolicy,
+    InternetRequestRejected,
+    RequestSecurityContext,
+    validate_internet_origin,
+)
 from school_csm_control_center.web_server.scanner_jobs import (
     ScannerJobError,
     ScannerJobManager,
@@ -51,7 +59,9 @@ from school_csm_control_center.web_server.scanner_jobs import (
 
 SESSION_COOKIE = "SCHOOL_CSM_SESSION"
 SCANNER_SESSION_COOKIE = "SCHOOL_CSM_SCANNER_SESSION"
+MAX_ACTIVE_SURVEY_SESSIONS = 4096
 PRIVACY_NOTICE_VERSION = "2026-07-01"
+INTERNET_PRIVACY_NOTICE_VERSION = "2026-08-14-internet-gateway-1"
 
 SCANNER_ENDPOINT = "/api/scanner/submissions"
 SCANNER_MAX_BODY_SIZE = 3 * 1024 * 1024
@@ -89,7 +99,8 @@ class SurveyHTTPServer(ThreadingHTTPServer):
         self.submission_lock = RLock()
         self.submission_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.session_lock = RLock()
-        self.sessions: dict[str, float] = {}
+        self.sessions: OrderedDict[str, float] = OrderedDict()
+        self.max_active_survey_sessions = MAX_ACTIVE_SURVEY_SESSIONS
         self.scanner_operator_store = scanner_operator_store or ScannerOperatorStore(self.project_root)
         self.mrs_registry = MRSRegistryStore(self.project_root)
         self.mrs_field_tests = MRSFieldTestStore(self.project_root)
@@ -99,6 +110,8 @@ class SurveyHTTPServer(ThreadingHTTPServer):
             self.project_root,
             processing_limit_provider=lambda: int(self.settings().get("scanner_processing_limit") or 1),
         )
+        self.internet_client_fingerprint_secret = secrets.token_bytes(32)
+        self.internet_rate_limiter = BoundedRateLimiter(max_identities=4096)
         self.reconcile_scanner_registry()
 
     def settings(self) -> dict[str, Any]:
@@ -176,6 +189,7 @@ class SurveyHTTPServer(ThreadingHTTPServer):
         with self.session_lock:
             self._cleanup_sessions_locked()
             self.sessions[token] = time() + duration
+            self._trim_sessions_locked()
             count = len(self.sessions)
         self._notify_session_count(count)
         return token, duration
@@ -188,6 +202,10 @@ class SurveyHTTPServer(ThreadingHTTPServer):
             expiry = self.sessions.get(token)
             remaining = max(0, int(expiry - time())) if expiry else 0
             valid = bool(expiry and remaining > 0)
+            if valid:
+                # Preserve a session that is actively loading the survey when
+                # the bounded store has to evict an older inactive entry.
+                self.sessions.move_to_end(token)
         return valid, remaining
 
     def expire_session(self, token: str) -> None:
@@ -275,6 +293,12 @@ class SurveyHTTPServer(ThreadingHTTPServer):
         expired = [token for token, expiry in self.sessions.items() if expiry <= now]
         for token in expired:
             self.sessions.pop(token, None)
+        self._trim_sessions_locked()
+
+    def _trim_sessions_locked(self) -> None:
+        capacity = max(1, int(self.max_active_survey_sessions))
+        while len(self.sessions) > capacity:
+            self.sessions.popitem(last=False)
 
     def _cleanup_scanner_sessions_locked(self) -> None:
         now = time()
@@ -304,9 +328,187 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # noqa: A003
         return
 
+    def _dispatch_safely(self, callback: Callable[[], None]) -> None:
+        try:
+            callback()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return
+        except Exception:
+            logging.getLogger("school_csm_startup.web").exception(
+                "Unhandled web request failure."
+            )
+            try:
+                self._send_json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {
+                        "ok": False,
+                        "code": "internal_server_error",
+                        "error": "The request could not be completed.",
+                    },
+                )
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                return
+
+    def _authorize_request(self) -> bool:
+        """Apply the local/Internet trust boundary once per request."""
+
+        if isinstance(getattr(self, "_security_context", None), RequestSecurityContext):
+            return True
+        host_values = self.headers.get_all("Host") or []
+        forwarded_host_values = self.headers.get_all("X-Forwarded-Host") or []
+        forwarded_proto_values = self.headers.get_all("X-Forwarded-Proto") or []
+        forwarded_for_values = self.headers.get_all("X-Forwarded-For") or []
+        connecting_ip_values = self.headers.get_all("CF-Connecting-IP") or []
+        forwarding_headers_present = any(
+            self.headers.get_all(name)
+            for name in (
+                "Forwarded",
+                "X-Forwarded-For",
+                "X-Forwarded-Host",
+                "X-Forwarded-Proto",
+                "CF-Connecting-IP",
+            )
+        )
+        try:
+            if len(host_values) != 1:
+                raise InternetRequestRejected(
+                    "The request must contain exactly one Host header.",
+                    code="invalid_host",
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            policy = InternetRequestPolicy.from_settings(self.server.settings())
+            self._security_context = policy.classify(
+                peer_ip=str(self.client_address[0] if self.client_address else ""),
+                host=host_values[0],
+                forwarded_host=",".join(forwarded_host_values),
+                forwarded_proto=",".join(forwarded_proto_values),
+                forwarded_for=",".join(forwarded_for_values),
+                connecting_ip=",".join(connecting_ip_values),
+                forwarding_headers_present=forwarding_headers_present,
+                fingerprint_secret=self.server.internet_client_fingerprint_secret,
+            )
+        except InternetRequestRejected as exc:
+            logging.getLogger("school_csm_startup.gateway.security").warning(
+                "Internet Gateway request rejected: event=%s reason=%s",
+                exc.code,
+                str(exc),
+            )
+            self._security_context = RequestSecurityContext()
+            self._send_json(
+                exc.status,
+                {"ok": False, "code": exc.code, "error": str(exc)},
+            )
+            return False
+        return True
+
+    def _internet_request_guard(self, path: str, *, method: str) -> bool:
+        """Enforce public same-origin and bounded per-client request limits."""
+
+        context = getattr(self, "_security_context", None)
+        if not isinstance(context, RequestSecurityContext) or not context.internet:
+            return True
+        if method == "POST":
+            try:
+                validate_internet_origin(context, self.headers.get_all("Origin") or [])
+            except InternetRequestRejected as exc:
+                logging.getLogger("school_csm_startup.gateway.security").warning(
+                    "Internet Gateway request rejected: event=%s path=%s",
+                    exc.code,
+                    path,
+                )
+                self._send_json(
+                    exc.status,
+                    {"ok": False, "code": exc.code, "error": str(exc)},
+                )
+                return False
+
+        buckets: list[str] = []
+        if method == "GET" and path.startswith("/access/"):
+            buckets.append("access_session")
+        if method == "POST" and path == "/api/submit":
+            buckets.append("survey_submit")
+        if method == "POST" and path == "/api/scanner/auth/login":
+            buckets.append("scanner_login")
+        if path == "/api/scanner/jobs" or path.startswith("/api/scanner/jobs/"):
+            buckets.append("scanner_jobs")
+        if method == "POST" and path in {"/api/scanner/jobs", SCANNER_ENDPOINT}:
+            buckets.append("scanner_upload")
+        if not buckets:
+            return True
+
+        if "access_session" in buckets or "survey_submit" in buckets or "scanner_login" in buckets:
+            identity = context.client_fingerprint or "gateway-client"
+        elif any(bucket.startswith("scanner_") for bucket in buckets):
+            # An arbitrary Cookie header must not mint a fresh rate-limit
+            # identity.  Keep unauthenticated traffic bound to the verified
+            # Cloudflare client fingerprint, while allowing each real scanner
+            # session its own bounded allowance behind a shared school NAT.
+            scanner_token = self._scanner_session_cookie()
+            scanner_valid, _scanner_session, _remaining = (
+                self.server.validate_scanner_session(scanner_token, refresh=False)
+            )
+            if scanner_valid:
+                identity = (
+                    (context.client_fingerprint or "gateway-client")
+                    + ":"
+                    + scanner_token
+                )
+            else:
+                identity = context.client_fingerprint or "gateway-client"
+        else:
+            identity = context.client_fingerprint or "gateway-client"
+
+        settings = self.server.settings()
+        for bucket in buckets:
+            limit, window = configured_rate_limit(settings, bucket)
+            decision = self.server.internet_rate_limiter.consume(
+                bucket,
+                identity,
+                limit=limit,
+                window_seconds=window,
+            )
+            if not decision.allowed:
+                logging.getLogger("school_csm_startup.gateway.security").warning(
+                    "Internet Gateway rate limit reached: bucket=%s path=%s",
+                    bucket,
+                    path,
+                )
+                self._send_json(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    {
+                        "ok": False,
+                        "code": "rate_limit_exceeded",
+                        "error": "Too many requests. Please wait and try again.",
+                    },
+                    extra_headers={"Retry-After": str(decision.retry_after_seconds)},
+                )
+                return False
+        return True
+
+    def _request_transport(self) -> str:
+        context = getattr(self, "_security_context", None)
+        return "internet" if isinstance(context, RequestSecurityContext) and context.internet else "local"
+
+    def _request_public_host(self) -> str:
+        context = getattr(self, "_security_context", None)
+        if isinstance(context, RequestSecurityContext) and context.internet:
+            return context.host
+        return ""
+
+    def _cookie_attributes(self) -> str:
+        secure = "; Secure" if self._request_transport() == "internet" else ""
+        return f"; Path=/; HttpOnly; SameSite=Lax{secure}"
+
     def do_GET(self) -> None:  # noqa: N802
+        self._dispatch_safely(self._do_GET)
+
+    def _do_GET(self) -> None:
+        if not self._authorize_request():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
+        if not self._internet_request_guard(path, method="GET"):
+            return
         if path == "/healthz":
             self._send_json(
                 HTTPStatus.OK,
@@ -366,17 +568,29 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Page not found."})
 
     def do_OPTIONS(self) -> None:  # noqa: N802
+        self._dispatch_safely(self._do_OPTIONS)
+
+    def _do_OPTIONS(self) -> None:
+        if not self._authorize_request():
+            return
         path = urlparse(self.path).path
         if path != SCANNER_ENDPOINT:
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found."})
             return
         self.send_response(HTTPStatus.NO_CONTENT)
-        self._send_scanner_cors_headers()
         self.send_header("Content-Length", "0")
+        self._send_security_headers()
         self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
+        self._dispatch_safely(self._do_POST)
+
+    def _do_POST(self) -> None:
+        if not self._authorize_request():
+            return
         path = urlparse(self.path).path
+        if not self._internet_request_guard(path, method="POST"):
+            return
         if path == "/api/scanner/auth/login":
             self._handle_scanner_login()
             return
@@ -403,7 +617,12 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             payload = self._read_json_body()
-            response = self._save_submission(payload, self.server.settings(), self._session_cookie())
+            response = self._save_submission(
+                payload,
+                self.server.settings(),
+                self._session_cookie(),
+                access_transport=self._request_transport(),
+            )
         except SessionExpiredError as exc:
             self._clear_session_cookie()
             self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "code": "session_expired", "error": str(exc)})
@@ -414,8 +633,18 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         except RequestValidationError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
-        except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"The response could not be saved: {exc}"})
+        except Exception:
+            logging.getLogger("school_csm_startup.web").exception(
+                "Unexpected failure while saving a survey response."
+            )
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "ok": False,
+                    "code": "internal_server_error",
+                    "error": "The request could not be completed.",
+                },
+            )
             return
         self._clear_session_cookie()
         self._send_json(HTTPStatus.CREATED, response)
@@ -561,6 +790,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 operator=operator,
                 session_id=str(session.get("session_id") or ""),
                 test_mode=bool(payload.get("test_mode")),
+                access_transport=self._request_transport(),
             )
         except ScannerAuthorizationError as exc:
             self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "code": exc.code, "error": str(exc)})
@@ -568,8 +798,18 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         except (ScannerJobError, RequestValidationError) as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "code": "invalid_scanner_image", "error": str(exc)})
             return
-        except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "scanner_job_failed", "error": str(exc)})
+        except Exception:
+            logging.getLogger("school_csm_startup.scanner").exception(
+                "Unexpected failure while creating a scanner job."
+            )
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "ok": False,
+                    "code": "internal_server_error",
+                    "error": "The request could not be completed.",
+                },
+            )
             return
         self._send_json(HTTPStatus.ACCEPTED, {"ok": True, **status})
 
@@ -709,7 +949,13 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 }
             else:
                 try:
-                    response = self._save_scanner_submission(context, settings, operator, session)
+                    response = self._save_scanner_submission(
+                        context,
+                        settings,
+                        operator,
+                        session,
+                        access_transport=str(context.get("access_transport") or "local"),
+                    )
                 except DuplicateScannerSubmissionError:
                     existing = self._find_scanner_record(str(context.get("scanner_submission_id") or ""))
                     if existing is None:
@@ -746,8 +992,18 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         except (ScannerJobError, RequestValidationError) as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "code": "invalid_scanner_review", "error": str(exc)})
             return
-        except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "scanner_finalize_failed", "error": f"The scan could not be finalized: {exc}"})
+        except Exception:
+            logging.getLogger("school_csm_startup.scanner").exception(
+                "Unexpected failure while finalizing a scanner job."
+            )
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "ok": False,
+                    "code": "internal_server_error",
+                    "error": "The request could not be completed.",
+                },
+            )
             return
         result_status = HTTPStatus.OK if bool(response.get("duplicate")) else HTTPStatus.CREATED
         self._send_json(result_status, {"ok": True, **response, "job": status})
@@ -764,6 +1020,16 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
 
 
     def _begin_captive_portal_access(self) -> None:
+        if self._request_transport() == "internet":
+            self._send_json(
+                HTTPStatus.FORBIDDEN,
+                {
+                    "ok": False,
+                    "code": "local_captive_portal_only",
+                    "error": "Captive Portal access is available only on the school's local network.",
+                },
+            )
+            return
         settings = self.server.settings()
         enabled = bool(settings.get("captive_portal_enabled", True))
         network_mode = str(settings.get("network_mode") or "hotspot").casefold()
@@ -780,10 +1046,10 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Location", "/")
         self.send_header(
             "Set-Cookie",
-            f"{SESSION_COOKIE}={token}; Path=/; Max-Age={duration}; HttpOnly; SameSite=Lax",
+            f"{SESSION_COOKIE}={token}; Max-Age={duration}{self._cookie_attributes()}",
         )
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
+        self._send_security_headers()
         self.end_headers()
 
     def _begin_access(self, supplied_key: str) -> None:
@@ -801,10 +1067,10 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Location", "/")
         self.send_header(
             "Set-Cookie",
-            f"{SESSION_COOKIE}={token}; Path=/; Max-Age={duration}; HttpOnly; SameSite=Lax",
+            f"{SESSION_COOKIE}={token}; Max-Age={duration}{self._cookie_attributes()}",
         )
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
+        self._send_security_headers()
         self.end_headers()
 
     def _configuration(self, *, include_questionnaire: bool = True) -> dict[str, Any]:
@@ -866,9 +1132,80 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             ],
             "regions": list(REGION_OPTIONS),
             "server_time": datetime.now(timezone.utc).isoformat(),
+            "access_transport": self._request_transport(),
         }
+        if self._request_transport() == "internet":
+            public_root = f"https://{self._request_public_host()}"
+            payload.update(
+                {
+                    # Do not disclose LAN addresses or local-network controls
+                    # through the public reverse tunnel.
+                    "survey_address": public_root,
+                    "direct_address": "",
+                    "scanner_url": f"{public_root}/scanner",
+                    "scanner_endpoint": f"{public_root}{SCANNER_ENDPOINT}",
+                    "network_mode": "internet_gateway",
+                    "access_mode": "access_key",
+                    "captive_portal_enabled": False,
+                    "school_address_text": "",
+                    "school_email": "",
+                    "school_contact": "",
+                    "school_head": "",
+                    "csm_focal_person": "",
+                    "privacy_notice": (
+                        "Your answers are transmitted securely to this school's School CSM Control Center "
+                        "and authoritative response storage remains on the school's local computer for "
+                        "Client Satisfaction Measurement and service improvement. The Internet Gateway "
+                        "Registration Service stores only the minimum infrastructure metadata needed to "
+                        "route and authorize this school; it does not store CSM responses and is not a "
+                        "CSM response database. Personally identifying fields are optional."
+                    ),
+                    "privacy_notice_version": INTERNET_PRIVACY_NOTICE_VERSION,
+                }
+            )
         if include_questionnaire and status == "online" and session_valid:
             payload["questionnaire"] = questionnaire
+        if self._request_transport() == "internet":
+            # Return an explicit public contract.  This prevents a future local
+            # settings field from becoming Internet-visible merely because it
+            # was added to the local configuration response.
+            public_keys = {
+                "ok",
+                "school_name",
+                "school_id",
+                "school_region",
+                "school_division",
+                "school_district",
+                "school_logo_url",
+                "system_name",
+                "form_name",
+                "mode",
+                "survey_status",
+                "status_message",
+                "session_valid",
+                "session_remaining_seconds",
+                "session_duration_seconds",
+                "network_mode",
+                "access_mode",
+                "captive_portal_enabled",
+                "survey_date",
+                "survey_address",
+                "direct_address",
+                "scanner_intake_enabled",
+                "scanner_remote_enabled",
+                "scanner_url",
+                "scanner_endpoint",
+                "privacy_notice",
+                "privacy_notice_version",
+                "service_sections",
+                "service_catalog",
+                "age_brackets",
+                "regions",
+                "server_time",
+                "access_transport",
+                "questionnaire",
+            }
+            payload = {key: value for key, value in payload.items() if key in public_keys}
         return payload
 
     def _read_json_body(self, max_body_size: int | None = None) -> dict[str, Any]:
@@ -898,7 +1235,13 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 raise ScannerAuthorizationError("CSM Sheet Scanner intake is disabled.", code="scanner_intake_disabled")
             operator, session = self._authenticated_scanner_session()
             payload = self._read_json_body(SCANNER_MAX_BODY_SIZE)
-            response = self._save_scanner_submission(payload, settings, operator, session)
+            response = self._save_scanner_submission(
+                payload,
+                settings,
+                operator,
+                session,
+                access_transport=self._request_transport(),
+            )
         except ScannerAuthorizationError as exc:
             self._send_json(HTTPStatus.FORBIDDEN, {"accepted": False, "code": exc.code, "reason": str(exc)}, scanner_cors=True)
             return
@@ -929,8 +1272,19 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         except RequestValidationError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"accepted": False, "code": "invalid_scanner_record", "reason": str(exc)}, scanner_cors=True)
             return
-        except Exception as exc:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"accepted": False, "code": "scanner_save_failed", "reason": f"The verified scanner response could not be saved: {exc}"}, scanner_cors=True)
+        except Exception:
+            logging.getLogger("school_csm_startup.scanner").exception(
+                "Unexpected failure while saving a verified scanner response."
+            )
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "accepted": False,
+                    "code": "internal_server_error",
+                    "reason": "The request could not be completed.",
+                },
+                scanner_cors=True,
+            )
             return
         self._send_json(HTTPStatus.CREATED, response, scanner_cors=True)
 
@@ -940,9 +1294,15 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         settings: Mapping[str, Any],
         operator: Mapping[str, Any],
         session: Mapping[str, Any],
+        *,
+        access_transport: str = "local",
     ) -> dict[str, Any]:
         cleaned, scanner_id, source_control, survey_date = self._validated_scanner_record(
-            payload, settings, operator, session
+            payload,
+            settings,
+            operator,
+            session,
+            access_transport=access_transport,
         )
         source_control = normalize_mrs_control_number(source_control)
         validity = str(payload.get("response_validity") or "valid").strip().casefold()
@@ -1074,7 +1434,10 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         settings: Mapping[str, Any],
         operator: Mapping[str, Any],
         session: Mapping[str, Any],
+        *,
+        access_transport: str = "local",
     ) -> tuple[dict[str, Any], str, str, str]:
+        server_transport = "internet" if access_transport == "internet" else "local"
         if str(payload.get("source") or "").strip().casefold() != "scanned_hardcopy":
             raise RequestValidationError("The submission source must be scanned_hardcopy.")
         if str(payload.get("verification_status") or "").strip().casefold() != "verified":
@@ -1114,6 +1477,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 "mode": "onsite",
                 "meta": {
                     "submission_source": "scanned_hardcopy",
+                    "access_transport": server_transport,
                     "scanner_submission_id": scanner_id,
                     "scanner_template_id": template_id,
                     "scanner_operator_user_id": str(operator.get("user_id") or ""),
@@ -1196,6 +1560,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             "age_bracket": age_bracket,
             "service_availed": [service],
             "submission_source": "scanned_hardcopy",
+            "access_transport": server_transport,
             "scanner_submission_id": scanner_id,
             "scanner_template_id": template_id,
             "scanner_language": str(template.get("language") or ""),
@@ -1265,8 +1630,21 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         target.write_bytes(data)
         return relative.as_posix()
 
-    def _save_submission(self, payload: dict[str, Any], settings: Mapping[str, Any], session_token: str) -> dict[str, Any]:
+    def _save_submission(
+        self,
+        payload: dict[str, Any],
+        settings: Mapping[str, Any],
+        session_token: str,
+        *,
+        access_transport: str = "local",
+    ) -> dict[str, Any]:
         token = " ".join(str(payload.get("submission_token") or "").split())[:120]
+        server_transport = "internet" if access_transport == "internet" else "local"
+        expected_notice_version = (
+            INTERNET_PRIVACY_NOTICE_VERSION
+            if server_transport == "internet"
+            else PRIVACY_NOTICE_VERSION
+        )
         with self.server.submission_lock:
             if token and token in self.server.submission_cache:
                 cached = deepcopy(self.server.submission_cache[token])
@@ -1297,7 +1675,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             ).strip()
             if (
                 not bool(acknowledgement.get("accepted"))
-                or acknowledged_version != PRIVACY_NOTICE_VERSION
+                or acknowledged_version != expected_notice_version
             ):
                 raise RequestValidationError(
                     "The privacy notice changed. Review and acknowledge the current notice before submitting."
@@ -1305,7 +1683,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             cleaned = self._validated_record(payload, mode)
             cleaned_meta = cleaned.get("meta")
             if isinstance(cleaned_meta, dict):
-                cleaned_meta["privacy_notice_version"] = PRIVACY_NOTICE_VERSION
+                cleaned_meta["privacy_notice_version"] = expected_notice_version
                 cleaned_meta["privacy_acknowledged_at"] = datetime.now(
                     timezone.utc
                 ).isoformat(timespec="seconds")
@@ -1314,6 +1692,9 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 school_id = validate_school_id(settings.get("school_id"), required=True)
             except ValueError as exc:
                 raise RequestValidationError(str(exc)) from exc
+            if isinstance(cleaned_meta, dict):
+                cleaned_meta["access_transport"] = server_transport
+                cleaned_meta["school_id"] = school_id
             cleaned["survey_date"] = survey_date
             cleaned["source_code"] = "WBS"
             saved = self.server.store.add_with_next_control_number(
@@ -1384,6 +1765,17 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             raise RequestValidationError("Please answer all service-quality items: " + ", ".join(missing) + ".")
 
         clean_meta = deepcopy(dict(meta))
+        # Infrastructure identity is assigned at the server boundary.  A web
+        # browser cannot choose a school or claim local/Internet provenance.
+        for key in (
+            "access_transport",
+            "school_id",
+            "source_code",
+            "source_label",
+            "submission_source",
+            "transport",
+        ):
+            clean_meta.pop(key, None)
         clean_meta["submission_source"] = "local_web_form"
         clean_meta.pop("control_number", None)
         clean_meta.pop("control_no", None)
@@ -1482,8 +1874,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "image/png")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -1513,9 +1904,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store" if path.suffix == ".html" else "public, max-age=300")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -1527,49 +1916,80 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", cache_control)
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        # Public scanner artifacts must not be cached.  Keeping the same policy
+        # locally also avoids leaving sensitive response images in shared caches.
+        self._send_security_headers(cache_control=cache_control)
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_json(self, status: HTTPStatus, payload: Mapping[str, Any], *, scanner_cors: bool = False) -> None:
+    def _send_json(
+        self,
+        status: HTTPStatus,
+        payload: Mapping[str, Any],
+        *,
+        scanner_cors: bool = False,
+        extra_headers: Mapping[str, str] | None = None,
+    ) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        if scanner_cors:
-            self._send_scanner_cors_headers()
+        # ``scanner_cors`` is retained as a source-compatible keyword for the
+        # old scanner call sites, but deliberately emits no cross-origin grant.
+        _ = scanner_cors
+        self._send_security_headers()
+        for name, value in (extra_headers or {}).items():
+            if name.casefold() == "retry-after" and str(value).isdigit():
+                self.send_header("Retry-After", str(value))
         pending_scanner_cookie = getattr(self, "_pending_scanner_cookie", None)
         if pending_scanner_cookie:
             token, maximum = pending_scanner_cookie
             self.send_header(
                 "Set-Cookie",
-                f"{SCANNER_SESSION_COOKIE}={token}; Path=/; Max-Age={int(maximum)}; HttpOnly; SameSite=Lax",
+                f"{SCANNER_SESSION_COOKIE}={token}; Max-Age={int(maximum)}{self._cookie_attributes()}",
             )
             self._pending_scanner_cookie = None
         if getattr(self, "_pending_clear_cookie", False):
-            self.send_header("Set-Cookie", f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}=; Max-Age=0{self._cookie_attributes()}",
+            )
             self._pending_clear_cookie = False
         if getattr(self, "_pending_clear_scanner_cookie", False):
-            self.send_header("Set-Cookie", f"{SCANNER_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+            self.send_header(
+                "Set-Cookie",
+                f"{SCANNER_SESSION_COOKIE}=; Max-Age=0{self._cookie_attributes()}",
+            )
             self._pending_clear_scanner_cookie = False
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_scanner_cors_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Scanner-Key")
-        self.send_header("Access-Control-Max-Age", "600")
+    def _send_security_headers(self, *, cache_control: str = "no-store") -> None:
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Permissions-Policy",
+            "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
+        )
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; object-src 'none'; connect-src 'self'; "
+            "img-src 'self' data: blob:; media-src 'self' blob:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+        )
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        if self._request_transport() == "internet":
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
 
     def _redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND)
         self.send_header("Location", location)
         self.send_header("Content-Length", "0")
-        self.send_header("Cache-Control", "no-store")
+        self._send_security_headers()
         self.end_headers()
 
 

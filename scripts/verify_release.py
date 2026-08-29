@@ -16,6 +16,8 @@ import zipfile
 SHA256_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
 APPLICATION_ID = "MoSSLab.SchoolCSMControlCenter"
 INSTALLER_NAME = "School-CSM-Control-Center-Setup.exe"
+CLOUDFLARED_ENTRY = PurePosixPath("vendor/cloudflared/cloudflared.exe")
+PROVIDER_CONFIG_ENTRY = PurePosixPath("internet_gateway_provider.json")
 MAXIMUM_ARCHIVE_ENTRIES = 200_000
 MAXIMUM_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024
 VERSION_DATA = runpy.run_path(
@@ -182,10 +184,18 @@ def verify_package(package_path: Path, descriptor: dict) -> None:
             if info.file_size < 0 or extracted_size > MAXIMUM_EXTRACTED_BYTES:
                 raise ValueError("The package expands beyond the supported size")
             pure = PurePosixPath(name)
+            if str(pure).casefold() == str(PROVIDER_CONFIG_ENTRY).casefold():
+                raise ValueError(
+                    "Production Internet Gateway provider configuration in public release"
+                )
             if is_forbidden_runtime_path(pure):
                 raise ValueError(f"Development launch file in release: {name}")
         if entry_point.casefold() not in names:
             raise ValueError(f"Package is missing entry point: {entry_point}")
+        if str(CLOUDFLARED_ENTRY).casefold() not in names:
+            raise ValueError(
+                "Package is missing the verified Internet Gateway tunnel component"
+            )
         with archive.open(entry_point) as handle:
             if sha256_stream(handle) != expected_entry_hash.upper():
                 raise ValueError("Packaged entry-point SHA-256 does not match the manifest")

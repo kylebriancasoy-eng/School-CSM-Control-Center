@@ -19,9 +19,13 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repoRoot "release"
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
-$repoPrefix = $repoRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-if (-not $OutputRoot.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "OutputRoot must be a dedicated directory inside the repository."
+$releaseRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "release"))
+$releasePrefix = $releaseRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if (-not (
+    $OutputRoot.Equals($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $OutputRoot.StartsWith($releasePrefix, [System.StringComparison]::OrdinalIgnoreCase)
+)) {
+    throw "OutputRoot must be the repository's release directory or one of its child directories."
 }
 if ($Clean -and (Test-Path -LiteralPath $OutputRoot)) {
     Remove-Item -LiteralPath $OutputRoot -Recurse -Force

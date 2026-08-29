@@ -564,9 +564,16 @@ class HistoryBoard(QFrame):
             action_layout.setContentsMargins(3, 2, 3, 2)
             action_layout.setSpacing(4)
             narrative_button = TooltipIconButton(
-                "history",
-                "Narrative Report" if eligible else f"Narrative Report unavailable: {reason}",
+                "edit",
+                (
+                    "Write or edit Narrative Report"
+                    if eligible
+                    else f"Narrative Report unavailable: {reason}"
+                ),
+                role="primary",
             )
+            narrative_button.setText("Narrative")
+            narrative_button.setFixedWidth(118)
             narrative_button.setEnabled(eligible)
             narrative_button.clicked.connect(
                 lambda _checked=False, source=dict(record): self.narrative_requested.emit(source)

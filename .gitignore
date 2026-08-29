@@ -6,15 +6,21 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+/tmp/
 
 # Build and release outputs
 build/
 dist/
 release/
 *.spec.bak
+vendor/cloudflared/*.exe
+registration_service/*.sqlite3*
+registration_service/.env
+internet_gateway_provider.json
 
 # Runtime/user data must never enter source control
 data/
+/gateway/
 exports/
 logs/
 backups/

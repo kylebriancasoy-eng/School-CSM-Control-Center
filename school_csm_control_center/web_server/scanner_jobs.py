@@ -83,6 +83,7 @@ class ScannerJobManager:
         operator: Mapping[str, Any],
         session_id: str,
         test_mode: bool = False,
+        access_transport: str = "local",
     ) -> dict[str, Any]:
         mime_type, extension, data = _decode_image_data_url(image_data_url, self.MAX_UPLOAD_BYTES)
         with self._condition:
@@ -122,6 +123,9 @@ class ScannerJobManager:
             "operator_username": str(operator.get("username") or ""),
             "operator_display_name": str(operator.get("display_name") or ""),
             "scanner_session_id": str(session_id or ""),
+            "access_transport": (
+                "internet" if access_transport == "internet" else "local"
+            ),
             "test_mode": bool(test_mode),
             "created_at": now,
             "uploaded_at": now,
@@ -418,6 +422,11 @@ class ScannerJobManager:
             self._persist_job_locked(job)
             return {
                 "source": "scanned_hardcopy",
+                "access_transport": (
+                    "internet"
+                    if str(job.get("access_transport") or "local") == "internet"
+                    else "local"
+                ),
                 "test_mode": bool(job.get("test_mode")),
                 "scanner_submission_id": str(job["job_id"]),
                 "scanner_job_id": str(job["job_id"]),
@@ -465,6 +474,11 @@ class ScannerJobManager:
                 },
                 "scanner_job": {
                     "job_id": str(job["job_id"]),
+                    "access_transport": (
+                        "internet"
+                        if str(job.get("access_transport") or "local") == "internet"
+                        else "local"
+                    ),
                     "capture_session_id": str(job.get("scanner_session_id") or ""),
                     "uploaded_at": str(job.get("uploaded_at") or ""),
                     "processing_started_at": str(job.get("processing_started_at") or ""),

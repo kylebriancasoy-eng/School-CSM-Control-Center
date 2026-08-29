@@ -15,7 +15,10 @@ class NarrativeHistoryContractTests(unittest.TestCase):
         self.assertIn('"Actions"', source)
         self.assertIn("narrative_requested = Signal(object)", source)
         self.assertIn("reprint_requested = Signal(object)", source)
-        self.assertIn('"Narrative Report"', source)
+        self.assertIn('"edit",', source)
+        self.assertIn('"Write or edit Narrative Report"', source)
+        self.assertIn('narrative_button.setText("Narrative")', source)
+        self.assertIn('role="primary"', source)
         self.assertIn('"Reprint Dashboard"', source)
         self.assertIn("PrintHistoryStore.narrative_eligibility", source)
 

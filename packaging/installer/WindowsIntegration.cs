@@ -183,11 +183,23 @@ namespace MoSSLab.SchoolCSM.Installer
             }
         }
 
-        internal static bool DeleteOpenAiCredential()
+        internal static bool DeleteCurrentUserCredentials()
         {
-            bool deleted = CredDelete(InstallerEngine.OpenAiCredentialTarget, CredentialTypeGeneric, 0);
-            int error = Marshal.GetLastWin32Error();
-            return deleted || error == 1168;
+            string[] targets =
+            {
+                InstallerEngine.OpenAiCredentialTarget,
+                InstallerEngine.GatewayTunnelCredentialTarget,
+                InstallerEngine.GatewayInstallationSecretTarget,
+                InstallerEngine.GatewayDevicePrivateKeyTarget
+            };
+            bool success = true;
+            foreach (string target in targets)
+            {
+                bool deleted = CredDelete(target, CredentialTypeGeneric, 0);
+                int error = Marshal.GetLastWin32Error();
+                success = success && (deleted || error == 1168);
+            }
+            return success;
         }
 
         private static object OpenFirewallRules(out object policy)

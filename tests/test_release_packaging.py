@@ -51,6 +51,9 @@ class ReleasePackagingTests(unittest.TestCase):
         app.mkdir(parents=True)
         (app / "School CSM Control Center.exe").write_bytes(b"MZ\x00compiled-app-test")
         (app / "runtime.dll").write_bytes(b"runtime")
+        tunnel = app / "vendor" / "cloudflared" / "cloudflared.exe"
+        tunnel.parent.mkdir(parents=True)
+        tunnel.write_bytes(b"MZ\x00cloudflared-test-fixture")
         nested = app / "assets"
         nested.mkdir()
         (nested / "brand.png").write_bytes(b"png")
@@ -91,9 +94,9 @@ class ReleasePackagingTests(unittest.TestCase):
             )
             manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["applicationId"], "MoSSLab.SchoolCSMControlCenter")
-            self.assertEqual(manifest["version"], "0.4.2")
-            self.assertEqual(manifest["tag"], "v0.4.2")
-            self.assertIn("/releases/download/v0.4.2/", manifest["package"]["url"])
+            self.assertEqual(manifest["version"], "0.5.0")
+            self.assertEqual(manifest["tag"], "v0.5.0")
+            self.assertIn("/releases/download/v0.5.0/", manifest["package"]["url"])
             self.assertEqual(
                 manifest["package"]["entryPoint"], "School CSM Control Center.exe"
             )
@@ -101,6 +104,7 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertEqual(manifest["package"]["sha256"], sha256(package))
             with zipfile.ZipFile(package) as archive:
                 self.assertIn("School CSM Control Center.exe", archive.namelist())
+                self.assertIn("vendor/cloudflared/cloudflared.exe", archive.namelist())
                 self.assertFalse(
                     any(
                         Path(name).suffix.casefold()
@@ -116,6 +120,9 @@ class ReleasePackagingTests(unittest.TestCase):
             app = root / "compiled-app"
             (app / "cv2").mkdir(parents=True)
             (app / "School CSM Control Center.exe").write_bytes(b"MZ")
+            tunnel = app / "vendor" / "cloudflared" / "cloudflared.exe"
+            tunnel.parent.mkdir(parents=True)
+            tunnel.write_bytes(b"MZ\x00cloudflared-test-fixture")
             (app / "cv2" / "__init__.py").write_text("# runtime loader\n", encoding="utf-8")
             (app / "cv2" / "config.py").write_text("# runtime config\n", encoding="utf-8")
             installer = root / "setup.exe"
@@ -162,6 +169,9 @@ class ReleasePackagingTests(unittest.TestCase):
             app = root / "app"
             app.mkdir()
             (app / "School CSM Control Center.exe").write_bytes(b"MZ")
+            tunnel = app / "vendor" / "cloudflared" / "cloudflared.exe"
+            tunnel.parent.mkdir(parents=True)
+            tunnel.write_bytes(b"MZ\x00cloudflared-test-fixture")
             (app / "START.cmd").write_text("python app.py", encoding="utf-8")
             installer = root / "setup.exe"
             installer.write_bytes(b"MZ")
@@ -237,6 +247,96 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("does not match the GitHub release", result.stderr)
 
+    def test_release_rejects_missing_gateway_component(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "compiled-app"
+            app.mkdir(parents=True)
+            (app / "School CSM Control Center.exe").write_bytes(b"MZ")
+            installer = root / "setup.exe"
+            installer.write_bytes(b"MZ")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CREATE_RELEASE),
+                    "--app-dir",
+                    str(app),
+                    "--installer",
+                    str(installer),
+                    "--output",
+                    str(root / "release"),
+                    "--repository",
+                    "example/school-csm",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Internet Gateway component", result.stderr)
+
+    def test_public_release_rejects_production_provider_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "compiled-app"
+            app.mkdir(parents=True)
+            (app / "School CSM Control Center.exe").write_bytes(b"MZ")
+            tunnel = app / "vendor" / "cloudflared" / "cloudflared.exe"
+            tunnel.parent.mkdir(parents=True)
+            tunnel.write_bytes(b"MZ\x00cloudflared-test-fixture")
+            (app / "internet_gateway_provider.json").write_text(
+                '{"production":true}', encoding="utf-8"
+            )
+            installer = root / "setup.exe"
+            installer.write_bytes(b"MZ")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CREATE_RELEASE),
+                    "--app-dir",
+                    str(app),
+                    "--installer",
+                    str(installer),
+                    "--output",
+                    str(root / "release"),
+                    "--repository",
+                    "example/school-csm",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must not be included in a public release", result.stderr)
+
+    @unittest.skipUnless(os.name == "nt", "The Windows release scripts require PowerShell.")
+    def test_clean_release_refuses_output_outside_dedicated_release_tree(self) -> None:
+        scratch_root = REPO_ROOT / "tmp"
+        scratch_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch_root) as temporary:
+            unsafe_output = Path(temporary)
+            marker = unsafe_output / "must-survive.txt"
+            marker.write_text("preserve", encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(REPO_ROOT / "scripts" / "build_release.ps1"),
+                    "-Repository",
+                    "example/school-csm",
+                    "-OutputRoot",
+                    str(unsafe_output),
+                    "-Clean",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(marker.is_file())
+            self.assertIn("release directory", result.stderr)
+
     def test_installer_source_contains_required_safety_boundaries(self) -> None:
         installer = (REPO_ROOT / "packaging" / "installer" / "InstallerEngine.cs").read_text(
             encoding="utf-8"
@@ -256,13 +356,42 @@ class ReleasePackagingTests(unittest.TestCase):
         app_manifest = (REPO_ROOT / "packaging" / "installer" / "app.manifest").read_text(
             encoding="utf-8"
         )
+        build_app = (REPO_ROOT / "scripts" / "build_app.ps1").read_text(encoding="utf-8")
+        build_release = (REPO_ROOT / "scripts" / "build_release.ps1").read_text(
+            encoding="utf-8"
+        )
+        pyinstaller_spec = (
+            REPO_ROOT / "packaging" / "pyinstaller" / "SchoolCSMControlCenter.spec"
+        ).read_text(encoding="utf-8")
         self.assertIn('ProgramFilesX86(), "MoSSLab"', installer)
+        self.assertIn('ProviderConfigurationFileName = "internet_gateway_provider.json"', installer)
+        self.assertIn("PreserveProviderConfiguration();", installer)
+        self.assertIn("PreserveProviderConfiguration(true);", installer)
+        self.assertIn("ProviderConfigurationPath", installer)
+        self.assertIn('Path.Combine(ProviderConfigurationRoot, "Quarantine")', installer)
+        self.assertIn("File.Move(source, quarantinePath);", installer)
         self.assertIn('OpenAiCredentialTarget = "MoSSLab.SchoolCSMControlCenter.OpenAIApiKey"', installer)
+        for target in (
+            "TunnelCredential",
+            "InstallationSecret",
+            "DevicePrivateKey",
+        ):
+            self.assertIn(
+                f"MoSSLab.SchoolCSMControlCenter.InternetGateway.{target}", installer
+            )
+        self.assertIn("WindowsIntegration.DeleteCurrentUserCredentials()", installer)
+        self.assertIn("if (removeUserData)", installer)
+        self.assertNotIn("DeleteWithin(ProviderConfigurationRoot", installer)
+        self.assertIn("WaitForApplicationExit", installer)
         self.assertIn("VerifyLocalPackage", installer)
         self.assertIn("CopyWithLimit", downloader)
         self.assertIn("entry.ExternalAttributes", installer)
         self.assertIn("DeleteDirectoryNoFollow", installer)
         self.assertIn('@"Global\\MoSSLab.SchoolCSMControlCenter.Maintenance"', program)
+        self.assertIn('case "--wait-for-pid":', program)
+        self.assertIn(
+            "--wait-for-pid is accepted only together with --uninstall.", program
+        )
 
         self.assertIn(
             'FirewallRuleName = "School CSM Control Center - Private Local Survey"',
@@ -305,8 +434,15 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertIn("GitHub connection was interrupted", downloader)
         self.assertIn("KeepAlive = false", downloader)
         self.assertIn('"ResilientDownloader.cs"', build_installer)
+        self.assertIn('"ProviderConfiguration.cs"', build_installer)
         self.assertIn('InstallerVersion = "1.0.1.0"', build_installer)
         self.assertIn('assemblyIdentity version="1.0.1.0"', app_manifest)
+        self.assertIn("scripts\\fetch_cloudflared.py", build_app)
+        self.assertIn("Get-FileHash", build_app)
+        self.assertIn('$releaseRoot = [System.IO.Path]::GetFullPath', build_app)
+        self.assertIn('$releaseRoot = [System.IO.Path]::GetFullPath', build_release)
+        self.assertIn("repository's release directory", build_release)
+        self.assertIn('"vendor/cloudflared"', pyinstaller_spec)
         self.assertIn("engine.RecordFailure(error);", program)
         self.assertIn("engine.RecordFailure(completed.Error);", (
             REPO_ROOT / "packaging" / "installer" / "MaintenanceForm.cs"

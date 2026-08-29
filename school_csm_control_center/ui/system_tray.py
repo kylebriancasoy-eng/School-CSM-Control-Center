@@ -21,6 +21,10 @@ class ControlCenterSystemTray(QObject):
     start_server_requested = Signal()
     stop_server_requested = Signal()
     open_survey_requested = Signal(str)
+    connect_gateway_requested = Signal()
+    disconnect_gateway_requested = Signal()
+    open_internet_survey_requested = Signal(str)
+    open_internet_scanner_requested = Signal(str)
     background_startup_toggled = Signal(bool)
     exit_requested = Signal()
 
@@ -39,7 +43,12 @@ class ControlCenterSystemTray(QObject):
             else bool(available_override)
         )
         self._direct_survey_url = ""
+        self._internet_survey_url = ""
+        self._internet_scanner_url = ""
         self._status = "offline"
+        self._gateway_status = "not_configured"
+        self._server_label = "Stopped"
+        self._gateway_label = "Not Configured"
 
         self.icon = QSystemTrayIcon(icon, parent)
         self.icon.setObjectName("control_center_system_tray")
@@ -78,13 +87,37 @@ class ControlCenterSystemTray(QObject):
         self.menu.addAction(self.open_survey_action)
         self.menu.addSeparator()
 
+        self.gateway_status_action = QAction("Internet Gateway: Not Configured", self.menu)
+        self.gateway_status_action.setObjectName("tray_gateway_status")
+        self.gateway_status_action.setEnabled(False)
+        self.menu.addAction(self.gateway_status_action)
+        self.connect_gateway_action = QAction("Connect Internet Gateway", self.menu)
+        self.connect_gateway_action.setObjectName("tray_connect_gateway")
+        self.connect_gateway_action.triggered.connect(self.connect_gateway_requested.emit)
+        self.menu.addAction(self.connect_gateway_action)
+        self.disconnect_gateway_action = QAction("Disconnect Internet Gateway", self.menu)
+        self.disconnect_gateway_action.setObjectName("tray_disconnect_gateway")
+        self.disconnect_gateway_action.triggered.connect(self.disconnect_gateway_requested.emit)
+        self.menu.addAction(self.disconnect_gateway_action)
+        self.open_internet_survey_action = QAction("Open Internet Survey", self.menu)
+        self.open_internet_survey_action.setObjectName("tray_open_internet_survey")
+        self.open_internet_survey_action.triggered.connect(self._emit_open_internet_survey)
+        self.menu.addAction(self.open_internet_survey_action)
+        self.open_internet_scanner_action = QAction("Open Internet Scanner", self.menu)
+        self.open_internet_scanner_action.setObjectName("tray_open_internet_scanner")
+        self.open_internet_scanner_action.triggered.connect(
+            self._emit_open_internet_scanner
+        )
+        self.menu.addAction(self.open_internet_scanner_action)
+        self.menu.addSeparator()
+
         self.background_action = QAction(
             "Start with Windows and run Survey Server in background",
             self.menu,
         )
         self.background_action.setObjectName("tray_background_startup")
         self.background_action.setStatusTip(
-            "Start in the notification area at Windows sign-in and start the saved Survey Server"
+            "Start locally at Windows sign-in, then reconnect an authorized Internet Gateway after health verification"
         )
         self.background_action.setCheckable(True)
         self.background_action.toggled.connect(self.background_startup_toggled.emit)
@@ -102,6 +135,7 @@ class ControlCenterSystemTray(QObject):
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self._activated)
         self.set_server_state("offline", "Local survey server is stopped.")
+        self.set_gateway_state("not_configured")
         if self._available and show_immediately:
             self.icon.show()
 
@@ -145,6 +179,7 @@ class ControlCenterSystemTray(QObject):
         label = labels.get(state, state.title() or "Stopped")
         busy = state in {"starting", "stopping"}
         self._status = state
+        self._server_label = label
         self.status_action.setText(f"Survey Server: {label}")
         self.status_action.setStatusTip(str(detail or "").strip())
         self.start_action.setEnabled(not busy and state != "online")
@@ -152,9 +187,61 @@ class ControlCenterSystemTray(QObject):
         self.open_survey_action.setEnabled(
             state == "online" and bool(self._direct_survey_url)
         )
-        tooltip = f"{SHORT_APPLICATION_NAME} — Survey Server: {label}"
-        # Windows truncates notification-area tooltips.  Keep the most useful
-        # status text deterministic and below the platform limit.
+        self._refresh_tooltip()
+
+    def set_gateway_state(
+        self,
+        status: str,
+        detail: str = "",
+        *,
+        configured: bool = False,
+        authorized: bool = False,
+        survey_url: str = "",
+        scanner_url: str = "",
+        scanner_enabled: bool = True,
+    ) -> None:
+        state = str(status or "not_configured").strip().casefold()
+        labels = {
+            "not_configured": "Not Configured",
+            "stopped": "Stopped",
+            "connecting": "Connecting",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "error": "Error",
+            "revoked": "Revoked",
+            "authorization_transferred": "Transferred",
+        }
+        self._gateway_status = state
+        self._internet_survey_url = str(survey_url or "").strip()
+        self._internet_scanner_url = str(scanner_url or "").strip()
+        self._gateway_label = labels.get(state, state.title())
+        self.gateway_status_action.setText(
+            f"Internet Gateway: {self._gateway_label}"
+        )
+        self.gateway_status_action.setStatusTip(str(detail or ""))
+        busy = state == "connecting"
+        retired = state in {"revoked", "authorization_transferred"}
+        self.connect_gateway_action.setEnabled(
+            bool(configured and authorized and not busy and state != "connected" and not retired)
+        )
+        self.disconnect_gateway_action.setEnabled(state == "connected")
+        self.open_internet_survey_action.setEnabled(
+            state == "connected" and bool(self._internet_survey_url)
+        )
+        self.open_internet_scanner_action.setEnabled(
+            state == "connected"
+            and bool(scanner_enabled)
+            and bool(self._internet_scanner_url)
+        )
+        self._refresh_tooltip()
+
+    def _refresh_tooltip(self) -> None:
+        tooltip = (
+            f"{SHORT_APPLICATION_NAME} | Local: {self._server_label} | "
+            f"Gateway: {self._gateway_label}"
+        )
+        # Windows truncates notification-area tooltips. Keep both lifecycle
+        # states deterministic and within the platform limit.
         self.icon.setToolTip(tooltip[:127])
 
     def show_background_notice(self) -> None:
@@ -187,6 +274,14 @@ class ControlCenterSystemTray(QObject):
     def _emit_open_survey(self) -> None:
         if self._direct_survey_url:
             self.open_survey_requested.emit(self._direct_survey_url)
+
+    def _emit_open_internet_survey(self) -> None:
+        if self._internet_survey_url:
+            self.open_internet_survey_requested.emit(self._internet_survey_url)
+
+    def _emit_open_internet_scanner(self) -> None:
+        if self._internet_scanner_url:
+            self.open_internet_scanner_requested.emit(self._internet_scanner_url)
 
     def _activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in {

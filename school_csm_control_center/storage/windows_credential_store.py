@@ -1,4 +1,4 @@
-"""Windows Credential Manager storage for the operator's OpenAI API key."""
+"""Windows Credential Manager storage for application-owned secrets."""
 
 from __future__ import annotations
 
@@ -37,26 +37,26 @@ class WindowsCredentialManager:
         ctypes, wintypes, credential_type, advapi32 = self._api()
         encoded = secret.encode("utf-16-le")
         if not encoded or len(encoded) > self.MAX_BLOB_BYTES:
-            raise CredentialStoreError("The API key cannot be stored in Windows Credential Manager.")
+            raise CredentialStoreError("The credential cannot be stored in Windows Credential Manager.")
         blob = (ctypes.c_ubyte * len(encoded)).from_buffer_copy(encoded)
         credential = credential_type()
         credential.Flags = 0
         credential.Type = self.CRED_TYPE_GENERIC
         credential.TargetName = target
-        credential.Comment = "School CSM Control Center optional OpenAI API access"
+        credential.Comment = "School CSM Control Center protected credential"
         credential.CredentialBlobSize = len(encoded)
         credential.CredentialBlob = ctypes.cast(blob, ctypes.POINTER(ctypes.c_ubyte))
         credential.Persist = self.CRED_PERSIST_LOCAL_MACHINE
         credential.AttributeCount = 0
         credential.Attributes = None
         credential.TargetAlias = None
-        credential.UserName = "School CSM Control Center operator"
+        credential.UserName = "School CSM Control Center"
         try:
             if not advapi32.CredWriteW(ctypes.byref(credential), 0):
                 raise ctypes.WinError(ctypes.get_last_error())
         except OSError:
             raise CredentialStoreError(
-                "Windows Credential Manager could not save the OpenAI API key."
+                "Windows Credential Manager could not save the credential."
             ) from None
         finally:
             for index in range(len(blob)):
@@ -75,7 +75,7 @@ class WindowsCredentialManager:
             if error == self.ERROR_NOT_FOUND:
                 return None
             raise CredentialStoreError(
-                "Windows Credential Manager could not read the OpenAI API key."
+                "Windows Credential Manager could not read the credential."
             )
         try:
             credential = pointer.contents
@@ -89,7 +89,7 @@ class WindowsCredentialManager:
                 return raw.decode("utf-16-le")
             except UnicodeDecodeError:
                 raise CredentialStoreError(
-                    "The saved OpenAI API key is unreadable."
+                    "The saved credential is unreadable."
                 ) from None
         finally:
             advapi32.CredFree(pointer)
@@ -102,7 +102,7 @@ class WindowsCredentialManager:
         if error == self.ERROR_NOT_FOUND:
             return False
         raise CredentialStoreError(
-            "Windows Credential Manager could not remove the OpenAI API key."
+            "Windows Credential Manager could not remove the credential."
         )
 
     def _api(self) -> tuple[Any, Any, Any, Any]:

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>School CSM Internet Gateway</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root{color-scheme:dark;--bg:#03101d;--panel:#071c2d;--line:#174a63;--cyan:#32d9cc;--text:#effbff;--muted:#9ab9c9;--warn:#f5b94c;--bad:#ff6b7a}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top,#0b2d43 0,var(--bg) 48%);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+    main{max-width:780px;margin:auto;padding:34px 18px 60px}.brand{color:var(--cyan);font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}h1{font-size:30px;line-height:1.15;margin:8px 0}p{color:var(--muted)}.card{background:rgba(7,28,45,.96);border:1px solid var(--line);border-radius:18px;padding:24px;margin-top:20px;box-shadow:0 20px 60px #0008}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs button{flex:1}.mode[hidden]{display:none}label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:14px 0 5px}input,select,button{width:100%;border-radius:10px;border:1px solid var(--line);padding:12px 13px;background:#041522;color:var(--text);font:inherit}button{cursor:pointer;background:#0b5360;border-color:#248b91;font-weight:800}button:hover{background:#116b73}button.secondary{background:#0a2435}button:disabled{opacity:.5;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.notice{border:1px solid #2c6978;background:#092434;border-radius:10px;padding:12px;color:var(--muted)}.warning{border-color:#8f6824;color:#ffe1a3}.result{font:800 21px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.06em;overflow-wrap:anywhere;color:var(--cyan);user-select:all}.error{color:var(--bad)}.small{font-size:12px}.privacy{margin-top:20px}
+    @media(max-width:620px){.row{grid-template-columns:1fr}h1{font-size:25px}.card{padding:18px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="brand">MoSSLab · School CSM</div>
+  <h1>Internet Gateway authorization</h1>
+  <p>Create or use a passkey to authorize one school computer as the active Internet Server. This service does not receive School CSM survey responses.</p>
+  <section class="card">
+    <div class="tabs">
+      <button id="registration-tab" type="button">Initial registration</button>
+      <button id="transfer-tab" type="button" class="secondary">Transfer existing server</button>
+      <button id="passkeys-tab" type="button" class="secondary">Passkeys</button>
+    </div>
+    <form id="registration" class="mode">
+      <div class="row"><div><label for="registration-school-id">Official School ID</label><input id="registration-school-id" inputmode="numeric" required maxlength="12"></div><div><label for="school-name">School name</label><input id="school-name" required maxlength="200"></div></div>
+      <label for="activation-code">One-time School Activation Code</label><input id="activation-code" type="password" required autocomplete="one-time-code" maxlength="120">
+      <label for="registration-installation-id">Installation ID shown by the Control Center</label><input id="registration-installation-id" required maxlength="36" autocomplete="off">
+      <p class="notice">Windows Hello or your security key will create an Internet Server administrator passkey. This is separate from Scanner Operator accounts.</p>
+      <button id="register-button" type="submit">Create passkey and register</button>
+    </form>
+    <form id="transfer" class="mode" hidden>
+      <div class="row"><div><label for="transfer-school-id">Official School ID</label><input id="transfer-school-id" readonly></div><div><label for="transfer-installation-id">New installation ID</label><input id="transfer-installation-id" readonly></div></div>
+      <label for="transfer-mode">Transfer option</label><select id="transfer-mode"><option value="server_and_data">Server and Data — recommended</option><option value="backup_assisted">Server and Data from backup</option><option value="server_only">Server Only</option></select>
+      <p id="transfer-validation" class="notice">Open this page from the destination Control Center after preparing the transfer.</p>
+      <p class="notice warning">Server Only permanently transfers the public address without recovering historical records. Use it only after confirming the warning in the Control Center.</p>
+      <button id="transfer-button" type="submit">Use passkey and transfer authorization</button>
+    </form>
+    <div id="passkeys" class="mode" hidden>
+      <form id="add-passkey">
+        <h2>Add an administrator passkey</h2>
+        <label for="passkey-school-id">Official School ID</label><input id="passkey-school-id" inputmode="numeric" required maxlength="12">
+        <label for="passkey-label">Passkey label</label><input id="passkey-label" maxlength="120" value="Additional administrator passkey">
+        <p class="notice">An existing registered administrator passkey must authorize the new passkey.</p>
+        <button id="add-passkey-button" type="submit">Authorize and add passkey</button>
+      </form>
+      <form id="recover-passkeys">
+        <h2>Recover lost passkeys</h2>
+        <label for="recovery-school-id">Official School ID</label><input id="recovery-school-id" inputmode="numeric" required maxlength="12">
+        <label for="recovery-code">Administrator-issued recovery code</label><input id="recovery-code" type="password" autocomplete="one-time-code" required maxlength="120">
+        <p class="notice warning">Recovery revokes every previously registered administrator passkey for this School ID.</p>
+        <button id="recover-passkeys-button" type="submit">Recover administrator passkey</button>
+      </form>
+    </div>
+    <div id="status" class="notice" hidden></div>
+    <div id="completion" hidden>
+      <h2>Return to the Control Center</h2>
+      <p>Enter this completion code in the app within 10 minutes. It authorizes only the destination installation and is consumed after that app confirms secure local storage. If delivery is interrupted, enter the same unexpired code again.</p>
+      <div id="completion-code" class="notice result"></div>
+    </div>
+  </section>
+  <p class="privacy small">No survey answers, scanner images, report content, or unrelated service credentials are sent to this registration page.</p>
+</main>
+<script src="/assets/manage.js" defer></script>
+</body>
+</html>

@@ -230,6 +230,35 @@ def main() -> int:
         )
         return 6
 
+    # A signed retirement marker is an authorization boundary, not ordinary
+    # application data. Check it before copying or opening any legacy records
+    # and never construct the normal Control Center when it is present.
+    try:
+        from school_csm_control_center.ui.retired_installation import (
+            load_verified_retirement_record,
+        )
+
+        retirement_record = load_verified_retirement_record(project_root)
+    except Exception as exc:
+        logger.exception("The Internet Server retirement marker could not be verified.")
+        instance_guard.release()
+        _show_fatal_message(
+            "This installation has an Internet Server retirement marker that could not be verified. Normal startup remains blocked. Run Setup and choose Repair or contact the gateway administrator.",
+            log_path,
+        )
+        return 8
+    if retirement_record is not None:
+        logger.warning(
+            "Verified Internet Server retirement marker found for School ID %s; normal startup is blocked.",
+            retirement_record.get("school_id", ""),
+        )
+        try:
+            from school_csm_control_center.app import run_retired_installation
+
+            return int(run_retired_installation(project_root, retirement_record))
+        finally:
+            instance_guard.release()
+
     try:
         migration = migrate_legacy_data(runtime_paths)
         logger.info(

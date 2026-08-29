@@ -116,13 +116,24 @@ class ScannerIntegrationTests(unittest.TestCase):
             "corrected_preview": None,
         }
 
-    def request(self, path: str, *, payload: dict | None = None, method: str = "GET", opener=None) -> tuple[int, dict, object]:
+    def request(
+        self,
+        path: str,
+        *,
+        payload: dict | None = None,
+        method: str = "GET",
+        opener=None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict, object]:
         client = opener or self.opener
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request_headers = dict(headers or {})
+        if data is not None:
+            request_headers["Content-Type"] = "application/json"
         request = Request(
             f"{self.base}{path}",
             data=data,
-            headers={"Content-Type": "application/json"} if data is not None else {},
+            headers=request_headers,
             method=method,
         )
         try:
@@ -134,11 +145,12 @@ class ScannerIntegrationTests(unittest.TestCase):
             parsed = json.loads(body.decode("utf-8")) if body else {}
             return response.status, parsed, response.headers
 
-    def login(self) -> dict:
+    def login(self, *, headers: dict[str, str] | None = None) -> dict:
         status, result, _ = self.request(
             "/api/scanner/auth/login",
             payload={"username": "scanner01", "password": "secret12"},
             method="POST",
+            headers=headers,
         )
         self.assertEqual(status, 200)
         self.assertTrue(result["authenticated"])
@@ -178,6 +190,47 @@ class ScannerIntegrationTests(unittest.TestCase):
         self.assertEqual(record["meta"]["scanner_operator_display_name"], "Juan Dela Cruz")
         self.assertEqual(record["meta"]["scanner_session_id"], login["session_id"])
         self.assertEqual(len(self.received), 1)
+
+    def test_internet_scanner_transport_is_server_owned_and_cookie_is_secure(self) -> None:
+        public_headers = {
+            "Host": "123627.csm.example.gov.ph",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-For": "198.51.100.25",
+            "Origin": "https://123627.csm.example.gov.ph",
+        }
+        self.settings.update(
+            {
+                "internet_gateway_enabled": True,
+                "internet_gateway_public_host": "123627.csm.example.gov.ph",
+                "internet_gateway_trusted_proxy_ips": ["127.0.0.1"],
+            }
+        )
+        status, login, response_headers = self.request(
+            "/api/scanner/auth/login",
+            payload={"username": "scanner01", "password": "secret12"},
+            method="POST",
+            headers=public_headers,
+        )
+        self.assertEqual(status, 200, login)
+        set_cookie = str(response_headers.get("Set-Cookie") or "")
+        self.assertIn("Secure", set_cookie)
+        scanner_cookie = set_cookie.split(";", 1)[0]
+
+        payload = self.payload(
+            scanner_id="SCN-INTERNET-TRANSPORT",
+            control_number=self.registered_control,
+        )
+        payload["access_transport"] = "local"
+        payload["school_id"] = "999999"
+        status, result, _headers = self.request(
+            "/api/scanner/submissions",
+            payload=payload,
+            method="POST",
+            headers={**public_headers, "Cookie": scanner_cookie},
+        )
+        self.assertEqual(status, 201, result)
+        record = self.store.list()[0]
+        self.assertEqual(record["meta"]["access_transport"], "internet")
 
     def test_duplicate_scanner_submission_returns_existing_record_idempotently(self) -> None:
         self.login()

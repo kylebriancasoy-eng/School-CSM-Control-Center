@@ -7,15 +7,24 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import runpy
 import shutil
 import tempfile
 import zipfile
 
 
-PACKAGE_NAME = "School_CSM_Control_Center_v0.3.0_Development_Build_11"
+_VERSION = str(
+    runpy.run_path(
+        Path(__file__).resolve().parents[1]
+        / "school_csm_control_center"
+        / "version.py"
+    )["__version__"]
+)
+PACKAGE_NAME = f"School_CSM_Control_Center_v{_VERSION}_Source"
 EXCLUDED_DIRECTORIES = {
     ".git",
     ".locks",
+    ".venv",
     "__pycache__",
     "backups",
     "data",
@@ -23,10 +32,12 @@ EXCLUDED_DIRECTORIES = {
     "exports",
     "logs",
     "migration",
+    "release",
     "recovery",
     "scanner_jobs",
     "scanner_trash",
     "tests",
+    "tmp",
 }
 EXCLUDED_FILES = {
     "DEBUG_LOG.txt",

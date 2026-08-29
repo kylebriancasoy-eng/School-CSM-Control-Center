@@ -22,6 +22,8 @@ WINDOWS_VERSION = str(VERSION_DATA["WINDOWS_FILE_VERSION_TEXT"])
 RELEASE_TAG = str(VERSION_DATA["RELEASE_TAG"])
 APPLICATION_ID = "MoSSLab.SchoolCSMControlCenter"
 ENTRY_POINT = "School CSM Control Center.exe"
+CLOUDFLARED_ENTRY = PurePosixPath("vendor/cloudflared/cloudflared.exe")
+PROVIDER_CONFIG_ENTRY = PurePosixPath("internet_gateway_provider.json")
 INSTALLER_NAME = "School-CSM-Control-Center-Setup.exe"
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 FORBIDDEN_RUNTIME_SUFFIXES = {
@@ -88,6 +90,17 @@ def write_deterministic_zip(source: Path, destination: Path) -> None:
     ]
     if bad:
         raise ValueError(f"End-user package contains development files: {bad[0]}")
+    provider_files = [
+        path
+        for path in files
+        if path.relative_to(source).as_posix().casefold()
+        == str(PROVIDER_CONFIG_ENTRY).casefold()
+    ]
+    if provider_files:
+        raise ValueError(
+            "A production Internet Gateway provider configuration must not be "
+            f"included in a public release: {provider_files[0]}"
+        )
     timestamp = zip_timestamp()
     with zipfile.ZipFile(
         destination,
@@ -153,6 +166,12 @@ def main() -> int:
     entry_point = app_dir / ENTRY_POINT
     if not entry_point.is_file() or entry_point.is_symlink():
         raise SystemExit(f"Missing compiled application entry point: {entry_point}")
+    tunnel_component = app_dir.joinpath(*CLOUDFLARED_ENTRY.parts)
+    if not tunnel_component.is_file() or tunnel_component.is_symlink():
+        raise SystemExit(
+            "Missing verified Internet Gateway component from the compiled application: "
+            f"{tunnel_component}"
+        )
     if not installer_source.is_file() or installer_source.is_symlink():
         raise SystemExit(f"Missing maintenance installer: {installer_source}")
 

@@ -61,7 +61,8 @@ namespace MoSSLab.SchoolCSM.Installer
             description.MaximumSize = new Size(680, 0);
             description.Text =
                 "Install, update, repair, or remove the compiled Windows application. " +
-                "Saved survey records and credentials remain outside Program Files and are preserved by default.";
+                "Saved survey records, credentials, and the administrator-installed Internet Gateway " +
+                "provider configuration remain outside Program Files and are preserved by default.";
             description.Margin = new Padding(0, 0, 0, 12);
             page.Controls.Add(description);
 
@@ -91,7 +92,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
             removeData = new CheckBox();
             removeData.AutoSize = true;
-            removeData.Text = "When uninstalling, also remove my saved records and OpenAI API key";
+            removeData.Text = "When uninstalling, also remove my saved records and application credentials";
             removeData.Margin = new Padding(0, 0, 0, 12);
             page.Controls.Add(removeData);
 
@@ -129,7 +130,7 @@ namespace MoSSLab.SchoolCSM.Installer
             privacy.MaximumSize = new Size(680, 0);
             privacy.Text =
                 "The explicit removal option affects only the current Windows account's standard Documents data folder. " +
-                "It is never selected automatically.";
+                "It is never selected automatically. Deployment provider configuration is retained in ProgramData.";
             privacy.Margin = new Padding(0, 8, 0, 0);
             page.Controls.Add(privacy);
 
@@ -217,8 +218,10 @@ namespace MoSSLab.SchoolCSM.Installer
         private void UninstallClicked(object sender, EventArgs e)
         {
             string dataText = removeData.Checked
-                ? "Your saved records and OpenAI API key for this Windows account will also be permanently removed."
+                ? "Your saved records, optional OpenAI key, and Internet Gateway device credentials for this Windows account will also be permanently removed."
                 : "Your saved records and credentials will be preserved.";
+            dataText += Environment.NewLine + Environment.NewLine +
+                "The administrator-installed Internet Gateway provider configuration in ProgramData will be preserved.";
             DialogResult answer = MessageBox.Show(
                 "Remove School CSM Control Center from Program Files?" + Environment.NewLine + Environment.NewLine + dataText,
                 "Confirm uninstall",

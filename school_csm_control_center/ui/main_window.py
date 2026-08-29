@@ -30,20 +30,35 @@ from school_csm_control_center.app_identity import (
     resolve_mosslab_seal,
 )
 from school_csm_control_center.questionnaire import CC_QUESTIONS, RATING_LABELS, SQD_QUESTIONS
+from school_csm_control_center.internet_gateway.client import GatewayProviderClient
+from school_csm_control_center.internet_gateway.config import load_gateway_provider_config
+from school_csm_control_center.internet_gateway.controller import InternetGatewayController
+from school_csm_control_center.internet_gateway.tunnel import CloudflaredTunnel
 from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.school_services import service_display, service_value_from_record
 from school_csm_control_center.services.analysis_service import AnalysisService
+from school_csm_control_center.services.gateway_backup_adapter import GatewayBackupService
+from school_csm_control_center.services.gateway_migration import GatewayMigrationService
 from school_csm_control_center.storage.csv_import import parse_survey_history_csv
 from school_csm_control_center.storage.dashboard_snapshot_store import DashboardSnapshotStore
 from school_csm_control_center.storage.narrative_report_store import NarrativeReportStore
 from school_csm_control_center.storage.print_history_store import PrintHistoryStore
 from school_csm_control_center.storage.survey_store import SurveyStore
+from school_csm_control_center.storage.gateway_credentials import GatewayCredentialStore
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.dashboard_board import DashboardBoard
 from school_csm_control_center.ui.dashboard_print_overlay import DashboardPrintOverlay
 from school_csm_control_center.ui.dashboard_snapshot_codec import decode_dashboard_snapshot
 from school_csm_control_center.ui.history_board import HistoryBoard
 from school_csm_control_center.ui.history_clear_overlay import HistoryClearOverlay
+from school_csm_control_center.ui.internet_gateway_overlays import (
+    InternetGatewayDiagnosticsOverlay,
+    InternetGatewaySetupOverlay,
+    InternetServerTransferOverlay,
+    MigrationPackageExportOverlay,
+    RecoveryBackupExportOverlay,
+    RegistrationDetailsOverlay,
+)
 from school_csm_control_center.ui.mrs_printing_board import MRSPrintingBoard
 from school_csm_control_center.ui.narrative_report_overlay import NarrativeReportOverlay
 from school_csm_control_center.ui.server_board import SurveyServerBoard
@@ -52,6 +67,10 @@ from school_csm_control_center.ui.icons import action_icon
 from school_csm_control_center.ui.overlays import OverlayPrompt, Toast, WorkspaceOverlay
 from school_csm_control_center.ui.survey_drawer import SurveyEntryOverlay
 from school_csm_control_center.ui.system_tray import ControlCenterSystemTray
+from school_csm_control_center.ui.retired_installation import (
+    ForcedRetirementOverlay,
+    launch_registered_uninstaller,
+)
 from school_csm_control_center.ui.title_bar import BrandedTitleBar, WindowResizeHandle
 from school_csm_control_center.ui.widgets import TooltipIconButton
 from school_csm_control_center.web_server import SurveyServerController
@@ -172,12 +191,54 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.history = HistoryBoard()
         self._report_startup(66, "Preparing the local survey server…")
         self.server_controller = SurveyServerController(self.store, self.project_root, self)
-        self.server_board = SurveyServerBoard(self.server_controller)
+        self._gateway_provider_error = ""
+        try:
+            self.gateway_provider_config = load_gateway_provider_config(
+                self.project_root
+            )
+        except Exception as exc:
+            self.gateway_provider_config = None
+            self._gateway_provider_error = str(exc).strip()
+        gateway_client = (
+            GatewayProviderClient(self.gateway_provider_config)
+            if self.gateway_provider_config is not None
+            else None
+        )
+        gateway_migration = GatewayMigrationService(
+            self.project_root,
+            data_root=self.data_root,
+        )
+        gateway_backup = GatewayBackupService(
+            self.project_root,
+            data_root=self.data_root,
+            migration_service=gateway_migration,
+        )
+        self.gateway_controller = InternetGatewayController(
+            self.project_root,
+            local_settings_provider=self.server_controller.settings,
+            client=gateway_client,
+            tunnel=CloudflaredTunnel(self.project_root),
+            credentials=GatewayCredentialStore(),
+            migration=gateway_migration,
+            backup=gateway_backup,
+            provider_config=self.gateway_provider_config,
+            parent=self,
+        )
+        self.server_controller.set_runtime_settings_provider(
+            self.gateway_controller.web_server_settings
+        )
+        self.server_board = SurveyServerBoard(
+            self.server_controller,
+            gateway_controller=self.gateway_controller,
+        )
         self.mrs_printing = MRSPrintingBoard(
             self.project_root,
             settings_provider=self.server_controller.settings,
         )
         self.school_information = SchoolInformationBoard(self.project_root)
+        self.school_information.set_registered_school_id(
+            str(self.gateway_controller.state().get("school_id") or "")
+        )
         self.board_stack.addWidget(self.dashboard)
         self.board_stack.addWidget(self.history)
         shell_layout.addWidget(self.board_stack, 1)
@@ -236,10 +297,32 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             report_store=self.narrative_store,
             print_store=self.print_store,
         )
+        self.gateway_setup_overlay = InternetGatewaySetupOverlay(self.shell)
+        self.gateway_transfer_overlay = InternetServerTransferOverlay(self.shell)
+        self.gateway_package_export_overlay = MigrationPackageExportOverlay(self.shell)
+        self.gateway_backup_export_overlay = RecoveryBackupExportOverlay(self.shell)
+        self.gateway_diagnostics_overlay = InternetGatewayDiagnosticsOverlay(self.shell)
+        self.gateway_details_overlay = RegistrationDetailsOverlay(self.shell)
+        self.retirement_overlay = ForcedRetirementOverlay(self.window_frame)
+        self.retirement_overlay.hide()
         self.toast = Toast(self.shell)
         self._explicit_exit_requested = False
         self._shutdown_started = False
         self._background_notice_shown = False
+        self._gateway_connect_pending = False
+        self._gateway_manual_connect_after_authorization = False
+        self._gateway_listener_narrowing_pending = False
+        self._gateway_auto_reconnect_pending = False
+        self._gateway_authorization_verified_this_session = False
+        self._gateway_auto_reconnect_suppressed = False
+        self._pending_gateway_migration: dict[str, Any] | None = None
+        self._pending_gateway_package_export: dict[str, Any] | None = None
+        self._pending_gateway_backup_export: dict[str, Any] | None = None
+        self._restart_server_after_gateway_export = False
+        self._reconnect_gateway_after_export = False
+        self._restart_server_after_gateway_backup = False
+        self._reconnect_gateway_after_backup = False
+        self._pending_gateway_transfer_mode = ""
         self._background_startup_enabled = bool(
             self.server_controller.settings().get(
                 "background_server_startup_enabled", False
@@ -253,6 +336,15 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._connect_actions()
         self._apply_background_lifecycle()
         self._tray_urls_changed(*self.server_controller.urls())
+        self._gateway_state_changed(self.gateway_controller.state())
+        self._authorization_timer = QTimer(self)
+        self._authorization_timer.setInterval(15 * 60 * 1000)
+        self._authorization_timer.timeout.connect(
+            self.gateway_controller.check_authorization_async
+        )
+        self._authorization_timer.start()
+        if self.gateway_controller.configured:
+            QTimer.singleShot(1600, self.gateway_controller.check_authorization_async)
         self._report_startup(87, "Applying interface styling…")
         self._apply_styles()
         self._report_startup(91, "Loading saved responses and live analysis…")
@@ -327,6 +419,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         )
         self.server_controller.response_received.connect(self._browser_response_received)
         self.server_controller.status_changed.connect(self._server_status_toast)
+        self.server_controller.status_changed.connect(
+            lambda _status, _message: self.gateway_controller.refresh_local_settings()
+        )
         self.server_controller.status_changed.connect(self._tray_server_status_changed)
         self.server_controller.urls_changed.connect(self._tray_urls_changed)
         self.server_board.background_startup_requested.connect(
@@ -340,6 +435,18 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.server_controller.stop_async
         )
         self.system_tray.open_survey_requested.connect(self._open_survey_url)
+        self.system_tray.connect_gateway_requested.connect(
+            self._request_gateway_connection
+        )
+        self.system_tray.disconnect_gateway_requested.connect(
+            self._disconnect_gateway_manually
+        )
+        self.system_tray.open_internet_survey_requested.connect(
+            self._open_survey_url
+        )
+        self.system_tray.open_internet_scanner_requested.connect(
+            self._open_survey_url
+        )
         self.system_tray.background_startup_toggled.connect(
             self._set_background_startup
         )
@@ -348,6 +455,71 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.school_information.notice_requested.connect(
             lambda message, kind: self.toast.show_message(message, kind=kind, timeout_ms=6500)
         )
+        gateway_panel = self.server_board.internet_gateway
+        gateway_panel.setup_requested.connect(self._open_gateway_setup)
+        gateway_panel.connect_requested.connect(self._request_gateway_connection)
+        gateway_panel.diagnostics_requested.connect(
+            self._open_gateway_diagnostics
+        )
+        gateway_panel.transfer_requested.connect(self._open_gateway_transfer)
+        gateway_panel.prepare_package_requested.connect(
+            self._open_gateway_package_export
+        )
+        gateway_panel.prepare_backup_requested.connect(
+            self._open_gateway_backup_export
+        )
+        gateway_panel.registration_details_requested.connect(
+            self._open_gateway_details
+        )
+        self.gateway_setup_overlay.open_school_information_requested.connect(
+            lambda: self.show_board("school_information")
+        )
+        self.gateway_setup_overlay.browser_authorization_requested.connect(
+            self._open_gateway_authorization_page
+        )
+        self.gateway_setup_overlay.completion_code_requested.connect(
+            self.gateway_controller.redeem_completion_code_async
+        )
+        self.gateway_transfer_overlay.browser_transfer_requested.connect(
+            self._open_gateway_transfer_page
+        )
+        self.gateway_transfer_overlay.migration_import_requested.connect(
+            self._prepare_gateway_migration
+        )
+        self.gateway_transfer_overlay.recovery_restore_requested.connect(
+            self._prepare_gateway_backup_restore
+        )
+        self.gateway_package_export_overlay.package_requested.connect(
+            self._prepare_gateway_package_export
+        )
+        self.gateway_backup_export_overlay.backup_requested.connect(
+            self._prepare_gateway_backup_export
+        )
+        self.gateway_transfer_overlay.completion_code_requested.connect(
+            self.gateway_controller.redeem_completion_code_async
+        )
+        self.gateway_controller.state_changed.connect(self._gateway_state_changed)
+        self.gateway_controller.operation_progress.connect(
+            self._gateway_operation_progress
+        )
+        self.gateway_controller.diagnostics_ready.connect(
+            self.gateway_diagnostics_overlay.show_results
+        )
+        self.gateway_controller.notice_requested.connect(
+            lambda message, kind: self.toast.show_message(
+                message, kind=kind, timeout_ms=7500
+            )
+        )
+        self.gateway_controller.retirement_confirmed.connect(
+            self._enforce_runtime_retirement
+        )
+        self.gateway_details_overlay.manage_passkeys_requested.connect(
+            self._open_gateway_passkey_management
+        )
+        self.retirement_overlay.uninstall_requested.connect(
+            self._launch_retired_uninstaller
+        )
+        self.retirement_overlay.exit_requested.connect(self.exit_application)
 
     def show_board(self, board: str) -> None:
         target = str(board or "dashboard").casefold()
@@ -483,9 +655,502 @@ class SchoolCSMControlCenterWindow(QMainWindow):
     def _school_information_saved(self, settings: object) -> None:
         saved = dict(settings) if isinstance(settings, dict) else self.server_controller.settings_store.load()
         self.server_controller.reload_persistent_settings()
+        self.gateway_controller.refresh_local_settings()
         self._refresh_branding_footer(saved)
         self.mrs_printing.refresh()
         self.toast.show_message("School information saved. Control Center and Survey Form branding updated.", kind="success")
+
+    def _open_gateway_setup(self) -> None:
+        local = self.server_controller.settings()
+        detail = self._gateway_provider_error or str(
+            self.gateway_controller.state().get("detail") or ""
+        )
+        self.gateway_setup_overlay.configure(
+            school_id=str(local.get("school_id") or ""),
+            school_name=str(local.get("school_name") or ""),
+            provider_available=self.gateway_controller.provider_available,
+            detail=detail,
+        )
+        self.gateway_setup_overlay.open_overlay(
+            self.server_board.internet_gateway.setup_button
+        )
+
+    def _open_gateway_authorization_page(self, mode: str = "registration") -> None:
+        try:
+            url = self.gateway_controller.management_url(mode=mode)
+        except Exception as exc:
+            self.gateway_setup_overlay.set_status(str(exc))
+            return
+        if not QDesktopServices.openUrl(QUrl(url)):
+            self.gateway_setup_overlay.set_status(
+                "Windows could not open the secure authorization page. Check the default browser setting."
+            )
+            return
+        self.gateway_setup_overlay.set_status(
+            "The secure authorization page opened in your browser. Return here with its one-time completion code."
+        )
+
+    def _open_gateway_transfer(self) -> None:
+        local = self.server_controller.settings()
+        state = self.gateway_controller.state()
+        try:
+            installation_id = self.gateway_controller.ensure_installation_id()
+        except Exception as exc:
+            self.toast.show_message(str(exc), kind="error", timeout_ms=7000)
+            return
+        self.gateway_transfer_overlay.configure(
+            school_id=str(state.get("school_id") or local.get("school_id") or ""),
+            school_name=str(local.get("school_name") or ""),
+            installation_id=installation_id,
+        )
+        self.gateway_transfer_overlay.open_overlay(
+            self.server_board.internet_gateway.transfer_button
+        )
+
+    def _open_gateway_package_export(self) -> None:
+        local = self.server_controller.settings()
+        state = self.gateway_controller.state()
+        try:
+            source_installation_id = self.gateway_controller.ensure_installation_id()
+        except Exception as exc:
+            self.toast.show_message(str(exc), kind="error", timeout_ms=7000)
+            return
+        self.gateway_package_export_overlay.configure(
+            school_id=str(state.get("school_id") or local.get("school_id") or ""),
+            school_name=str(local.get("school_name") or ""),
+            source_installation_id=source_installation_id,
+        )
+        self.gateway_package_export_overlay.open_overlay(
+            self.server_board.internet_gateway.prepare_package_button
+        )
+
+    def _prepare_gateway_package_export(self, request: object) -> None:
+        payload = dict(request) if isinstance(request, dict) else {}
+        self._restart_server_after_gateway_export = self.server_controller.running
+        self._reconnect_gateway_after_export = self.gateway_controller.connected
+        if self._reconnect_gateway_after_export:
+            self.gateway_controller.disconnect()
+        if self.server_controller.running:
+            self._pending_gateway_package_export = payload
+            self.gateway_package_export_overlay.set_progress(
+                "Stopping the local Survey Server before creating a consistent encrypted snapshot…",
+                busy=True,
+            )
+            if not self.server_controller.stop_async():
+                self._pending_gateway_package_export = None
+                self.gateway_package_export_overlay.set_progress(
+                    "The Survey Server is busy. Wait for its current operation to finish, then try again.",
+                    busy=False,
+                )
+                self._restore_server_after_gateway_export()
+            return
+        self._start_gateway_package_export(payload)
+
+    def _start_gateway_package_export(self, payload: dict[str, Any]) -> None:
+        self.gateway_package_export_overlay.set_progress(
+            "Creating the encrypted destination-bound package…", busy=True
+        )
+        if not self.gateway_controller.create_migration_package_async(payload):
+            self.gateway_package_export_overlay.set_progress(
+                "Another Internet Gateway operation is still in progress. Try again when it finishes.",
+                busy=False,
+            )
+            self._restore_server_after_gateway_export()
+
+    def _restore_server_after_gateway_export(self) -> None:
+        restart = self._restart_server_after_gateway_export
+        reconnect = self._reconnect_gateway_after_export
+        self._restart_server_after_gateway_export = False
+        self._reconnect_gateway_after_export = False
+        if not restart:
+            return
+        if reconnect:
+            if self.server_controller.running and self.server_controller.tunnel_origin_url():
+                QTimer.singleShot(
+                    0, self.gateway_controller.connect_or_reconnect_async
+                )
+            else:
+                self._gateway_connect_pending = True
+        if not self.server_controller.running:
+            QTimer.singleShot(0, self.start_saved_server_unattended)
+
+    def _open_gateway_backup_export(self) -> None:
+        local = self.server_controller.settings()
+        state = self.gateway_controller.state()
+        try:
+            source_installation_id = self.gateway_controller.ensure_installation_id()
+        except Exception as exc:
+            self.toast.show_message(str(exc), kind="error", timeout_ms=7000)
+            return
+        self.gateway_backup_export_overlay.configure(
+            school_id=str(state.get("school_id") or local.get("school_id") or ""),
+            school_name=str(local.get("school_name") or ""),
+            source_installation_id=source_installation_id,
+        )
+        self.gateway_backup_export_overlay.open_overlay(
+            self.server_board.internet_gateway.prepare_backup_button
+        )
+
+    def _prepare_gateway_backup_export(self, request: object) -> None:
+        payload = dict(request) if isinstance(request, dict) else {}
+        self._restart_server_after_gateway_backup = self.server_controller.running
+        self._reconnect_gateway_after_backup = self.gateway_controller.connected
+        if self._reconnect_gateway_after_backup:
+            self.gateway_controller.disconnect()
+        if self.server_controller.running:
+            self._pending_gateway_backup_export = payload
+            self.gateway_backup_export_overlay.set_progress(
+                "Stopping the local Survey Server before creating a consistent encrypted recovery backup...",
+                busy=True,
+            )
+            if not self.server_controller.stop_async():
+                self._pending_gateway_backup_export = None
+                self.gateway_backup_export_overlay.set_progress(
+                    "The Survey Server is busy. Wait for its current operation to finish, then try again.",
+                    busy=False,
+                )
+                self._restore_server_after_gateway_backup()
+            return
+        self._start_gateway_backup_export(payload)
+
+    def _start_gateway_backup_export(self, payload: dict[str, Any]) -> None:
+        self.gateway_backup_export_overlay.set_progress(
+            "Creating the encrypted portable recovery backup...", busy=True
+        )
+        if not self.gateway_controller.create_recovery_backup_async(payload):
+            self.gateway_backup_export_overlay.set_progress(
+                "Another Internet Gateway operation is still in progress. Try again when it finishes.",
+                busy=False,
+            )
+            self._restore_server_after_gateway_backup()
+
+    def _restore_server_after_gateway_backup(self) -> None:
+        restart = self._restart_server_after_gateway_backup
+        reconnect = self._reconnect_gateway_after_backup
+        self._restart_server_after_gateway_backup = False
+        self._reconnect_gateway_after_backup = False
+        if not restart:
+            return
+        if reconnect:
+            if self.server_controller.running and self.server_controller.tunnel_origin_url():
+                QTimer.singleShot(
+                    0, self.gateway_controller.connect_or_reconnect_async
+                )
+            else:
+                self._gateway_connect_pending = True
+        if not self.server_controller.running:
+            QTimer.singleShot(0, self.start_saved_server_unattended)
+
+    def _open_gateway_transfer_page(self, request: object) -> None:
+        payload = dict(request) if isinstance(request, dict) else {}
+        if not self.gateway_controller.create_transfer_intent_async(payload):
+            self.gateway_transfer_overlay.set_progress(
+                "Another Internet Gateway operation is still in progress. Try again when it finishes."
+            )
+            return
+        self.gateway_transfer_overlay.set_progress(
+            "Creating a short-lived Server Transfer authorization request…",
+            cutover_locked=True,
+        )
+
+    def _prepare_gateway_migration(self, request: object) -> None:
+        payload = dict(request) if isinstance(request, dict) else {}
+        transfer_mode = str(payload.pop("transfer_mode", "") or "").casefold()
+        if transfer_mode != "server_and_data":
+            self.gateway_transfer_overlay.set_progress(
+                "A .mossmig package can be used only with Server and Data transfer."
+            )
+            return
+        self._prepare_gateway_data_activation(payload, transfer_mode)
+
+    def _prepare_gateway_backup_restore(self, request: object) -> None:
+        payload = dict(request) if isinstance(request, dict) else {}
+        transfer_mode = str(payload.pop("transfer_mode", "") or "").casefold()
+        if transfer_mode != "backup_assisted":
+            self.gateway_transfer_overlay.set_progress(
+                "A .mossbak file can be used only with Recovery Backup transfer."
+            )
+            return
+        self._prepare_gateway_data_activation(payload, transfer_mode)
+
+    def _prepare_gateway_data_activation(
+        self, payload: dict[str, Any], transfer_mode: str
+    ) -> None:
+        self._pending_gateway_transfer_mode = transfer_mode
+        if self.server_controller.running:
+            self._pending_gateway_migration = payload
+            self.gateway_transfer_overlay.set_progress(
+                "Stopping the local Survey Server before validating and activating transferred data…",
+                cutover_locked=True,
+            )
+            if not self.server_controller.stop_async():
+                self._pending_gateway_migration = None
+                self._pending_gateway_transfer_mode = ""
+                self.gateway_transfer_overlay.set_progress(
+                    "The Survey Server is busy. Wait for its current operation to finish, then try again."
+                )
+            return
+        self._start_gateway_data_activation(payload)
+
+    def _start_gateway_data_activation(self, payload: dict[str, Any]) -> None:
+        backup_mode = self._pending_gateway_transfer_mode == "backup_assisted"
+        self.gateway_transfer_overlay.set_progress(
+            (
+                "Authenticating and restoring the encrypted recovery backup before any Internet authority is transferred..."
+                if backup_mode
+                else "Validating the encrypted migration package before any Internet authority is transferred..."
+            ),
+            cutover_locked=True,
+        )
+        started = (
+            self.gateway_controller.restore_recovery_backup_async(payload)
+            if backup_mode
+            else self.gateway_controller.prepare_migration_import_async(payload)
+        )
+        if not started:
+            self._pending_gateway_transfer_mode = ""
+            self.gateway_transfer_overlay.set_progress(
+                "Another Internet Gateway operation is still in progress. Try again when it finishes."
+            )
+
+    def _open_gateway_diagnostics(self) -> None:
+        self.gateway_diagnostics_overlay.show_results(
+            {"detail": "Running Internet Gateway diagnostics..."}
+        )
+        self.gateway_diagnostics_overlay.open_overlay(
+            self.server_board.internet_gateway.diagnostics_button
+        )
+        self.gateway_controller.run_diagnostics_async()
+
+    def _open_gateway_details(self) -> None:
+        self.gateway_details_overlay.show_state(self.gateway_controller.state())
+        self.gateway_details_overlay.open_overlay(
+            self.server_board.internet_gateway.details_button
+        )
+
+    def _open_gateway_passkey_management(self) -> None:
+        try:
+            url = self.gateway_controller.passkey_management_url()
+        except Exception as exc:
+            self.toast.show_message(str(exc), kind="error", timeout_ms=7000)
+            return
+        if not QDesktopServices.openUrl(QUrl(url)):
+            self.toast.show_message(
+                "Windows could not open Administrator Passkey management in the secure browser.",
+                kind="error",
+                timeout_ms=7000,
+            )
+
+    def _gateway_state_changed(self, state: object) -> None:
+        gateway = dict(state) if isinstance(state, dict) else {}
+        registered_school_id = (
+            str(gateway.get("school_id") or "")
+            if gateway.get("registration_state") == "registered"
+            else ""
+        )
+        if hasattr(self, "school_information"):
+            self.school_information.set_registered_school_id(registered_school_id)
+        if hasattr(self, "system_tray"):
+            self.system_tray.set_gateway_state(
+                str(gateway.get("gateway_state") or "not_configured"),
+                str(gateway.get("detail") or ""),
+                configured=bool(
+                    gateway.get("registration_state") == "registered"
+                    and gateway.get("public_host")
+                ),
+                authorized=bool(gateway.get("authorized_this_device")),
+                survey_url=str(gateway.get("survey_url") or ""),
+                scanner_url=str(gateway.get("scanner_url") or ""),
+                scanner_enabled=bool(
+                    gateway.get("scanner_remote_enabled", True)
+                ),
+            )
+        if gateway.get("retirement") and hasattr(self, "retirement_overlay"):
+            self._enforce_runtime_retirement(gateway.get("retirement"))
+
+    def _gateway_operation_progress(self, progress: object) -> None:
+        document = dict(progress) if isinstance(progress, dict) else {}
+        message = str(document.get("detail") or "")
+        busy = bool(document.get("busy"))
+        operation = str(document.get("operation") or "")
+        if operation in {"migration_import", "backup_restore"}:
+            self.gateway_transfer_overlay.set_progress(
+                message, cutover_locked=busy
+            )
+            if not busy and not document.get("error"):
+                result = (
+                    dict(document.get("result"))
+                    if isinstance(document.get("result"), dict)
+                    else {}
+                )
+                validation = result.get("data_validation")
+                transfer_mode = self._pending_gateway_transfer_mode
+                expected_operation = (
+                    "backup_restore"
+                    if transfer_mode == "backup_assisted"
+                    else "migration_import"
+                )
+                common_fields = {
+                    "verified",
+                    "transaction_id",
+                    "manifest_sha256",
+                    "active_tree_sha256",
+                    "record_counts",
+                }
+                backup_fields = {
+                    "source_kind",
+                    "backup_id",
+                    "backup_manifest_sha256",
+                }
+                expected_fields = common_fields | (
+                    backup_fields if transfer_mode == "backup_assisted" else set()
+                )
+                valid_receipt = bool(
+                    operation == expected_operation
+                    and isinstance(validation, dict)
+                    and set(validation) == expected_fields
+                    and validation.get("verified") is True
+                    and (
+                        transfer_mode != "backup_assisted"
+                        or validation.get("source_kind") == "portable_backup"
+                    )
+                )
+                if not valid_receipt:
+                    self._pending_gateway_transfer_mode = ""
+                    self.gateway_transfer_overlay.set_progress(
+                        "The completed data operation did not return the exact receipt for the selected transfer mode. Internet authority was not transferred."
+                    )
+                else:
+                    self.gateway_transfer_overlay.set_data_validation_result(validation)
+                    self.server_controller.reload_persistent_settings()
+                    self.school_information.load_settings()
+                    self.gateway_controller.refresh_local_settings()
+                    self._refresh_branding_footer()
+                    self.refresh_all()
+                    if transfer_mode in {"server_and_data", "backup_assisted"}:
+                        request = {
+                            "transfer_mode": transfer_mode,
+                            "data_validation": dict(validation),
+                        }
+                        QTimer.singleShot(
+                            0,
+                            lambda payload=request: self._open_gateway_transfer_page(payload),
+                        )
+                    else:
+                        self.gateway_transfer_overlay.set_progress(
+                            "The transfer option was lost after migration. The validated data remains active; choose the transfer option again to continue."
+                        )
+            elif not busy and document.get("error"):
+                self._pending_gateway_transfer_mode = ""
+        elif operation == "migration_export":
+            self.gateway_package_export_overlay.set_progress(message, busy=busy)
+            if not busy:
+                if not document.get("error") and isinstance(
+                    document.get("result"), dict
+                ):
+                    self.gateway_package_export_overlay.show_result(
+                        dict(document["result"])
+                    )
+                self._restore_server_after_gateway_export()
+        elif operation == "backup_export":
+            self.gateway_backup_export_overlay.set_progress(message, busy=busy)
+            if not busy:
+                if not document.get("error") and isinstance(
+                    document.get("result"), dict
+                ):
+                    self.gateway_backup_export_overlay.show_result(
+                        dict(document["result"])
+                    )
+                self._restore_server_after_gateway_backup()
+        elif operation == "transfer_intent":
+            self.gateway_transfer_overlay.set_progress(message, cutover_locked=busy)
+            if not busy and not document.get("error"):
+                result = (
+                    dict(document.get("result"))
+                    if isinstance(document.get("result"), dict)
+                    else {}
+                )
+                url = str(result.get("management_url") or "").strip()
+                if not url.casefold().startswith("https://") or not QDesktopServices.openUrl(
+                    QUrl(url)
+                ):
+                    self.gateway_transfer_overlay.set_progress(
+                        "Windows could not open the secure Server Transfer page. No Internet authority was transferred."
+                    )
+                else:
+                    expiry = str(result.get("expires_at") or "").strip()
+                    suffix = f" The request expires at {expiry}." if expiry else ""
+                    self.gateway_transfer_overlay.set_progress(
+                        "The secure Server Transfer page opened in your browser. Complete the passkey check there, then return with its one-time completion code."
+                        + suffix
+                    )
+                self._pending_gateway_transfer_mode = ""
+        elif operation == "authorization_check" and not busy:
+            result = (
+                dict(document.get("result"))
+                if isinstance(document.get("result"), dict)
+                else self.gateway_controller.state()
+            )
+            self._gateway_authorization_verified_this_session = bool(
+                not document.get("error")
+                and result.get("authorization_state") == "active"
+                and result.get("authorized_this_device")
+                and not result.get("retirement")
+            )
+            if self._gateway_authorization_verified_this_session:
+                if self._gateway_manual_connect_after_authorization:
+                    self._gateway_manual_connect_after_authorization = False
+                    QTimer.singleShot(0, self._request_gateway_connection)
+                else:
+                    QTimer.singleShot(0, self._request_background_gateway_reconnect)
+            elif not self._gateway_authorization_verified_this_session:
+                self._gateway_manual_connect_after_authorization = False
+                self._gateway_auto_reconnect_pending = False
+                QTimer.singleShot(0, self._narrow_gateway_listener_after_authorization_loss)
+        elif operation == "connect" and not busy:
+            self._gateway_auto_reconnect_pending = False
+        if operation == "completion_code":
+            if self.gateway_transfer_overlay.isVisible():
+                self.gateway_transfer_overlay.set_progress(
+                    message, cutover_locked=busy
+                )
+            else:
+                self.gateway_setup_overlay.set_status(message, busy=busy)
+            if (
+                not busy
+                and not document.get("error")
+                and self.server_controller.running
+                and not self.server_controller.tunnel_origin_url()
+            ):
+                self.toast.show_message(
+                    "Internet authorization is saved. Stop and start the local Survey Server once before connecting the Internet Gateway; local LAN access will remain available.",
+                    kind="info",
+                    timeout_ms=8500,
+                )
+        if document.get("error"):
+            self.toast.show_message(message, kind="error", timeout_ms=7500)
+
+    def _enforce_runtime_retirement(self, record: object) -> None:
+        retirement = dict(record) if isinstance(record, dict) else {}
+        self.server_controller.request_shutdown()
+        try:
+            self.gateway_controller.disconnect()
+        except Exception:
+            pass
+        self.system_tray.hide()
+        self.retirement_overlay.show_for_record(retirement)
+        self.retirement_overlay.raise_()
+        self.retirement_overlay.setFocus()
+
+    def _launch_retired_uninstaller(self) -> None:
+        try:
+            import os
+
+            launch_registered_uninstaller(wait_for_pid=os.getpid())
+        except Exception as exc:
+            self.retirement_overlay.set_status(str(exc), error=True)
+            return
+        self.exit_application()
 
     def _open_first_run_school_setup(self) -> None:
         settings = self.server_controller.settings_store.load()
@@ -556,8 +1221,13 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             return
 
         self._background_startup_enabled = actual
+        if actual:
+            self._gateway_auto_reconnect_suppressed = False
+            QTimer.singleShot(0, self._request_background_gateway_reconnect)
+        else:
+            self._gateway_auto_reconnect_pending = False
         detail = (
-            "The Control Center and Survey Server will start in the notification area when this Windows account signs in."
+            "The Control Center and Survey Server will start in the notification area when this Windows account signs in. A registered Internet Gateway reconnects only after the local server is healthy and device authorization is verified."
             if actual
             else "Automatic background startup is disabled."
         )
@@ -619,8 +1289,150 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             )
         return bool(started or self.server_controller.running)
 
+    def _request_gateway_connection(self) -> None:
+        """Ensure the private loopback origin exists, then start the tunnel."""
+
+        self._gateway_auto_reconnect_suppressed = False
+        if self.gateway_controller.operation_in_progress:
+            return
+        if not self.gateway_controller.authorization_verified_this_session:
+            self._gateway_manual_connect_after_authorization = True
+            self.gateway_controller.check_authorization_async()
+            return
+        if self.server_controller.running and self.server_controller.tunnel_origin_url():
+            self.gateway_controller.connect_or_reconnect_async()
+            return
+        self._gateway_connect_pending = True
+        if self.server_controller.running:
+            self.toast.show_message(
+                "Restarting the local Survey Server once to enable its private Internet Gateway origin. Local LAN access resumes automatically.",
+                kind="info",
+                timeout_ms=6500,
+            )
+            if not self.server_controller.stop_async():
+                self._gateway_connect_pending = False
+            return
+        if not self.start_saved_server_unattended():
+            self._gateway_connect_pending = False
+
+    def _disconnect_gateway_manually(self) -> None:
+        self._gateway_auto_reconnect_suppressed = True
+        self._gateway_auto_reconnect_pending = False
+        self.gateway_controller.disconnect()
+
+    def _background_gateway_reconnect_candidate(self) -> bool:
+        state = self.gateway_controller.state()
+        return bool(
+            self._background_startup_enabled
+            and not self._gateway_auto_reconnect_suppressed
+            and self.server_controller.running
+            and self.gateway_controller.provider_available
+            and self.gateway_controller.configured
+            and state.get("authorization_state") == "active"
+            and state.get("authorized_this_device")
+            and not state.get("retirement")
+            and state.get("gateway_state") != "connected"
+        )
+
+    def _request_background_gateway_reconnect(self) -> None:
+        """Sequence background reconnect after local health and fresh authorization."""
+
+        if not self._background_gateway_reconnect_candidate():
+            self._gateway_auto_reconnect_pending = False
+            return
+        self._gateway_auto_reconnect_pending = True
+        if self.gateway_controller.operation_in_progress:
+            return
+        if not self._gateway_authorization_verified_this_session:
+            self.gateway_controller.check_authorization_async()
+            return
+        if not self.server_controller.tunnel_origin_url():
+            self._gateway_auto_reconnect_pending = True
+            self._request_gateway_connection()
+            return
+        self._gateway_auto_reconnect_pending = False
+        self.gateway_controller.connect_or_reconnect_async()
+
+    def _narrow_gateway_listener_after_authorization_loss(self) -> None:
+        """Stop public routing and restore the selected-interface local bind."""
+
+        try:
+            self.gateway_controller.disconnect()
+        except Exception:
+            pass
+        if not self.server_controller.wildcard_listener_active():
+            self._gateway_listener_narrowing_pending = False
+            return
+        self._gateway_listener_narrowing_pending = True
+        if not self.server_controller.stop_async():
+            self._gateway_listener_narrowing_pending = False
+            self.toast.show_message(
+                "Internet authorization could not be verified and the Survey Server could not be narrowed automatically. Stop and restart it before continuing Local-Only use.",
+                kind="error",
+                timeout_ms=8500,
+            )
+
     def _tray_server_status_changed(self, status: str, message: str) -> None:
         self.system_tray.set_server_state(status, message)
+        normalized = str(status).casefold()
+        manual_gateway_connect_ready = False
+        listener_narrowed_ready = False
+        if self._pending_gateway_migration is not None and normalized == "offline":
+            payload = self._pending_gateway_migration
+            self._pending_gateway_migration = None
+            QTimer.singleShot(
+                0,
+                lambda request=payload: self._start_gateway_data_activation(request),
+            )
+        elif self._pending_gateway_migration is not None and normalized == "error":
+            self._pending_gateway_migration = None
+            self._pending_gateway_transfer_mode = ""
+            self.gateway_transfer_overlay.set_progress(
+                "The local Survey Server could not be stopped safely. Transferred data was not activated."
+            )
+        elif self._pending_gateway_package_export is not None and normalized == "offline":
+            payload = self._pending_gateway_package_export
+            self._pending_gateway_package_export = None
+            QTimer.singleShot(
+                0,
+                lambda request=payload: self._start_gateway_package_export(request),
+            )
+        elif self._pending_gateway_package_export is not None and normalized == "error":
+            self._pending_gateway_package_export = None
+            self.gateway_package_export_overlay.set_progress(
+                "The local Survey Server could not be stopped safely. No migration package was created.",
+                busy=False,
+            )
+            self._restore_server_after_gateway_export()
+        elif self._pending_gateway_backup_export is not None and normalized == "offline":
+            payload = self._pending_gateway_backup_export
+            self._pending_gateway_backup_export = None
+            QTimer.singleShot(
+                0,
+                lambda request=payload: self._start_gateway_backup_export(request),
+            )
+        elif self._pending_gateway_backup_export is not None and normalized == "error":
+            self._pending_gateway_backup_export = None
+            self.gateway_backup_export_overlay.set_progress(
+                "The local Survey Server could not be stopped safely. No recovery backup was created.",
+                busy=False,
+            )
+            self._restore_server_after_gateway_backup()
+        elif self._gateway_listener_narrowing_pending and normalized == "offline":
+            QTimer.singleShot(0, self.start_saved_server_unattended)
+        elif self._gateway_listener_narrowing_pending and normalized == "online":
+            self._gateway_listener_narrowing_pending = False
+            listener_narrowed_ready = True
+        elif self._gateway_listener_narrowing_pending and normalized == "error":
+            self._gateway_listener_narrowing_pending = False
+        elif self._gateway_connect_pending and normalized == "offline":
+            QTimer.singleShot(0, self.start_saved_server_unattended)
+        elif self._gateway_connect_pending and normalized == "online":
+            self._gateway_connect_pending = False
+            manual_gateway_connect_ready = True
+            QTimer.singleShot(0, self.gateway_controller.connect_or_reconnect_async)
+        elif self._gateway_connect_pending and normalized == "error":
+            self._gateway_connect_pending = False
         if str(status).casefold() == "error":
             self.system_tray.show_status_message(
                 "Survey Server could not start",
@@ -628,6 +1440,17 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                 warning=True,
                 timeout_ms=7000,
             )
+        if normalized == "offline":
+            # A later local-server start is a new lifecycle attempt and may
+            # honor the persisted background reconnect preference again.
+            self._gateway_auto_reconnect_suppressed = False
+        elif (
+            normalized == "online"
+            and not manual_gateway_connect_ready
+            and not listener_narrowed_ready
+            and not self._gateway_listener_narrowing_pending
+        ):
+            QTimer.singleShot(0, self._request_background_gateway_reconnect)
 
     def _tray_urls_changed(
         self,
@@ -650,7 +1473,17 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         if self._shutdown_started:
             return
         self._shutdown_started = True
+        self._pending_gateway_migration = None
+        self._pending_gateway_package_export = None
+        self._pending_gateway_backup_export = None
+        self._pending_gateway_transfer_mode = ""
+        self.gateway_package_export_overlay.migration_key.clear()
+        self.gateway_backup_export_overlay.backup_key.clear()
         self.system_tray.hide()
+        try:
+            self.gateway_controller.disconnect()
+        except Exception:
+            pass
         self.server_controller.request_shutdown()
 
     def exit_application(self) -> None:
@@ -1192,6 +2025,18 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.history_clear_overlay.setGeometry(self.shell.rect())
         self.print_overlay.setGeometry(self.shell.rect())
         self.narrative_overlay.setGeometry(self.shell.rect())
+        if hasattr(self, "gateway_setup_overlay"):
+            for overlay in (
+                self.gateway_setup_overlay,
+                self.gateway_transfer_overlay,
+                self.gateway_package_export_overlay,
+                self.gateway_backup_export_overlay,
+                self.gateway_diagnostics_overlay,
+                self.gateway_details_overlay,
+            ):
+                overlay.setGeometry(self.shell.rect())
+        if hasattr(self, "retirement_overlay"):
+            self.retirement_overlay.setGeometry(self.window_frame.rect())
         for overlay in (
             self.mrs_workspace_overlay,
             self.server_workspace_overlay,
