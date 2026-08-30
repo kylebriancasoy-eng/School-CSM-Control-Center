@@ -119,6 +119,31 @@ class InternetGatewayPolicyTests(unittest.TestCase):
         self.assertLessEqual(limiter.retained_identity_count, 64)
         self.assertNotIn("198.51.100.25", repr(limiter._entries))
 
+    def test_rate_limiter_retry_does_not_exceed_its_configured_window(self) -> None:
+        now = [1000.4]
+        limiter = BoundedRateLimiter(
+            max_identities=64,
+            secret=b"test-only-secret",
+            clock=lambda: now[0],
+        )
+
+        first = limiter.consume(
+            "public_session",
+            "198.51.100.25",
+            limit=1,
+            window_seconds=60,
+        )
+        blocked = limiter.consume(
+            "public_session",
+            "198.51.100.25",
+            limit=1,
+            window_seconds=60,
+        )
+
+        self.assertTrue(first.allowed)
+        self.assertFalse(blocked.allowed)
+        self.assertEqual(blocked.retry_after_seconds, 60)
+
 
 class InternetGatewayWebSecurityTests(unittest.TestCase):
     def setUp(self) -> None:

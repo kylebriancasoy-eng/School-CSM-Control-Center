@@ -269,7 +269,10 @@ class BoundedRateLimiter:
             while entry.events and entry.events[0] <= cutoff:
                 entry.events.popleft()
             if len(entry.events) >= maximum:
-                retry = max(1, math.ceil(entry.events[0] + window - now))
+                retry = max(
+                    1,
+                    min(window, math.ceil(entry.events[0] + window - now)),
+                )
                 return RateLimitDecision(False, retry)
             entry.events.append(now)
             return RateLimitDecision(True, 0)
