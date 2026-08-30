@@ -1,6 +1,6 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.5.0 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.5.1 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 valid provider configuration, the application stays **Local Only**, starts no
 tunnel, and makes no registration-service request.

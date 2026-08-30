@@ -1,7 +1,7 @@
 # School CSM Internet Gateway registration service
 
 This is the separately deployed infrastructure-control service for the optional
-Internet Gateway in School CSM Control Center 0.5.0. It does not host the survey
+Internet Gateway in School CSM Control Center 0.5.1. It does not host the survey
 application and its schema contains no survey responses, scanner images,
 narrative content, portable backup content, or print records.
 

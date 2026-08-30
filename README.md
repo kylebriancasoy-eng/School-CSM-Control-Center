@@ -1,4 +1,4 @@
-# School CSM Control Center 0.5.0
+# School CSM Control Center 0.5.1
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -30,7 +30,7 @@ must be selected explicitly; it removes the current account's standard saved-dat
 folder and named application credentials, but retains the machine-wide provider
 configuration.
 
-## 0.5.0 highlights
+## 0.5.1 highlights
 
 - The optional Internet Gateway adds a stable School-ID HTTPS address while the
   school computer remains the authoritative server and data store. With no valid
