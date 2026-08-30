@@ -502,10 +502,16 @@ class PortableRecoveryBackupTests(unittest.TestCase):
             from school_csm_control_center.services import gateway_migration
 
             original = gateway_migration._is_reparse
+            redirected_identity = redirected.resolve()
             with patch.object(
                 gateway_migration,
                 "_is_reparse",
-                side_effect=lambda path: Path(path) == redirected or original(Path(path)),
+                # ``TemporaryDirectory`` may expose an 8.3 path on hosted
+                # Windows runners while the service normalizes the data root
+                # to its long path. Compare canonical identities so this test
+                # still exercises the production rejection branch.
+                side_effect=lambda path: Path(path).resolve() == redirected_identity
+                or original(Path(path)),
             ):
                 with self.assertRaisesRegex(MigrationPackageValidationError, "redirected"):
                     service.create_backup(
@@ -528,10 +534,12 @@ class PortableRecoveryBackupTests(unittest.TestCase):
             from school_csm_control_center.services import gateway_migration
 
             original = gateway_migration._is_reparse
+            redirected_identity = redirected.resolve()
             with patch.object(
                 gateway_migration,
                 "_is_reparse",
-                side_effect=lambda path: Path(path) == redirected or original(Path(path)),
+                side_effect=lambda path: Path(path).resolve() == redirected_identity
+                or original(Path(path)),
             ):
                 with self.assertRaisesRegex(MigrationPackageValidationError, "redirected object"):
                     service.create_backup(
