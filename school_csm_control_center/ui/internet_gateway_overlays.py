@@ -189,6 +189,7 @@ class _GatewayOverlay(QWidget):
 class InternetGatewaySetupOverlay(_GatewayOverlay):
     browser_authorization_requested = Signal(str)
     completion_code_requested = Signal(str)
+    direct_configuration_requested = Signal(object)
     open_school_information_requested = Signal()
 
     def __init__(self, parent: QWidget) -> None:
@@ -200,6 +201,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self._school_id = ""
         self._school_name = ""
         self._provider_available = False
+        self._provider_detail = ""
 
         prerequisite = QLabel(
             "Local-Only operation remains available whether or not Internet Gateway setup is completed. No CSM response database is created in the Registration Service."
@@ -227,15 +229,29 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.school_id_requirement.setWordWrap(True)
         self.body_layout.addWidget(self.school_id_requirement)
 
-        browser_heading = QLabel("Authorize in your secure browser")
-        browser_heading.setObjectName("gateway_overlay_section")
-        self.body_layout.addWidget(browser_heading)
-        browser_copy = QLabel(
+        route_heading = QLabel("Setup route")
+        route_heading.setObjectName("gateway_overlay_section")
+        self.body_layout.addWidget(route_heading)
+        route_row = QHBoxLayout()
+        self.managed_mode = QRadioButton("Managed multi-school provider")
+        self.direct_mode = QRadioButton("Single-school Cloudflare pilot")
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.managed_mode)
+        self.mode_group.addButton(self.direct_mode)
+        route_row.addWidget(self.managed_mode)
+        route_row.addWidget(self.direct_mode)
+        route_row.addStretch(1)
+        self.body_layout.addLayout(route_row)
+
+        self.browser_heading = QLabel("Authorize in your secure browser")
+        self.browser_heading.setObjectName("gateway_overlay_section")
+        self.body_layout.addWidget(self.browser_heading)
+        self.browser_copy = QLabel(
             "The managed registration page opens in your browser. Enter the School Activation Code and create the administrator passkey there. The Control Center never collects, stores, or sees either value."
         )
-        browser_copy.setObjectName("gateway_overlay_note")
-        browser_copy.setWordWrap(True)
-        self.body_layout.addWidget(browser_copy)
+        self.browser_copy.setObjectName("gateway_overlay_note")
+        self.browser_copy.setWordWrap(True)
+        self.body_layout.addWidget(self.browser_copy)
 
         actions = QHBoxLayout()
         actions.addStretch(1)
@@ -249,16 +265,18 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         actions.addWidget(self.register_button)
         self.body_layout.addLayout(actions)
 
-        completion_heading = QLabel("Finish in the Control Center")
-        completion_heading.setObjectName("gateway_overlay_section")
-        self.body_layout.addWidget(completion_heading)
-        completion_copy = QLabel(
+        self.completion_heading = QLabel("Finish in the Control Center")
+        self.completion_heading.setObjectName("gateway_overlay_section")
+        self.body_layout.addWidget(self.completion_heading)
+        self.completion_copy = QLabel(
             "After the browser confirms authorization, copy its completion code here. It expires in 10 minutes and authorizes only this installation. If secure delivery is interrupted, enter the same unexpired code again."
         )
-        completion_copy.setObjectName("gateway_overlay_note")
-        completion_copy.setWordWrap(True)
-        self.body_layout.addWidget(completion_copy)
-        completion_row = QHBoxLayout()
+        self.completion_copy.setObjectName("gateway_overlay_note")
+        self.completion_copy.setWordWrap(True)
+        self.body_layout.addWidget(self.completion_copy)
+        self.completion_row = QWidget()
+        completion_row = QHBoxLayout(self.completion_row)
+        completion_row.setContentsMargins(0, 0, 0, 0)
         self.completion_code = QLineEdit()
         self.completion_code.setPlaceholderText("One-time completion code")
         self.completion_code.setAccessibleName("Internet Gateway completion code")
@@ -267,7 +285,60 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         )
         completion_row.addWidget(self.completion_code, 1)
         completion_row.addWidget(self.redeem_button)
-        self.body_layout.addLayout(completion_row)
+        self.body_layout.addWidget(self.completion_row)
+
+        self.direct_heading = QLabel("Connect this school through Cloudflare")
+        self.direct_heading.setObjectName("gateway_overlay_section")
+        self.body_layout.addWidget(self.direct_heading)
+        self.direct_copy = QLabel(
+            "This school-pilot route uses the named Tunnel and workers.dev address created in Cloudflare. Response records remain on this computer. The connector token is stored only in Windows Credential Manager. Workers VPC is currently a Cloudflare beta service."
+        )
+        self.direct_copy.setObjectName("gateway_overlay_note")
+        self.direct_copy.setWordWrap(True)
+        self.body_layout.addWidget(self.direct_copy)
+        self.direct_fields = QWidget()
+        direct_fields = QGridLayout(self.direct_fields)
+        direct_fields.setContentsMargins(0, 0, 0, 0)
+        direct_fields.setHorizontalSpacing(12)
+        direct_fields.setVerticalSpacing(7)
+        direct_fields.addWidget(self._field_label("Worker public hostname"), 0, 0)
+        direct_fields.addWidget(self._field_label("Cloudflare Tunnel ID"), 0, 1)
+        self.direct_public_host = QLineEdit()
+        self.direct_public_host.setPlaceholderText(
+            "123456.school-account.workers.dev"
+        )
+        self.direct_public_host.setAccessibleName(
+            "Cloudflare Worker public hostname"
+        )
+        self.direct_tunnel_id = QLineEdit()
+        self.direct_tunnel_id.setPlaceholderText(
+            "00000000-0000-0000-0000-000000000000"
+        )
+        self.direct_tunnel_id.setAccessibleName("Cloudflare Tunnel ID")
+        direct_fields.addWidget(self.direct_public_host, 1, 0)
+        direct_fields.addWidget(self.direct_tunnel_id, 1, 1)
+        direct_fields.addWidget(self._field_label("Connector token"), 2, 0, 1, 2)
+        self.direct_tunnel_token = QLineEdit()
+        self.direct_tunnel_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.direct_tunnel_token.setPlaceholderText(
+            "Paste the complete connector token from Cloudflare"
+        )
+        self.direct_tunnel_token.setAccessibleName(
+            "Cloudflare Tunnel connector token"
+        )
+        direct_fields.addWidget(self.direct_tunnel_token, 3, 0, 1, 2)
+        self.body_layout.addWidget(self.direct_fields)
+        self.direct_beta_acknowledgement = QCheckBox(
+            "I understand Workers VPC is currently a beta service and this is a school pilot."
+        )
+        self.body_layout.addWidget(self.direct_beta_acknowledgement)
+        direct_actions = QHBoxLayout()
+        direct_actions.addStretch(1)
+        self.direct_save_button = TooltipIconButton(
+            "save", "Save the single-school Cloudflare connector securely", role="success"
+        )
+        direct_actions.addWidget(self.direct_save_button)
+        self.body_layout.addLayout(direct_actions)
         self.status_label = QLabel()
         self.status_label.setObjectName("gateway_overlay_note")
         self.status_label.setWordWrap(True)
@@ -280,6 +351,15 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         )
         self.register_button.clicked.connect(self._submit)
         self.redeem_button.clicked.connect(self._redeem)
+        self.direct_save_button.clicked.connect(self._save_direct)
+        self.managed_mode.toggled.connect(self._update_mode)
+        self.direct_mode.toggled.connect(self._update_mode)
+        self.direct_public_host.textChanged.connect(self._update_direct_enabled)
+        self.direct_tunnel_id.textChanged.connect(self._update_direct_enabled)
+        self.direct_tunnel_token.textChanged.connect(self._update_direct_enabled)
+        self.direct_beta_acknowledgement.toggled.connect(
+            self._update_direct_enabled
+        )
 
     def configure(
         self,
@@ -288,34 +368,42 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         school_name: str,
         provider_available: bool,
         detail: str = "",
+        deployment_mode: str = "",
+        public_host: str = "",
+        tunnel_id: str = "",
     ) -> None:
         self._school_id = str(school_id or "").strip()
         self._school_name = " ".join(str(school_name or "").split())
         self._provider_available = bool(provider_available)
+        self._provider_detail = str(detail or "").strip()
         self.school_id.setText(self._school_id)
         self.school_name.setText(self._school_name)
-        missing = not self._school_id
-        self.school_id_requirement.setVisible(missing or not self._provider_available)
-        if missing:
-            requirement = (
-                "Internet Gateway setup requires the official School ID. Complete School Information first."
-            )
-        elif not self._provider_available:
-            requirement = (
-                detail
-                or "Managed Internet Gateway provider configuration is unavailable. Local-Only operation continues."
-            )
+        valid_school_id = bool(
+            self._school_id.isdigit() and 4 <= len(self._school_id) <= 12
+        )
+        self.managed_mode.setEnabled(valid_school_id and self._provider_available)
+        self.direct_mode.setEnabled(valid_school_id)
+        current_mode = str(deployment_mode or "").strip().casefold()
+        use_direct = current_mode == "direct_worker_vpc" or (
+            valid_school_id and not self._provider_available
+        )
+        self.direct_mode.setChecked(use_direct)
+        self.managed_mode.setChecked(not use_direct)
+        if current_mode == "direct_worker_vpc":
+            self.direct_public_host.setText(str(public_host or "").strip())
+            self.direct_tunnel_id.setText(str(tunnel_id or "").strip())
         else:
-            requirement = ""
-        self.school_id_requirement.setText(requirement)
-        self.register_button.setEnabled(not missing and self._provider_available)
-        self.completion_code.setEnabled(not missing and self._provider_available)
-        self.redeem_button.setEnabled(not missing and self._provider_available)
+            self.direct_public_host.clear()
+            self.direct_tunnel_id.clear()
         self.completion_code.clear()
+        self.direct_tunnel_token.clear()
+        self.direct_beta_acknowledgement.setChecked(False)
         self.status_label.hide()
+        self._update_mode()
 
     def clear_sensitive_fields(self) -> None:
         self.completion_code.clear()
+        self.direct_tunnel_token.clear()
 
     def set_status(self, message: str, *, busy: bool = False) -> None:
         self.status_label.setText(str(message or ""))
@@ -330,6 +418,18 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.redeem_button.setEnabled(
             not busy and bool(self._school_id) and self._provider_available
         )
+        self.managed_mode.setEnabled(
+            not busy
+            and self._school_id.isdigit()
+            and 4 <= len(self._school_id) <= 12
+            and self._provider_available
+        )
+        self.direct_mode.setEnabled(
+            not busy
+            and self._school_id.isdigit()
+            and 4 <= len(self._school_id) <= 12
+        )
+        self._update_direct_enabled()
 
     def close_overlay(self) -> None:
         if not self.operation_locked:
@@ -347,6 +447,92 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
             return
         self.completion_code_requested.emit(code)
         self.completion_code.clear()
+
+    def _update_mode(self, _checked: bool = False) -> None:
+        direct = self.direct_mode.isChecked()
+        managed_widgets = (
+            self.browser_heading,
+            self.browser_copy,
+            self.register_button,
+            self.completion_heading,
+            self.completion_copy,
+            self.completion_row,
+        )
+        direct_widgets = (
+            self.direct_heading,
+            self.direct_copy,
+            self.direct_fields,
+            self.direct_beta_acknowledgement,
+            self.direct_save_button,
+        )
+        for widget in managed_widgets:
+            widget.setVisible(not direct)
+        for widget in direct_widgets:
+            widget.setVisible(direct)
+
+        valid_school_id = bool(
+            self._school_id.isdigit() and 4 <= len(self._school_id) <= 12
+        )
+        if not valid_school_id:
+            requirement = (
+                "Internet Gateway setup requires an official School ID containing 4 to 12 digits. "
+                "Complete School Information first."
+            )
+        elif not direct and not self._provider_available:
+            requirement = self._provider_detail or (
+                "Managed Internet Gateway provider configuration is unavailable. "
+                "Choose the single-school Cloudflare pilot or continue Local-Only."
+            )
+        else:
+            requirement = ""
+        self.school_id_requirement.setText(requirement)
+        self.school_id_requirement.setVisible(bool(requirement))
+        self._update_direct_enabled()
+
+    def _update_direct_enabled(self, _value: object = None) -> None:
+        valid_school_id = bool(
+            self._school_id.isdigit() and 4 <= len(self._school_id) <= 12
+        )
+        ready = bool(
+            self.direct_mode.isChecked()
+            and valid_school_id
+            and self.direct_public_host.text().strip()
+            and self.direct_tunnel_id.text().strip()
+            and self.direct_tunnel_token.text().strip()
+            and self.direct_beta_acknowledgement.isChecked()
+            and not self.operation_locked
+        )
+        self.direct_save_button.setEnabled(ready)
+
+    def _save_direct(self) -> None:
+        public_host = self.direct_public_host.text().strip()
+        tunnel_id = self.direct_tunnel_id.text().strip()
+        tunnel_token = self.direct_tunnel_token.text().strip()
+        if not public_host:
+            self.set_status("Enter the complete workers.dev hostname assigned to this school.")
+            self.direct_public_host.setFocus()
+            return
+        if not tunnel_id:
+            self.set_status("Enter the Tunnel ID shown by Cloudflare.")
+            self.direct_tunnel_id.setFocus()
+            return
+        if not tunnel_token:
+            self.set_status("Paste the complete connector token shown by Cloudflare.")
+            self.direct_tunnel_token.setFocus()
+            return
+        if not self.direct_beta_acknowledgement.isChecked():
+            self.set_status("Confirm the Workers VPC beta school-pilot acknowledgement.")
+            self.direct_beta_acknowledgement.setFocus()
+            return
+        self.direct_configuration_requested.emit(
+            {
+                "public_host": public_host,
+                "tunnel_id": tunnel_id,
+                "tunnel_token": tunnel_token,
+                "beta_acknowledged": True,
+            }
+        )
+        self.direct_tunnel_token.clear()
 
     @staticmethod
     def _field_label(text: str) -> QLabel:

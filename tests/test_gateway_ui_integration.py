@@ -26,6 +26,7 @@ from school_csm_control_center.ui.internet_gateway_overlays import (
     RecoveryBackupExportOverlay,
     RegistrationDetailsOverlay,
 )
+from school_csm_control_center.ui.internet_gateway_panel import InternetGatewayPanel
 from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
 from school_csm_control_center.ui.school_information_board import SchoolInformationBoard
 from school_csm_control_center.ui.system_tray import ControlCenterSystemTray
@@ -60,6 +61,7 @@ class _StateStore:
                 "registration_id": values["registration_id"],
                 "public_hostname": values["public_hostname"],
                 "tunnel_id": values["tunnel_id"],
+                "provisioning_state": values.get("provisioning_state", ""),
             },
         }
 
@@ -176,6 +178,114 @@ def _config() -> GatewayProviderConfig:
 
 
 class GatewayControllerIntegrationTests(unittest.TestCase):
+    def test_direct_workers_vpc_configuration_uses_only_the_tunnel_credential(self) -> None:
+        local = {
+            "school_id": "123456",
+            "school_name": "Test School",
+            "preferred_port": 8080,
+            "server_running": False,
+            "public_access_key": "survey-key",
+            "scanner_remote_enabled": True,
+        }
+        store = _StateStore()
+        credentials = _Credentials()
+        tunnel = _Tunnel()
+        controller = InternetGatewayController(
+            Path.cwd(),
+            local_settings_provider=lambda: dict(local),
+            state_store=store,
+            credentials=credentials,
+            tunnel=tunnel,
+            public_health_probe=lambda _host: {},
+        )
+
+        state = controller.configure_direct_worker_vpc(
+            public_host="https://123456.school-account.workers.dev/",
+            tunnel_id="22222222-2222-4222-8222-222222222222",
+            tunnel_token="t" * 64,
+            beta_acknowledged=True,
+        )
+
+        self.assertEqual(credentials.tunnel, "t" * 64)
+        self.assertIsNone(credentials.installation)
+        self.assertEqual(store.saved["provisioning_state"], "direct_worker_vpc")
+        self.assertEqual(state["deployment_mode"], "direct_worker_vpc")
+        self.assertEqual(state["trusted_proxy_ips"], ["127.0.0.1", "::1"])
+        self.assertFalse(controller.web_server_settings()["internet_gateway_enabled"])
+
+        checked = controller.check_authorization()
+        self.assertEqual(checked["authorization_state"], "active")
+        self.assertTrue(controller.authorization_verified_this_session)
+        self.assertTrue(controller.web_server_settings()["internet_gateway_enabled"])
+
+        local.update(
+            server_running=True,
+            server_port=8080,
+            tunnel_origin_url="http://127.0.0.1:8080",
+            survey_status="online",
+        )
+        controller.refresh_local_settings()
+        self.assertTrue(controller.connect_or_reconnect())
+        self.assertEqual(tunnel.received, "t" * 64)
+
+    def test_direct_configuration_restores_the_previous_token_on_state_failure(self) -> None:
+        class _FailingStateStore(_StateStore):
+            def save_registration(self, **_values):
+                raise OSError("simulated durable state failure")
+
+        credentials = _Credentials()
+        credentials.tunnel = "previous-token"
+        controller = InternetGatewayController(
+            Path.cwd(),
+            local_settings_provider=lambda: {
+                "school_id": "123456",
+                "preferred_port": 8080,
+                "server_running": False,
+            },
+            state_store=_FailingStateStore(),
+            credentials=credentials,
+            tunnel=_Tunnel(),
+            public_health_probe=lambda _host: {},
+        )
+
+        with self.assertRaisesRegex(OSError, "durable state failure"):
+            controller.configure_direct_worker_vpc(
+                public_host="123456.school-account.workers.dev",
+                tunnel_id="22222222-2222-4222-8222-222222222222",
+                tunnel_token="n" * 64,
+                beta_acknowledged=True,
+            )
+        self.assertEqual(credentials.tunnel, "previous-token")
+
+    def test_direct_configuration_rejects_wrong_school_host_and_port(self) -> None:
+        local = {
+            "school_id": "123456",
+            "preferred_port": 8090,
+            "server_running": False,
+        }
+        controller = InternetGatewayController(
+            Path.cwd(),
+            local_settings_provider=lambda: dict(local),
+            state_store=_StateStore(),
+            credentials=_Credentials(),
+            tunnel=_Tunnel(),
+            public_health_probe=lambda _host: {},
+        )
+        with self.assertRaisesRegex(ValueError, "begin with"):
+            controller.configure_direct_worker_vpc(
+                public_host="999999.school-account.workers.dev",
+                tunnel_id="22222222-2222-4222-8222-222222222222",
+                tunnel_token="n" * 64,
+                beta_acknowledged=True,
+            )
+        with self.assertRaisesRegex(ValueError, "port.*8080"):
+            controller.configure_direct_worker_vpc(
+                public_host="123456.school-account.workers.dev",
+                tunnel_id="22222222-2222-4222-8222-222222222222",
+                tunnel_token="n" * 64,
+                beta_acknowledged=True,
+            )
+
     def test_local_only_default_does_not_enable_public_routing(self) -> None:
         probes = []
         store = _StateStore()
@@ -973,6 +1083,9 @@ class GatewayControllerIntegrationTests(unittest.TestCase):
         harness.gateway_controller.provider_available = False
         harness._request_background_gateway_reconnect()
         self.assertEqual(calls, [])
+        harness.gateway_controller.direct_mode = True
+        harness._request_background_gateway_reconnect()
+        self.assertEqual(calls, ["connect"])
 
 
 class GatewayDesktopUiTests(unittest.TestCase):
@@ -1000,6 +1113,54 @@ class GatewayDesktopUiTests(unittest.TestCase):
         self.assertEqual(opened, ["registration"])
         self.assertEqual(redeemed, ["ABCD-EFGH"])
         parent.deleteLater()
+
+    def test_setup_overlay_collects_direct_connector_without_retaining_token(self) -> None:
+        parent = QWidget()
+        overlay = InternetGatewaySetupOverlay(parent)
+        overlay.configure(
+            school_id="123456",
+            school_name="Test School",
+            provider_available=False,
+            deployment_mode="direct_worker_vpc",
+            public_host="123456.school-account.workers.dev",
+            tunnel_id="22222222-2222-4222-8222-222222222222",
+        )
+        requests = []
+        overlay.direct_configuration_requested.connect(requests.append)
+        overlay.direct_tunnel_token.setText("t" * 64)
+        overlay.direct_beta_acknowledgement.setChecked(True)
+        overlay.direct_save_button.click()
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(
+            requests[0]["public_host"],
+            "123456.school-account.workers.dev",
+        )
+        self.assertEqual(requests[0]["tunnel_token"], "t" * 64)
+        self.assertTrue(requests[0]["beta_acknowledged"])
+        self.assertEqual(overlay.direct_tunnel_token.text(), "")
+        parent.deleteLater()
+
+    def test_direct_gateway_setup_can_be_reopened_only_while_disconnected(self) -> None:
+        panel = InternetGatewayPanel()
+        direct_state = {
+            "deployment_mode": "direct_worker_vpc",
+            "registration_state": "registered",
+            "authorization_state": "active",
+            "gateway_state": "disconnected",
+            "school_id": "123456",
+            "public_host": "123456.school-account.workers.dev",
+        }
+
+        panel.apply_state(direct_state)
+        self.assertTrue(panel.setup_button.isEnabled())
+
+        panel.apply_state({**direct_state, "gateway_state": "connected"})
+        self.assertFalse(panel.setup_button.isEnabled())
+
+        panel.apply_state({**direct_state, "deployment_mode": "managed"})
+        self.assertFalse(panel.setup_button.isEnabled())
+        panel.deleteLater()
 
     def test_transfer_overlay_never_accepts_a_browser_verification_checkbox(self) -> None:
         parent = QWidget()

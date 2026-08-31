@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.5.1 is distributed as one setup program. Operators
+School CSM Control Center 0.6.0 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 
@@ -49,22 +49,28 @@ The current PySide6 runtime is 64-bit and requires 64-bit Windows 10 or Windows 
 ## Optional Internet Gateway
 
 The application starts in **Local Only** mode. Local Survey and Scanner access
-does not require Internet Gateway registration. A deployment administrator must
-first install the non-secret provider configuration described in
-[`INTERNET_GATEWAY.md`](INTERNET_GATEWAY.md); the managed domain, registration
-service, authorization public keys, and exact trusted proxy IP addresses belong
-to that deployment and are not supplied by the public repository.
+does not require Internet Gateway registration. Internet Gateway setup offers
+two routes described in [`INTERNET_GATEWAY.md`](INTERNET_GATEWAY.md):
 
-After the provider file is installed, save the official School ID, open **Survey
-Server and Respondent Access > Internet Gateway**, and choose **Set Up Internet
-Gateway**. First registration uses an administrator-issued one-time activation
-code and a passkey created in the provider's HTTPS page. The one-time completion
-code returns the device credentials to the Control Center. The app saves the
-credentials and registration state before confirming delivery. If confirmation
-is interrupted, enter the same unexpired code again; the service permits only a
-small bounded number of deliveries to that exact installation. Start the local
-Survey Server; the outbound tunnel starts only after local health and a fresh
-signed authorization check succeed.
+- **Single-school Cloudflare pilot** uses a free `workers.dev` address, one
+  narrow Workers VPC Service, and one named Tunnel. It needs no custom domain or
+  central registration service. Workers VPC is currently beta and the route is
+  intended as a monitored school pilot.
+- **Managed multi-school provider** uses a deployment-owned domain, registration
+  service, signed device authorization, and server-transfer controls. A
+  deployment administrator must install its non-secret provider configuration;
+  none of its production infrastructure or secrets is supplied by the public
+  repository.
+
+For the single-school pilot, set the preferred port to `8080`, create the Tunnel,
+VPC Service, and School-ID Worker in Cloudflare, then enter the Worker hostname,
+Tunnel ID, and connector token in the app's setup overlay. The token is saved
+only in Windows Credential Manager. For managed mode, first registration uses an
+administrator-issued one-time activation code and a passkey created in the
+provider's HTTPS page. Its one-time completion code returns the device
+credentials to the Control Center. In both modes, start the local Survey Server;
+the outbound tunnel starts only after local health and the mode's authorization
+check succeed.
 
 For replacement computers, use one of these encrypted formats:
 

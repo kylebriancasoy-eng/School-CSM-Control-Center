@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "REPLACE-WITH-SCHOOL-ID",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-31",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "PUBLIC_HOST": "REPLACE-WITH-SCHOOL-ID.REPLACE-WITH-ACCOUNT-SUBDOMAIN.workers.dev"
+  },
+  "vpc_services": [
+    {
+      "binding": "SCHOOL_CSM_ORIGIN",
+      "service_id": "REPLACE-WITH-VPC-SERVICE-UUID"
+    }
+  ]
+}

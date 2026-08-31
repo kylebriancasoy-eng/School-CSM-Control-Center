@@ -74,7 +74,10 @@ class InternetGatewayPanel(QFrame):
             status.addWidget(metric[0], 1 + (index // 4), index % 4)
 
         self.setup_button = TooltipIconButton(
-            "settings", "Set up the optional Internet Gateway", button_size=36, icon_size=19
+            "settings",
+            "Set up or update the optional Internet Gateway",
+            button_size=36,
+            icon_size=19,
         )
         self.connect_button = TooltipIconButton(
             "reset", "Connect or reconnect the Internet Gateway", button_size=36, icon_size=19
@@ -315,12 +318,18 @@ class InternetGatewayPanel(QFrame):
         configured = registration_state == "registered" and bool(
             self._state.get("public_host")
         )
+        direct_mode = self._state.get("deployment_mode") == "direct_worker_vpc"
         privileged = authorization_state == "active"
         busy = gateway_state == "connecting" or bool(self._state.get("operation"))
         retired = authorization_state in {"transferred", "revoked"} or bool(
             self._state.get("retirement")
         )
-        self.setup_button.setEnabled(not configured and not busy and not retired)
+        self.setup_button.setEnabled(
+            (not configured or direct_mode)
+            and gateway_state != "connected"
+            and not busy
+            and not retired
+        )
         self.connect_button.setEnabled(configured and privileged and not busy and not retired)
         self.diagnostics_button.setEnabled(configured and not busy and not retired)
         self.details_button.setEnabled(configured or retired)

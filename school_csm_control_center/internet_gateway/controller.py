@@ -15,10 +15,12 @@ import base64
 import binascii
 import json
 from pathlib import Path
+import re
 import secrets
 from threading import RLock, Thread
 from typing import Any, Callable, Mapping
 from urllib.parse import quote, urlencode, urlparse, urlunparse
+from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal
 
@@ -57,6 +59,14 @@ AUTHORIZATION_LABELS = {
 
 RETIRED_AUTHORIZATION_STATES = frozenset({"transferred", "revoked", "retired"})
 
+DIRECT_WORKERS_VPC_MODE = "direct_worker_vpc"
+DIRECT_WORKERS_VPC_ORIGIN_PORT = 8080
+DIRECT_WORKERS_VPC_TRUSTED_PROXIES = ("127.0.0.1", "::1")
+_SCHOOL_ID_PATTERN = re.compile(r"^\d{4,12}$")
+_PUBLIC_HOST_PATTERN = re.compile(
+    r"^(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
+
 
 def _clean_text(value: Any) -> str:
     return " ".join(str(value or "").split())
@@ -67,6 +77,81 @@ def _normalize_host(value: Any) -> str:
     if "://" in host:
         host = host.split("://", 1)[1]
     return host.split("/", 1)[0].rstrip(".")
+
+
+def _validate_direct_school_id(value: Any) -> str:
+    school_id = "".join(str(value or "").split())
+    if not _SCHOOL_ID_PATTERN.fullmatch(school_id):
+        raise ValueError("School ID must contain 4 to 12 digits only.")
+    return school_id
+
+
+def _validate_direct_workers_host(value: Any, school_id: str) -> str:
+    """Validate a school-bound ``workers.dev`` hostname without DNS access."""
+
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("Enter the public Cloudflare Worker hostname.")
+    if "://" in text:
+        parsed = urlparse(text)
+        if (
+            parsed.scheme.casefold() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port is not None
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "The Worker address must be an HTTPS workers.dev origin without a path, port, or sign-in information."
+            )
+        hostname = str(parsed.hostname).casefold().rstrip(".")
+    else:
+        if any(character in text for character in "/?#@:"):
+            raise ValueError(
+                "Enter only the workers.dev hostname, without a path, port, or sign-in information."
+            )
+        hostname = text.casefold().rstrip(".")
+    try:
+        hostname.encode("ascii")
+    except UnicodeEncodeError:
+        raise ValueError("The Worker hostname must use ordinary ASCII DNS characters.") from None
+    if not _PUBLIC_HOST_PATTERN.fullmatch(hostname) or not hostname.endswith(
+        ".workers.dev"
+    ):
+        raise ValueError("The public hostname must be a valid Cloudflare workers.dev address.")
+    labels = hostname.split(".")
+    if len(labels) != 4 or labels[0] != school_id:
+        raise ValueError(
+            "The Worker hostname must begin with this installation's official School ID."
+        )
+    return hostname
+
+
+def _validate_direct_tunnel_id(value: Any) -> str:
+    text = str(value or "").strip()
+    try:
+        parsed = UUID(text)
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("The Cloudflare Tunnel ID is not a valid UUID.") from None
+    if parsed.int == 0:
+        raise ValueError("The Cloudflare Tunnel ID is not valid.")
+    return str(parsed)
+
+
+def _validate_direct_tunnel_token(value: Any) -> str:
+    token = str(value or "").strip()
+    if (
+        not 32 <= len(token) <= 8192
+        or any(character.isspace() or ord(character) < 33 or ord(character) > 126 for character in token)
+    ):
+        raise ValueError(
+            "The Cloudflare Tunnel token is missing or invalid. Copy the complete connector token from Cloudflare."
+        )
+    return token
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -194,6 +279,8 @@ class InternetGatewayController(QObject):
     @staticmethod
     def _initial_state() -> dict[str, Any]:
         return {
+            "deployment_mode": "local_only",
+            "provisioning_state": "",
             "registration_state": "not_configured",
             "gateway_state": "not_configured",
             "authorization_state": "unregistered",
@@ -231,6 +318,10 @@ class InternetGatewayController(QObject):
     @property
     def connected(self) -> bool:
         return self._state.get("gateway_state") == "connected"
+
+    @property
+    def direct_mode(self) -> bool:
+        return self._state.get("deployment_mode") == DIRECT_WORKERS_VPC_MODE
 
     @property
     def retired(self) -> bool:
@@ -290,9 +381,27 @@ class InternetGatewayController(QObject):
             registration.get("public_hostname") or registration.get("public_host")
         )
         school_id = _clean_text(registration.get("school_id"))
+        provisioning_state = str(
+            registration.get("provisioning_state") or ""
+        ).strip().casefold()
+        direct_mode = provisioning_state == DIRECT_WORKERS_VPC_MODE
+        deployment_mode = (
+            DIRECT_WORKERS_VPC_MODE
+            if direct_mode
+            else ("managed" if school_id and public_host else "local_only")
+        )
+        trusted_proxies = (
+            DIRECT_WORKERS_VPC_TRUSTED_PROXIES
+            if direct_mode
+            else tuple(
+                getattr(self._provider_config, "trusted_proxy_addresses", ()) or ()
+            )
+        )
 
         state = self._initial_state()
         state.update(
+            deployment_mode=deployment_mode,
+            provisioning_state=provisioning_state,
             installation_id=_clean_text(document.get("installation_id")),
             registration_state="registered" if school_id and public_host else "not_configured",
             gateway_state=gateway_status if gateway_status in GATEWAY_LABELS else "error",
@@ -304,9 +413,7 @@ class InternetGatewayController(QObject):
             last_authorization_check_at=str(document.get("last_authorization_check_at") or ""),
             detail=_clean_text(document.get("status_detail")),
             retirement=document.get("retirement"),
-            trusted_proxy_ips=list(
-                getattr(self._provider_config, "trusted_proxy_addresses", ()) or ()
-            ),
+            trusted_proxy_ips=list(trusted_proxies),
             provider_available=self.provider_available,
         )
         if state["retirement"]:
@@ -417,6 +524,125 @@ class InternetGatewayController(QObject):
         installation_id = str(ensure())
         self._state["installation_id"] = installation_id
         return installation_id
+
+    def configure_direct_worker_vpc_async(self, request: Mapping[str, Any]) -> bool:
+        payload = dict(request) if isinstance(request, Mapping) else {}
+        return self._run_async(
+            "direct_setup",
+            lambda: self.configure_direct_worker_vpc(
+                public_host=payload.get("public_host"),
+                tunnel_id=payload.get("tunnel_id"),
+                tunnel_token=payload.get("tunnel_token"),
+                beta_acknowledged=bool(payload.get("beta_acknowledged")),
+            ),
+            "Single-school Internet Gateway setup",
+        )
+
+    def configure_direct_worker_vpc(
+        self,
+        *,
+        public_host: Any,
+        tunnel_id: Any,
+        tunnel_token: Any,
+        beta_acknowledged: bool = False,
+    ) -> dict[str, Any]:
+        """Save a single-school Workers VPC connector without a central provider.
+
+        Only non-secret routing identity is written to the gateway state file.
+        The connector token is written to Windows Credential Manager first and
+        restored if durable state persistence fails.
+        """
+
+        self._authorization_verified_this_session = False
+        if self.retired:
+            self._emit_retirement()
+            raise RuntimeError(
+                "This installation is retired and cannot be configured as an Internet Server."
+            )
+        if self.connected:
+            raise RuntimeError(
+                "Disconnect the Internet Gateway before changing its Cloudflare configuration."
+            )
+        if not beta_acknowledged:
+            raise ValueError(
+                "Confirm that Cloudflare Workers VPC is a beta school-pilot service before saving."
+            )
+
+        local = dict(self._local_settings_provider() or {})
+        school_id = _validate_direct_school_id(local.get("school_id"))
+        hostname = _validate_direct_workers_host(public_host, school_id)
+        canonical_tunnel_id = _validate_direct_tunnel_id(tunnel_id)
+        token = _validate_direct_tunnel_token(tunnel_token)
+        try:
+            preferred_port = int(
+                local.get("preferred_port") or DIRECT_WORKERS_VPC_ORIGIN_PORT
+            )
+        except (TypeError, ValueError):
+            preferred_port = 0
+        if preferred_port != DIRECT_WORKERS_VPC_ORIGIN_PORT:
+            raise ValueError(
+                "Single-school Workers VPC mode requires the Survey Server preferred port to be 8080."
+            )
+        if bool(local.get("server_running")):
+            try:
+                running_port = int(local.get("server_port") or 0)
+            except (TypeError, ValueError):
+                running_port = 0
+            if running_port != DIRECT_WORKERS_VPC_ORIGIN_PORT:
+                raise ValueError(
+                    "Stop the Survey Server and set its preferred port to 8080 before saving this configuration."
+                )
+
+        saver = _callable_attr(self._state_store, "save_registration")
+        save_token = _callable_attr(self._credentials, "save_tunnel_credential")
+        load_token = _callable_attr(self._credentials, "load_tunnel_credential")
+        if saver is None:
+            raise RuntimeError("Internet Gateway registration storage is unavailable.")
+        if save_token is None or load_token is None:
+            raise RuntimeError(
+                "Windows Credential Manager is unavailable for the Internet Gateway connector token."
+            )
+
+        previous_token = str(load_token() or "")
+
+        def restore_previous_token() -> None:
+            try:
+                if previous_token:
+                    save_token(previous_token)
+                    return
+                delete_token = _callable_attr(
+                    self._credentials, "delete_tunnel_credential"
+                )
+                if delete_token is not None:
+                    delete_token()
+            except Exception:
+                # Preserve the original durable-storage error. The setup can
+                # be retried without ever exposing either credential value.
+                pass
+
+        installation_id = self.ensure_installation_id()
+        save_token(token)
+        try:
+            saver(
+                school_id=school_id,
+                registration_id=f"direct-worker-vpc-{canonical_tunnel_id}",
+                public_hostname=hostname,
+                tunnel_id=canonical_tunnel_id,
+                provisioning_state=DIRECT_WORKERS_VPC_MODE,
+                gateway_status="disconnected",
+                authorization_status="ACTIVE",
+                installation_id=installation_id,
+            )
+        except Exception:
+            restore_previous_token()
+            raise
+
+        state = self.reload()
+        self.notice_requested.emit(
+            "Single-school Cloudflare Internet Gateway settings were saved securely. Verify authorization, then restart the Survey Server once before connecting.",
+            "success",
+        )
+        return state
 
     def management_url(
         self,
@@ -1056,13 +1282,21 @@ class InternetGatewayController(QObject):
         origin_port = int(local.get("server_port") or local.get("preferred_port") or 0)
         if not 1 <= origin_port <= 65535:
             raise RuntimeError("The running local Survey Server port is unavailable.")
+        if self.direct_mode and origin_port != DIRECT_WORKERS_VPC_ORIGIN_PORT:
+            raise RuntimeError(
+                "Single-school Workers VPC mode requires the running Survey Server to use port 8080."
+            )
         if self._tunnel is None or self._credentials is None:
             raise RuntimeError("Internet Gateway components are unavailable. Run Setup and choose Repair.")
 
-        installation_secret = self._credentials.load_installation_secret()
+        installation_secret = (
+            None
+            if self.direct_mode
+            else self._credentials.load_installation_secret()
+        )
         tunnel_token = self._credentials.load_tunnel_credential()
         fetch = _callable_attr(self._client, "tunnel_credential")
-        if fetch is not None and installation_secret:
+        if not self.direct_mode and fetch is not None and installation_secret:
             refreshed = _mapping(
                 fetch(
                     str(self._state.get("school_id") or ""),
@@ -1100,7 +1334,47 @@ class InternetGatewayController(QObject):
 
     def check_authorization(self) -> dict[str, Any]:
         self._authorization_verified_this_session = False
-        if not self.configured or self._client is None or self._credentials is None:
+        if not self.configured or self._credentials is None:
+            return self.state()
+        if self.direct_mode:
+            load_token = _callable_attr(
+                self._credentials, "load_tunnel_credential"
+            )
+            token_present = False
+            if load_token is not None:
+                try:
+                    _validate_direct_tunnel_token(load_token())
+                    token_present = True
+                except Exception:
+                    token_present = False
+            if not token_present:
+                self._state.update(
+                    authorization_state="registration_error",
+                    authorized_this_device=False,
+                    detail=(
+                        "The Cloudflare connector token is unavailable in Windows Credential Manager. "
+                        "Open Internet Gateway Setup and save the connector details again."
+                    ),
+                )
+                self._emit_state()
+                return self.state()
+            checked_at = _utc_now()
+            updater = _callable_attr(self._state_store, "update_status")
+            if updater is not None:
+                updater(
+                    authorization_status="ACTIVE",
+                    checked_at=checked_at,
+                    detail="Direct connector credential verified on this device.",
+                )
+            state = self.reload()
+            if (
+                state.get("registration_state") == "registered"
+                and state.get("authorization_state") == "active"
+                and not state.get("retirement")
+            ):
+                self._authorization_verified_this_session = True
+            return state
+        if self._client is None:
             return self.state()
         secret = self._credentials.load_installation_secret()
         if not secret:
@@ -1198,7 +1472,16 @@ class InternetGatewayController(QObject):
         provider_error = ""
         registration_service_https: bool | None = None
         authorization_checked_now = False
-        if self.provider_available:
+        if self.direct_mode and self.configured:
+            try:
+                current = self.check_authorization()
+                authorization_checked_now = bool(
+                    current.get("authorization_state") == "active"
+                    and self._authorization_verified_this_session
+                )
+            except Exception:
+                authorization_checked_now = False
+        elif self.provider_available:
             health_check = _callable_attr(self._client, "health_check")
             if health_check is None:
                 provider_error = "Registration-service health diagnostics are unavailable."
@@ -1255,6 +1538,15 @@ class InternetGatewayController(QObject):
                 except Exception:
                     component_installed = False
         diagnostics = {
+            "deployment_mode": (
+                "Single-school Workers VPC pilot"
+                if self.direct_mode
+                else (
+                    "Managed multi-school provider"
+                    if self.configured
+                    else "Local-Only"
+                )
+            ),
             "registration": REGISTRATION_LABELS.get(str(self._state.get("registration_state")), "Registration Error"),
             "school_id_match": bool(
                 self._state.get("school_id")
@@ -1268,7 +1560,10 @@ class InternetGatewayController(QObject):
             "scanner_remote_enabled": bool(local.get("scanner_remote_enabled", True)),
             "credential_present": bool(
                 credential_presence.get("tunnel_credential")
-                and credential_presence.get("installation_secret")
+                and (
+                    self.direct_mode
+                    or credential_presence.get("installation_secret")
+                )
             ),
             "component_installed": component_installed,
             "tunnel_service": self.connected,
@@ -1277,6 +1572,8 @@ class InternetGatewayController(QObject):
         }
         if registration_service_https is not None:
             diagnostics["registration_service_https"] = registration_service_https
+            diagnostics["authorization_checked_now"] = authorization_checked_now
+        elif self.direct_mode:
             diagnostics["authorization_checked_now"] = authorization_checked_now
         diagnostics.update(public_checks)
         if provider_error:

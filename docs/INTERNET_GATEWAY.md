@@ -1,8 +1,8 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.5.1 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.6.0 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
-valid provider configuration, the application stays **Local Only**, starts no
+saved gateway configuration, the application stays **Local Only**, starts no
 tunnel, and makes no registration-service request.
 
 ## Architecture and data ownership
@@ -25,7 +25,57 @@ Local Survey and Scanner access continues to use the verified LAN addresses.
 Internet Survey and Scanner links are separate and appear only for a configured,
 registered, authorized installation.
 
-## Operator registration
+## Single-school Cloudflare pilot without a custom domain
+
+A school that does not operate the managed multi-school provider can use the
+**Single-school Cloudflare pilot** setup route. It combines one remotely managed
+Cloudflare Tunnel, one narrow HTTP VPC Service fixed to `127.0.0.1:8080`, and one
+Worker named with the official School ID. The public address has this form:
+
+```text
+https://<SCHOOL_ID>.<ACCOUNT_SUBDOMAIN>.workers.dev
+```
+
+Workers VPC is currently a Cloudflare beta service, and Cloudflare describes
+`workers.dev` as intended for non-business-critical use. Treat this route as a
+school pilot, monitor it, and keep Local-Only access available. A future managed
+domain can replace the public route without moving the local CSM records.
+
+The public Worker implementation and deployment template are in
+[`cloudflare_worker`](../cloudflare_worker/README.md). They contain no live
+account ID, Tunnel ID, service ID, API token, or connector token. The Worker
+accepts only the methods used by the Survey and Scanner service, replaces all
+forwarding identity headers, rejects the wrong host or non-HTTPS request, and
+can reach only the fixed VPC Service. The Control Center independently trusts
+only the loopback connector and exact School-ID hostname.
+
+### Pilot setup
+
+1. Save the official 4-to-12-digit School ID and set the preferred Survey Server
+   port to `8080`.
+2. In Cloudflare, create one remotely managed named Tunnel for the school. Do
+   not add a public hostname or a broad private-network route.
+3. In **Workers VPC**, create an HTTP VPC Service for that Tunnel with IPv4 host
+   `127.0.0.1`, HTTP port `8080`, and no HTTPS port.
+4. Create a Worker whose name is the exact School ID, bind the VPC Service as
+   `SCHOOL_CSM_ORIGIN`, set `PUBLIC_HOST` to the exact lowercase
+   `workers.dev` hostname, disable preview URLs, deploy
+   `cloudflare_worker/src/index.js`, and keep the production `workers.dev` route
+   enabled.
+5. In **Survey Server and Respondent Access > Internet Gateway > Set Up Internet
+   Gateway**, choose **Single-school Cloudflare pilot**. Enter the public Worker
+   hostname, Tunnel ID, and complete connector token, acknowledge the beta pilot,
+   and save.
+6. The Control Center stores the connector token only in Windows Credential
+   Manager. Start the local Survey Server, choose **Connect Internet Gateway**,
+   and verify both public Survey and Scanner links from a device that is not on
+   the school Wi-Fi.
+
+The connector must use Cloudflare Tunnel transport `auto` or `quic`; Workers VPC
+does not use an ingress rule. Outbound connectivity to Cloudflare is required,
+but no inbound router port and no public Windows Firewall rule is opened.
+
+## Managed multi-school operator registration
 
 1. Enter and save the official School ID in **School Information**.
 2. Open **Survey Server and Respondent Access > Internet Gateway**.
@@ -191,9 +241,11 @@ authorization endpoints are throttled before repeated password-hash work. Local
 operation retains its existing LAN behavior.
 
 A cached `ACTIVE` status is display context, not permission to expose a tunnel
-origin. Every Control Center process must obtain a fresh signed `active` response
-before the local server may use its multi-interface Gateway binding. If a
-periodic authorization check fails, expires, or reports retirement, the app
+origin. In managed multi-school mode, every Control Center process must obtain a
+fresh signed `active` response. In the single-school pilot, each process must
+verify that the locally protected connector credential is present and validly
+formed. Only then may the local server use its Gateway binding. If a periodic
+managed authorization check fails, expires, or reports retirement, the app
 stops the tunnel and restarts the Survey Server on its selected Local-Only
 interface before continuing.
 
@@ -201,8 +253,9 @@ interface before continuing.
 
 - Provider, DNS, or tunnel failure affects only Internet status; local collection,
   scanning, history, analysis, printing, and backups remain available.
-- A missing or invalid provider file leaves the app **Local Only** and starts no
-  external registration or tunnel activity.
+- A missing or invalid managed-provider file disables managed registration. It
+  leaves the app **Local Only** unless a valid single-school pilot configuration
+  has been saved explicitly by the operator.
 - A mismatch between saved School Information and signed registration stops the
   gateway; the app never silently rewrites either identity.
 - Missing or altered `cloudflared.exe` fails closed and directs the operator to

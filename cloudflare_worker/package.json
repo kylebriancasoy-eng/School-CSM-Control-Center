@@ -1,0 +1,8 @@
+{
+  "name": "school-csm-workers-vpc-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

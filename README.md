@@ -1,4 +1,4 @@
-# School CSM Control Center 0.5.1
+# School CSM Control Center 0.6.0
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,30 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.0 highlights
+
+- A no-custom-domain **Single-school Cloudflare pilot** can publish the existing
+  Survey and Scanner service at a School-ID `workers.dev` address through one
+  narrow Workers VPC Service and one named outbound Tunnel. Workers VPC is beta,
+  so Local-Only operation remains the fallback.
+- The app validates the exact School-ID hostname, Tunnel UUID, connector token,
+  and required local port `8080`, then stores the connector token only in Windows
+  Credential Manager. It never writes Cloudflare credentials to the data folder,
+  release, or public repository.
+- The public Worker strips browser-supplied forwarding and hop-by-hop headers,
+  recreates the exact HTTPS proxy assertions expected by the local server,
+  preserves survey/scanner sessions and request bodies, restricts methods, and
+  fails with a generic non-cacheable `503` when the private service is offline.
+- Managed multi-school registration remains supported. A missing managed-provider
+  file no longer prevents an operator from explicitly selecting the
+  single-school pilot.
+- Background startup can reconnect either deployment mode only after the local
+  Survey Server is healthy and the current process has verified authorization.
+
+See [`cloudflare_worker/README.md`](cloudflare_worker/README.md) for the
+Cloudflare dashboard values and [`docs/INTERNET_GATEWAY.md`](docs/INTERNET_GATEWAY.md)
+for the complete deployment and safety guide.
 
 ## 0.5.1 highlights
 

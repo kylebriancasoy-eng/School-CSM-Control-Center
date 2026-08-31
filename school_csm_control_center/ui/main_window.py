@@ -480,6 +480,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.gateway_setup_overlay.completion_code_requested.connect(
             self.gateway_controller.redeem_completion_code_async
         )
+        self.gateway_setup_overlay.direct_configuration_requested.connect(
+            self.gateway_controller.configure_direct_worker_vpc_async
+        )
         self.gateway_transfer_overlay.browser_transfer_requested.connect(
             self._open_gateway_transfer_page
         )
@@ -662,14 +665,18 @@ class SchoolCSMControlCenterWindow(QMainWindow):
 
     def _open_gateway_setup(self) -> None:
         local = self.server_controller.settings()
+        state = self.gateway_controller.state()
         detail = self._gateway_provider_error or str(
-            self.gateway_controller.state().get("detail") or ""
+            state.get("detail") or ""
         )
         self.gateway_setup_overlay.configure(
             school_id=str(local.get("school_id") or ""),
             school_name=str(local.get("school_name") or ""),
             provider_available=self.gateway_controller.provider_available,
             detail=detail,
+            deployment_mode=str(state.get("deployment_mode") or ""),
+            public_host=str(state.get("public_host") or ""),
+            tunnel_id=str(state.get("tunnel_id") or ""),
         )
         self.gateway_setup_overlay.open_overlay(
             self.server_board.internet_gateway.setup_button
@@ -973,7 +980,12 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         message = str(document.get("detail") or "")
         busy = bool(document.get("busy"))
         operation = str(document.get("operation") or "")
-        if operation in {"migration_import", "backup_restore"}:
+        if operation == "direct_setup":
+            self.gateway_setup_overlay.set_status(message, busy=busy)
+            if not busy and not document.get("error"):
+                self._gateway_authorization_verified_this_session = False
+                self.gateway_setup_overlay.clear_sensitive_fields()
+        elif operation in {"migration_import", "backup_restore"}:
             self.gateway_transfer_overlay.set_progress(
                 message, cutover_locked=busy
             )
@@ -1326,7 +1338,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self._background_startup_enabled
             and not self._gateway_auto_reconnect_suppressed
             and self.server_controller.running
-            and self.gateway_controller.provider_available
+            and (
+                self.gateway_controller.provider_available
+                or bool(getattr(self.gateway_controller, "direct_mode", False))
+            )
             and self.gateway_controller.configured
             and state.get("authorization_state") == "active"
             and state.get("authorized_this_device")

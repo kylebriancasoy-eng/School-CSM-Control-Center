@@ -36,3 +36,9 @@ MRS_FIELD_TEST_REPORT.txt
 *.suo
 Thumbs.db
 .DS_Store
+
+# Local Cloudflare Worker deployment state and identifiers
+cloudflare_worker/node_modules/
+cloudflare_worker/.wrangler/
+cloudflare_worker/.dev.vars*
+cloudflare_worker/wrangler.jsonc
