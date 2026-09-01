@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPoint, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -1139,6 +1139,40 @@ class GatewayDesktopUiTests(unittest.TestCase):
         self.assertEqual(requests[0]["tunnel_token"], "t" * 64)
         self.assertTrue(requests[0]["beta_acknowledged"])
         self.assertEqual(overlay.direct_tunnel_token.text(), "")
+        parent.deleteLater()
+
+    def test_setup_overlay_keeps_direct_connector_fields_separate_when_short(self) -> None:
+        parent = QWidget()
+        parent.resize(900, 560)
+        parent.show()
+        overlay = InternetGatewaySetupOverlay(parent)
+        overlay.configure(
+            school_id="123456",
+            school_name="Test School",
+            provider_available=False,
+        )
+        overlay.open_overlay()
+        self.app.processEvents()
+
+        self.assertIsNotNone(overlay.body_scroll)
+        self.assertGreater(overlay.body_scroll.verticalScrollBar().maximum(), 0)
+        token_top = overlay.direct_tunnel_token.mapTo(overlay.body, QPoint()).y()
+        token_bottom = token_top + overlay.direct_tunnel_token.height()
+        acknowledgement_top = overlay.direct_beta_acknowledgement.mapTo(
+            overlay.body, QPoint()
+        ).y()
+        self.assertGreaterEqual(acknowledgement_top, token_bottom)
+        self.assertGreaterEqual(overlay.direct_tunnel_token.height(), 20)
+
+        overlay.body_scroll.verticalScrollBar().setValue(
+            overlay.body_scroll.verticalScrollBar().maximum()
+        )
+        self.app.processEvents()
+        save_top = overlay.direct_save_button.mapTo(
+            overlay.body_scroll.viewport(), QPoint()
+        ).y()
+        self.assertGreaterEqual(save_top, 0)
+        self.assertLess(save_top, overlay.body_scroll.viewport().height())
         parent.deleteLater()
 
     def test_direct_gateway_setup_can_be_reopened_only_while_disconnected(self) -> None:

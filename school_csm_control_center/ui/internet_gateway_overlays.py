@@ -37,6 +37,7 @@ class _GatewayOverlay(QWidget):
         title: str,
         subtitle: str,
         panel_width: int = 820,
+        scrollable: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("gateway_overlay")
@@ -82,7 +83,19 @@ class _GatewayOverlay(QWidget):
         self.body_layout = QVBoxLayout(self.body)
         self.body_layout.setContentsMargins(22, 18, 22, 22)
         self.body_layout.setSpacing(14)
-        panel_layout.addWidget(self.body, 1)
+        self.body_scroll: QScrollArea | None = None
+        if scrollable:
+            self.body_scroll = QScrollArea()
+            self.body_scroll.setObjectName("gateway_overlay_body_scroll")
+            self.body_scroll.setWidgetResizable(True)
+            self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            self.body_scroll.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self.body_scroll.setWidget(self.body)
+            panel_layout.addWidget(self.body_scroll, 1)
+        else:
+            panel_layout.addWidget(self.body, 1)
         self._apply_styles()
 
     @property
@@ -96,6 +109,7 @@ class _GatewayOverlay(QWidget):
     def open_overlay(self, return_focus: QWidget | None = None) -> None:
         self._return_focus = return_focus
         self.setGeometry(self.parentWidget().rect())
+        self._refresh_scroll_body_minimum()
         self._position_children()
         self.show()
         self.raise_()
@@ -132,6 +146,15 @@ class _GatewayOverlay(QWidget):
         top = max(18, (self.height() - height) // 2)
         self.panel.setGeometry(left, top, width, height)
 
+    def _refresh_scroll_body_minimum(self) -> None:
+        """Keep scrollable forms at their natural height instead of compressing rows."""
+
+        if self.body_scroll is None:
+            return
+        self.body.setMinimumHeight(0)
+        self.body_layout.activate()
+        self.body.setMinimumHeight(self.body_layout.sizeHint().height())
+
     def _apply_styles(self) -> None:
         self.setStyleSheet(
             f"""
@@ -148,6 +171,12 @@ class _GatewayOverlay(QWidget):
                 border-top-left-radius: 18px; border-top-right-radius: 18px;
             }}
             QWidget#gateway_overlay_body {{ background: {theme.WINDOW_BG}; }}
+            QScrollArea#gateway_overlay_body_scroll {{
+                background: {theme.WINDOW_BG}; border: none;
+            }}
+            QScrollArea#gateway_overlay_body_scroll > QWidget > QWidget {{
+                background: {theme.WINDOW_BG};
+            }}
             QLabel#gateway_overlay_title {{
                 color: {theme.TEXT_PRIMARY}; background: transparent;
                 font-size: 19px; font-weight: 850;
@@ -197,6 +226,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
             parent,
             title="Set Up Internet Gateway",
             subtitle="Optional secure Internet access for this school's existing Survey and Scanner service.",
+            scrollable=True,
         )
         self._school_id = ""
         self._school_name = ""
@@ -430,6 +460,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
             and 4 <= len(self._school_id) <= 12
         )
         self._update_direct_enabled()
+        self._refresh_scroll_body_minimum()
 
     def close_overlay(self) -> None:
         if not self.operation_locked:
@@ -488,6 +519,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.school_id_requirement.setText(requirement)
         self.school_id_requirement.setVisible(bool(requirement))
         self._update_direct_enabled()
+        self._refresh_scroll_body_minimum()
 
     def _update_direct_enabled(self, _value: object = None) -> None:
         valid_school_id = bool(

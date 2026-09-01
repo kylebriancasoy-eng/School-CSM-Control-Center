@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.0
+# School CSM Control Center 0.6.1
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,13 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.1 highlights
+
+- The single-school Cloudflare setup form now keeps the protected connector-token
+  row, beta acknowledgement, save action, and validation status in a scrollable
+  layout. Fields no longer overlap or disappear on shorter screens or under
+  Windows display scaling.
 
 ## 0.6.0 highlights
 
