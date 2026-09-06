@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 import secrets
 from threading import RLock
-from time import time
+from time import monotonic, time
 from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -60,6 +60,8 @@ from school_csm_control_center.web_server.scanner_jobs import (
 SESSION_COOKIE = "SCHOOL_CSM_SESSION"
 SCANNER_SESSION_COOKIE = "SCHOOL_CSM_SCANNER_SESSION"
 MAX_ACTIVE_SURVEY_SESSIONS = 4096
+REJECTED_BODY_DRAIN_TIMEOUT_SECONDS = 1.0
+MAX_POST_BODY_SIZE = 17 * 1024 * 1024
 PRIVACY_NOTICE_VERSION = "2026-07-01"
 INTERNET_PRIVACY_NOTICE_VERSION = "2026-08-14-internet-gateway-1"
 
@@ -394,6 +396,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 str(exc),
             )
             self._security_context = RequestSecurityContext()
+            if self.command == "POST":
+                self._discard_request_body(MAX_POST_BODY_SIZE)
             self._send_json(
                 exc.status,
                 {"ok": False, "code": exc.code, "error": str(exc)},
@@ -416,6 +420,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                     exc.code,
                     path,
                 )
+                self._discard_request_body(MAX_POST_BODY_SIZE)
                 self._send_json(
                     exc.status,
                     {"ok": False, "code": exc.code, "error": str(exc)},
@@ -473,6 +478,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                     bucket,
                     path,
                 )
+                if method == "POST":
+                    self._discard_request_body(MAX_POST_BODY_SIZE)
                 self._send_json(
                     HTTPStatus.TOO_MANY_REQUESTS,
                     {
@@ -500,6 +507,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         return f"; Path=/; HttpOnly; SameSite=Lax{secure}"
 
     def do_GET(self) -> None:  # noqa: N802
+        self._security_context = None
         self._dispatch_safely(self._do_GET)
 
     def _do_GET(self) -> None:
@@ -568,6 +576,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Page not found."})
 
     def do_OPTIONS(self) -> None:  # noqa: N802
+        self._security_context = None
         self._dispatch_safely(self._do_OPTIONS)
 
     def _do_OPTIONS(self) -> None:
@@ -583,6 +592,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
+        self._security_context = None
         self._dispatch_safely(self._do_POST)
 
     def _do_POST(self) -> None:
@@ -613,6 +623,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             self._handle_scanner_submission()
             return
         if path != "/api/submit":
+            self._discard_request_body(MAX_POST_BODY_SIZE)
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found."})
             return
         try:
@@ -651,10 +662,12 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_scanner_login(self) -> None:
         settings = self.server.settings()
+        body_consumed = False
         try:
             if not bool(settings.get("scanner_remote_enabled", True)):
                 raise ScannerAuthorizationError("CSM Sheet Scanner Remote is disabled.", code="scanner_remote_disabled")
             payload = self._read_json_body(32 * 1024)
+            body_consumed = True
             operator = self.server.scanner_operator_store.authenticate(
                 str(payload.get("username") or ""),
                 str(payload.get("password") or ""),
@@ -666,6 +679,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.UNAUTHORIZED, {"authenticated": False, "code": exc.code, "error": str(exc)})
             return
         except ScannerAuthorizationError as exc:
+            if not body_consumed:
+                self._discard_request_body(32 * 1024)
             self._send_json(HTTPStatus.FORBIDDEN, {"authenticated": False, "code": exc.code, "error": str(exc)})
             return
         except RequestValidationError as exc:
@@ -685,6 +700,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_scanner_logout(self) -> None:
+        self._discard_request_body(32 * 1024)
         token = self._scanner_session_cookie()
         self.server.expire_scanner_session(token)
         self._clear_scanner_session_cookie()
@@ -778,13 +794,15 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_scanner_job_create(self) -> None:
         settings = self.server.settings()
+        body_consumed = False
         try:
             if not bool(settings.get("scanner_remote_enabled", True)):
                 raise ScannerAuthorizationError("CSM Sheet Scanner Remote is disabled.", code="scanner_remote_disabled")
             if not bool(settings.get("scanner_intake_enabled", True)):
                 raise ScannerAuthorizationError("Scanner image intake is disabled.", code="scanner_intake_disabled")
             operator, session = self._authenticated_scanner_session()
-            payload = self._read_json_body(17 * 1024 * 1024)
+            payload = self._read_json_body(MAX_POST_BODY_SIZE)
+            body_consumed = True
             status = self.server.scanner_job_manager.create_job(
                 image_data_url=str(payload.get("image_data_url") or ""),
                 operator=operator,
@@ -793,6 +811,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 access_transport=self._request_transport(),
             )
         except ScannerAuthorizationError as exc:
+            if not body_consumed:
+                self._discard_request_body(MAX_POST_BODY_SIZE)
             self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "code": exc.code, "error": str(exc)})
             return
         except (ScannerJobError, RequestValidationError) as exc:
@@ -856,6 +876,7 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         if len(parts) != 5 or parts[:3] != ["api", "scanner", "jobs"] or parts[4] != "cancel":
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Scanner job endpoint not found."})
             return
+        self._discard_request_body(32 * 1024)
         try:
             operator, _session = self._authenticated_scanner_session()
             status = self.server.scanner_job_manager.cancel(parts[3], str(operator.get("user_id") or ""))
@@ -876,9 +897,11 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         if len(parts) != 5 or parts[:3] != ["api", "scanner", "jobs"] or parts[4] != "command":
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Scanner job endpoint not found."})
             return
+        body_consumed = False
         try:
             operator, _session = self._authenticated_scanner_session()
             payload = self._read_json_body(128 * 1024)
+            body_consumed = True
             parameters = payload.get("parameters") if isinstance(payload.get("parameters"), Mapping) else {}
             status = self.server.scanner_job_manager.command(
                 parts[3],
@@ -887,6 +910,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 parameters,
             )
         except ScannerAuthorizationError as exc:
+            if not body_consumed:
+                self._discard_request_body(128 * 1024)
             self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "code": exc.code, "error": str(exc)})
             return
         except ScannerJobNotFoundError as exc:
@@ -903,11 +928,13 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Scanner job endpoint not found."})
             return
         settings = self.server.settings()
+        body_consumed = False
         try:
             if not bool(settings.get("scanner_intake_enabled", True)):
                 raise ScannerAuthorizationError("Scanner response intake is disabled.", code="scanner_intake_disabled")
             operator, session = self._authenticated_scanner_session()
             payload = self._read_json_body(512 * 1024)
+            body_consumed = True
             context = self.server.scanner_job_manager.finalization_context(
                 parts[3],
                 str(operator.get("user_id") or ""),
@@ -978,6 +1005,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 test_result_id=str(response.get("test_result_id") or ""),
             )
         except ScannerAuthorizationError as exc:
+            if not body_consumed:
+                self._discard_request_body(512 * 1024)
             self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "code": exc.code, "error": str(exc)})
             return
         except ScannerJobNotFoundError as exc:
@@ -1209,15 +1238,26 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         return payload
 
     def _read_json_body(self, max_body_size: int | None = None) -> dict[str, Any]:
-        raw_length = self.headers.get("Content-Length", "")
+        if self.headers.get_all("Transfer-Encoding"):
+            self.close_connection = True
+            raise RequestValidationError("Chunked request bodies are not supported.")
+        length_values = self.headers.get_all("Content-Length") or []
+        if len(length_values) != 1:
+            self.close_connection = True
+            raise RequestValidationError("Invalid request length.")
+        raw_length = length_values[0].strip()
         try:
             length = int(raw_length)
         except ValueError as exc:
+            self.close_connection = True
             raise RequestValidationError("Invalid request length.") from exc
         if length <= 0:
+            if length < 0:
+                self.close_connection = True
             raise RequestValidationError("No survey response was received.")
         limit = int(max_body_size or self.max_body_size)
         if length > limit:
+            self.close_connection = True
             raise RequestValidationError("The survey response is too large.")
         raw = self.rfile.read(length)
         try:
@@ -1228,13 +1268,72 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
             raise RequestValidationError("The survey response must be an object.")
         return parsed
 
+    def _discard_request_body(self, max_body_size: int) -> None:
+        """Consume a rejected bounded body so Windows can deliver the response.
+
+        ``BaseHTTPRequestHandler`` may otherwise close a keep-alive connection
+        while unread POST bytes remain.  On Windows that can reset the socket
+        before the client receives the authorization response.  Oversized or
+        malformed declarations are never drained and force the connection closed.
+        """
+
+        if self.headers.get_all("Transfer-Encoding"):
+            self.close_connection = True
+            return
+        length_values = self.headers.get_all("Content-Length") or []
+        if not length_values:
+            return
+        if len(length_values) != 1:
+            self.close_connection = True
+            return
+        raw_length = length_values[0].strip()
+        try:
+            remaining = int(raw_length)
+        except ValueError:
+            self.close_connection = True
+            return
+        if remaining < 0:
+            self.close_connection = True
+            return
+        if remaining == 0:
+            return
+        if remaining > int(max_body_size):
+            self.close_connection = True
+            return
+        original_timeout = self.connection.gettimeout()
+        deadline = monotonic() + REJECTED_BODY_DRAIN_TIMEOUT_SECONDS
+        try:
+            while remaining:
+                time_left = deadline - monotonic()
+                if time_left <= 0:
+                    self.close_connection = True
+                    return
+                read_timeout = time_left
+                if original_timeout is not None:
+                    read_timeout = min(read_timeout, float(original_timeout))
+                self.connection.settimeout(read_timeout)
+                chunk = self.rfile.read(min(remaining, 64 * 1024))
+                if not chunk:
+                    self.close_connection = True
+                    return
+                remaining -= len(chunk)
+        except OSError:
+            self.close_connection = True
+        finally:
+            try:
+                self.connection.settimeout(original_timeout)
+            except OSError:
+                self.close_connection = True
+
     def _handle_scanner_submission(self) -> None:
         settings = self.server.settings()
+        body_consumed = False
         try:
             if not bool(settings.get("scanner_intake_enabled", True)):
                 raise ScannerAuthorizationError("CSM Sheet Scanner intake is disabled.", code="scanner_intake_disabled")
             operator, session = self._authenticated_scanner_session()
             payload = self._read_json_body(SCANNER_MAX_BODY_SIZE)
+            body_consumed = True
             response = self._save_scanner_submission(
                 payload,
                 settings,
@@ -1243,6 +1342,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
                 access_transport=self._request_transport(),
             )
         except ScannerAuthorizationError as exc:
+            if not body_consumed:
+                self._discard_request_body(SCANNER_MAX_BODY_SIZE)
             self._send_json(HTTPStatus.FORBIDDEN, {"accepted": False, "code": exc.code, "reason": str(exc)}, scanner_cors=True)
             return
         except DuplicateScannerSubmissionError as exc:
@@ -1934,6 +2035,8 @@ class SurveyRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        if self.close_connection:
+            self.send_header("Connection", "close")
         # ``scanner_cors`` is retained as a source-compatible keyword for the
         # old scanner call sites, but deliberately emits no cross-origin grant.
         _ = scanner_cors

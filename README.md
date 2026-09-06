@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.1
+# School CSM Control Center 0.6.2
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,17 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.2 highlights
+
+- The Scanner Operator shortcut remains available on the initial language screen
+  when remote scanning is enabled, then disappears as soon as the respondent
+  confirms a survey language. It no longer follows respondents through the
+  questionnaire.
+- Rejected Scanner uploads now return their intended authorization message
+  reliably on Windows instead of occasionally ending in a reset connection.
+- Every HTTP keep-alive request is independently checked against the configured
+  local/Internet trust boundary before it reaches Survey or Scanner routes.
 
 ## 0.6.1 highlights
 

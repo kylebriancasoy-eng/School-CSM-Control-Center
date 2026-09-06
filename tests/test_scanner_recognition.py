@@ -194,7 +194,7 @@ class ScannerRemoteFinalizationTests(unittest.TestCase):
         # Full marker, perspective, barcode, and field recognition is a
         # CPU-bound background operation. Allow slower deployment laptops to
         # complete without treating an actively processing job as a failure.
-        deadline = monotonic() + 45
+        deadline = monotonic() + 120
         while monotonic() < deadline:
             status, job = self.request(f"/api/scanner/jobs/{job['job_id']}/status")
             self.assertEqual(status, 200)

@@ -281,14 +281,69 @@ class ScannerIntegrationTests(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(), "image/jpeg")
             self.assertGreater(len(response.read()), 100)
 
-    def test_unauthenticated_job_access_is_rejected(self) -> None:
+    def test_unauthenticated_scanner_posts_return_authorization_response(self) -> None:
+        requests = (
+            (
+                "/api/scanner/jobs",
+                {"image_data_url": "data:image/jpeg;base64,AA=="},
+                401,
+            ),
+            (
+                "/api/scanner/jobs/not-a-job/command",
+                {"command": "rotate_clockwise", "parameters": {}},
+                401,
+            ),
+            (
+                "/api/scanner/jobs/not-a-job/finalize",
+                {"manual": {}},
+                401,
+            ),
+            (
+                "/api/scanner/jobs/not-a-job/cancel",
+                {"reason": "operator_rescan"},
+                401,
+            ),
+            (
+                "/api/scanner/submissions",
+                self.payload(scanner_id="SCN-UNAUTHENTICATED"),
+                403,
+            ),
+        )
+        for path, payload, expected_status in requests:
+            with self.subTest(path=path):
+                separate = build_opener(HTTPCookieProcessor(CookieJar()))
+                status, result, _ = self.request(
+                    path,
+                    payload=payload,
+                    method="POST",
+                    opener=separate,
+                )
+                self.assertEqual(status, expected_status)
+                self.assertEqual(result["code"], "scanner_session_expired")
+
+    def test_disabled_scanner_login_returns_forbidden_response(self) -> None:
+        self.settings["scanner_remote_enabled"] = False
         separate = build_opener(HTTPCookieProcessor(CookieJar()))
         status, result, _ = self.request(
-            "/api/scanner/jobs",
-            payload={"image_data_url": "data:image/jpeg;base64,AA=="},
+            "/api/scanner/auth/login",
+            payload={"username": "scanner01", "password": "secret12"},
             method="POST",
             opener=separate,
         )
+        self.assertEqual(status, 403)
+        self.assertEqual(result["code"], "scanner_remote_disabled")
+
+    def test_logout_consumes_legacy_empty_json_body(self) -> None:
+        self.login()
+        status, result, _ = self.request(
+            "/api/scanner/auth/logout",
+            payload={},
+            method="POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(result["authenticated"])
+
+        status, result, _ = self.request("/api/scanner/auth/session")
         self.assertEqual(status, 401)
         self.assertEqual(result["code"], "scanner_session_expired")
 

@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.6.1 is distributed as one setup program. Operators
+School CSM Control Center 0.6.2 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 
@@ -51,6 +51,13 @@ The current PySide6 runtime is 64-bit and requires 64-bit Windows 10 or Windows 
 The application starts in **Local Only** mode. Local Survey and Scanner access
 does not require Internet Gateway registration. Internet Gateway setup offers
 two routes described in [`INTERNET_GATEWAY.md`](INTERNET_GATEWAY.md):
+
+Installing the EXE on a different school's computer creates an independent
+local server and data store, but it does not automatically create that school's
+public Internet link. For the current pilot, every school must use its own
+official School ID, Worker, Tunnel, VPC Service, and connector token on a
+separate Windows computer/account. Never reuse another school's Cloudflare
+resources or credentials.
 
 - **Single-school Cloudflare pilot** uses a free `workers.dev` address, one
   narrow Workers VPC Service, and one named Tunnel. It needs no custom domain or

@@ -289,6 +289,23 @@ class InternetGatewayWebSecurityTests(unittest.TestCase):
         self.assertEqual(status, 421)
         self.assertEqual(payload["code"], "school_host_mismatch")
 
+    def test_keep_alive_connection_reauthorizes_each_request(self) -> None:
+        connection = HTTPConnection("127.0.0.1", self.port, timeout=8)
+        connection.request("GET", "/healthz", headers=self.internet_headers)
+        first = connection.getresponse()
+        self.assertEqual(first.status, 200)
+        first.read()
+
+        rejected_headers = dict(self.internet_headers)
+        rejected_headers["Host"] = "999999.csm.example.gov.ph"
+        connection.request("GET", "/healthz", headers=rejected_headers)
+        second = connection.getresponse()
+        payload = json.loads(second.read().decode("utf-8"))
+        connection.close()
+
+        self.assertEqual(second.status, 421)
+        self.assertEqual(payload["code"], "school_host_mismatch")
+
     def test_public_config_contains_public_links_but_no_lan_or_private_contacts(self) -> None:
         cookie = self.begin_public_session()
         headers = {**self.internet_headers, "Cookie": cookie}

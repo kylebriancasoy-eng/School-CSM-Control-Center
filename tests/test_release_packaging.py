@@ -10,6 +10,8 @@ import tempfile
 import unittest
 import zipfile
 
+from school_csm_control_center.version import RELEASE_TAG, __version__
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CREATE_RELEASE = REPO_ROOT / "scripts" / "create_release.py"
@@ -94,9 +96,11 @@ class ReleasePackagingTests(unittest.TestCase):
             )
             manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["applicationId"], "MoSSLab.SchoolCSMControlCenter")
-            self.assertEqual(manifest["version"], "0.6.0")
-            self.assertEqual(manifest["tag"], "v0.6.0")
-            self.assertIn("/releases/download/v0.6.0/", manifest["package"]["url"])
+            self.assertEqual(manifest["version"], __version__)
+            self.assertEqual(manifest["tag"], RELEASE_TAG)
+            self.assertIn(
+                f"/releases/download/{RELEASE_TAG}/", manifest["package"]["url"]
+            )
             self.assertEqual(
                 manifest["package"]["entryPoint"], "School CSM Control Center.exe"
             )
