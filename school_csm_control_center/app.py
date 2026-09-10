@@ -92,6 +92,14 @@ def run(
     window = SchoolCSMControlCenterWindow(project_root, startup_progress=report_progress)
     app.aboutToQuit.connect(window.prepare_for_application_quit)
     logger.info("Main Control Center window constructed.")
+    if bool(getattr(sys, "frozen", False)):
+        startup_verified, startup_detail = (
+            window.reconcile_background_startup_registration()
+        )
+        if startup_verified:
+            logger.info("Windows startup reconciliation: %s", startup_detail)
+        else:
+            logger.warning("Windows startup reconciliation failed: %s", startup_detail)
     report_progress(94, "Preparing the main workspace…")
 
     def reveal_window() -> None:

@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.6.2 is distributed as one setup program. Operators
+School CSM Control Center 0.6.3 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 
@@ -101,6 +101,12 @@ run Survey Server in background** to start the compiled Control Center at Window
 sign-in, keep it in the notification area, and start the saved Survey Server
 automatically. This preference is off by default and applies only to the current
 Windows account.
+
+At every compiled launch, the app verifies that Windows matches the saved
+preference. If saved data says startup is enabled but its per-user startup entry
+is missing or points at an older path, the app repairs the entry before allowing
+a hidden background launch. If Windows refuses that repair, the app opens
+visibly and reports the problem in Server Settings.
 
 While enabled, closing the main window hides it without stopping the server. Use
 the notification-area icon to open the Control Center, see server status, start or

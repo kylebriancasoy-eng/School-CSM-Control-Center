@@ -394,6 +394,29 @@ class SurveyServerController(QObject):
             raise
         return state
 
+    def reconcile_background_server_startup(
+        self,
+        *,
+        registry: Any | None = None,
+        executable: str | Path | None = None,
+    ) -> bool:
+        """Make Windows match the saved startup preference without changing it.
+
+        Saved data can outlive an uninstall, while uninstall intentionally
+        removes the per-user Windows startup entry.  Reapplying the saved
+        preference on the next compiled launch repairs that harmless mismatch
+        and also refreshes the command when the installed path changes.
+        """
+
+        desired = bool(
+            self._settings.get("background_server_startup_enabled", False)
+        )
+        return set_windows_startup_enabled(
+            desired,
+            registry=registry,
+            executable=executable,
+        )
+
     def hostname(self) -> str:
         identifier = str(self._effective_network_value("school_identifier") or "school-csm")
         return f"csm.{identifier}.home.arpa"

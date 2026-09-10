@@ -328,6 +328,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                 "background_server_startup_enabled", False
             )
         )
+        self._background_startup_registration_verified = (
+            not self._background_startup_enabled
+        )
         self.system_tray = ControlCenterSystemTray(self.windowIcon(), self)
         self.system_tray.set_background_startup_checked(
             self._background_startup_enabled
@@ -1202,6 +1205,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
 
         if not self._background_startup_enabled:
             return False, "Background startup is disabled in Server Settings."
+        if not self._background_startup_registration_verified:
+            return False, "Windows could not verify the background startup entry."
         if not self.system_tray.available:
             return False, "The Windows notification area is not available."
         settings = self.server_controller.settings()
@@ -1210,6 +1215,50 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         ).strip():
             return False, "School Information must be completed before background startup."
         return True, "Ready for background startup."
+
+    def reconcile_background_startup_registration(
+        self,
+        *,
+        registry: Any | None = None,
+        executable: str | Path | None = None,
+    ) -> tuple[bool, str]:
+        """Repair any mismatch between saved preference and Windows startup."""
+
+        desired = bool(
+            self.server_controller.settings().get(
+                "background_server_startup_enabled", False
+            )
+        )
+        try:
+            actual = bool(
+                self.server_controller.reconcile_background_server_startup(
+                    registry=registry,
+                    executable=executable,
+                )
+            )
+        except Exception as exc:
+            self._background_startup_enabled = desired
+            self._background_startup_registration_verified = False
+            detail = (
+                "Windows could not verify the background startup entry: "
+                + (str(exc).strip() or "unknown Windows error")
+            )
+            self.server_board.set_background_startup_enabled(desired, detail)
+            self.system_tray.set_background_startup_checked(desired)
+            self._apply_background_lifecycle()
+            return False, detail
+
+        self._background_startup_enabled = actual
+        self._background_startup_registration_verified = True
+        detail = (
+            "Windows background startup is verified."
+            if actual
+            else "Automatic background startup is disabled."
+        )
+        self.server_board.set_background_startup_enabled(actual, detail)
+        self.system_tray.set_background_startup_checked(actual)
+        self._apply_background_lifecycle()
+        return True, detail
 
     def _set_background_startup(self, enabled: bool) -> None:
         requested = bool(enabled)
@@ -1220,6 +1269,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             )
         except Exception as exc:
             self._background_startup_enabled = previous
+            # The registry change or its rollback may have failed.  Treat the
+            # launch entry as unverified until the next successful request or
+            # compiled-start reconciliation.
+            self._background_startup_registration_verified = False
             detail = str(exc).strip() or "Windows could not change the startup setting."
             self.server_board.set_background_startup_enabled(previous, detail)
             self.system_tray.set_background_startup_checked(previous)
@@ -1233,6 +1286,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             return
 
         self._background_startup_enabled = actual
+        self._background_startup_registration_verified = True
         if actual:
             self._gateway_auto_reconnect_suppressed = False
             QTimer.singleShot(0, self._request_background_gateway_reconnect)

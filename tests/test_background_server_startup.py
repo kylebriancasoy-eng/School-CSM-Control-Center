@@ -16,6 +16,7 @@ from school_csm_control_center.storage.control_center_settings import (
     ControlCenterSettingsStore,
 )
 from school_csm_control_center.storage.survey_store import SurveyStore
+from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
 from school_csm_control_center.ui.server_board import SurveyServerBoard
 from school_csm_control_center.web_server.controller import SurveyServerController
 from school_csm_control_center.windows_startup import (
@@ -136,6 +137,52 @@ class BackgroundStartupControllerTests(unittest.TestCase):
                 controller.set_background_server_startup(False, registry=registry)
             )
             self.assertFalse(store.load()["background_server_startup_enabled"])
+
+    def test_reconcile_repairs_missing_or_stale_registration_from_saved_preference(self) -> None:
+        registry = _FakeRegistry()
+        executable = Path(
+            r"C:\Program Files (x86)\MoSSLab\School CSM Control Center\School CSM Control Center.exe"
+        )
+        expected = compiled_startup_command(executable=executable)
+        with TemporaryDirectory() as temp, patch(
+            "school_csm_control_center.web_server.controller.is_windows",
+            return_value=False,
+        ):
+            root = Path(temp)
+            controller = SurveyServerController(SurveyStore(root), root)
+            controller._settings["background_server_startup_enabled"] = True
+
+            self.assertTrue(
+                controller.reconcile_background_server_startup(
+                    registry=registry,
+                    executable=executable,
+                )
+            )
+            self.assertEqual(
+                registry.values[RUN_VALUE_NAME],
+                (expected, registry.REG_SZ),
+            )
+
+            registry.values[RUN_VALUE_NAME] = ("stale.exe --background", registry.REG_SZ)
+            self.assertTrue(
+                controller.reconcile_background_server_startup(
+                    registry=registry,
+                    executable=executable,
+                )
+            )
+            self.assertEqual(
+                registry.values[RUN_VALUE_NAME],
+                (expected, registry.REG_SZ),
+            )
+
+            controller._settings["background_server_startup_enabled"] = False
+            self.assertFalse(
+                controller.reconcile_background_server_startup(
+                    registry=registry,
+                    executable=executable,
+                )
+            )
+            self.assertNotIn(RUN_VALUE_NAME, registry.values)
 
     def test_failed_settings_write_rolls_back_windows_startup_entry(self) -> None:
         registry = _FakeRegistry()
@@ -259,6 +306,56 @@ class BackgroundStartupUiTests(unittest.TestCase):
             board._start_server_after_settings()
             self.assertEqual(calls[0][1]["configure_firewall"], False)
             board.deleteLater()
+
+    def test_compiled_launch_reconciliation_updates_window_and_reports_failure(self) -> None:
+        registry = _FakeRegistry()
+        executable = Path(
+            r"C:\Program Files (x86)\MoSSLab\School CSM Control Center\School CSM Control Center.exe"
+        )
+        with TemporaryDirectory() as temp, patch(
+            "school_csm_control_center.web_server.controller.is_windows",
+            return_value=False,
+        ), patch(
+            "school_csm_control_center.web_server.controller.local_ipv4_candidates",
+            return_value=[("127.0.0.1 - This laptop", "127.0.0.1")],
+        ):
+            window = SchoolCSMControlCenterWindow(Path(temp))
+            window.server_controller._settings[
+                "background_server_startup_enabled"
+            ] = True
+
+            verified, detail = window.reconcile_background_startup_registration(
+                registry=registry,
+                executable=executable,
+            )
+            self.assertTrue(verified)
+            self.assertIn("verified", detail.casefold())
+            self.assertTrue(window.background_startup_enabled)
+            self.assertTrue(window._background_startup_registration_verified)
+            self.assertIn(RUN_VALUE_NAME, registry.values)
+
+            with patch.object(
+                window.server_controller,
+                "reconcile_background_server_startup",
+                side_effect=StartupRegistrationError("registry denied"),
+            ):
+                verified, detail = window.reconcile_background_startup_registration()
+            self.assertFalse(verified)
+            self.assertIn("registry denied", detail)
+            self.assertFalse(window._background_startup_registration_verified)
+            self.assertTrue(window.background_startup_enabled)
+            self.assertFalse(window.background_startup_readiness()[0])
+            window.deleteLater()
+
+    def test_compiled_entrypoint_reconciles_before_hidden_startup_readiness(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "school_csm_control_center"
+            / "app.py"
+        ).read_text(encoding="utf-8")
+        reconcile = source.index("window.reconcile_background_startup_registration()")
+        readiness = source.index("window.background_startup_readiness()")
+        self.assertLess(reconcile, readiness)
 
 
 if __name__ == "__main__":

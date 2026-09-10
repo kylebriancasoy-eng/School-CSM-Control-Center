@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.2
+# School CSM Control Center 0.6.3
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,16 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.3 highlights
+
+- Each compiled launch now reconciles the saved **Start with Windows and run
+  Survey Server in background** preference with the current Windows startup
+  entry before deciding whether the app may remain hidden.
+- A preserved `Enabled` preference therefore repairs a missing or stale startup
+  command after reinstall, maintenance, or external registry cleanup. A failed
+  repair blocks hidden startup and leaves an actionable status in Server
+  Settings instead of silently claiming that automatic startup is ready.
 
 ## 0.6.2 highlights
 
