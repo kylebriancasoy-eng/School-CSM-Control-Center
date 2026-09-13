@@ -150,7 +150,7 @@ class MRSFieldTestRemoteTests(unittest.TestCase):
         # Full-suite print/recognition tests can leave OpenCV workers under
         # short-lived CPU pressure.  Wait for the real terminal state rather
         # than treating a still-progressing job as a recognition failure.
-        deadline = monotonic() + 60
+        deadline = monotonic() + 120
         while monotonic() < deadline:
             status, job = self.request(f"/api/scanner/jobs/{job['job_id']}/status")
             self.assertEqual(status, 200)

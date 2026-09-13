@@ -1738,7 +1738,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
     def show_methodology(self) -> None:
         detail = (
             "Per dimension = (Agree + Strongly Agree) / valid non-N/A answers × 100\n"
-            "Overall = the same positive-response rate across SQD1-SQD8\n"
+            "Overall = the same positive-response rate across active SQDs (SQD5 omitted)\n"
             "SQD0 = reported separately for onsite responses\n"
             "N/A and unanswered/invalid answers are counted separately and excluded from valid denominators\n\n"
             "Interpretation bands\n"
@@ -1780,7 +1780,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             f"Service: {service_display(service_value_from_record(record))}",
             f"Client: {meta.get('client_type') or 'Not provided'} · {meta.get('sex') or 'Not provided'} · Age {age_text}",
             f"Region: {meta.get('region') or 'Not provided'}",
-            f"Overall SQD1-SQD8: {overall_text}",
+            f"Overall active SQDs (SQD5 omitted): {overall_text}",
             "",
             "Citizen's Charter",
         ]

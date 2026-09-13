@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-__version__ = "0.6.3"
-VERSION = (0, 6, 3)
+__version__ = "0.6.4"
+VERSION = (0, 6, 4)
 """Public semantic version components."""
 
 WINDOWS_FILE_VERSION = VERSION + (0,)

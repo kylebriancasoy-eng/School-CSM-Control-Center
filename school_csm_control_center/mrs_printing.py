@@ -56,6 +56,16 @@ BARCODE_PRINT_REGION_PX = (297, 582, 1098, 108)
 BARCODE_LEGACY_REGION_PX = (297, 623, 1098, 108)
 BARCODE_CONTROL_TEXT_Y_PX = 704
 
+# Keep the calibrated v0.4 geometry readable for previously issued sheets, but
+# remove SQD5 from every newly rendered school form.  The row remains the same
+# height so all later bubbles and all scanner coordinates stay stable.
+SQD5_OMISSION_REGION_PX = (230, 2736, 2250, 2816)
+SQD5_OMISSION_LABELS = {
+    "en": "SQD5 OMITTED - NO RESPONSE REQUIRED",
+    "fil": "HINDI KASAMA ANG SQD5 - HUWAG SAGUTAN",
+    "war": "GIN-OMIT AN SQD5 - DIRI KINAHANGLAN BATONAN",
+}
+
 
 # Code 128 symbol widths, values 0..106. Value 106 is the seven-module stop symbol.
 _CODE128_PATTERNS = (
@@ -375,6 +385,32 @@ def render_official_mrs_form(
     regular = load_font(27, bold_font=True)
     small = load_font(22)
     control_font = load_font(43, bold_font=True)
+
+    # New official sheets visibly omit the fees/costs item.  Covering only the
+    # row interior preserves the calibrated table borders and the locations of
+    # SQD6-SQD8.  The scanner retains its old SQD5 map solely so historical
+    # sheets remain importable; current analysis ignores that legacy value.
+    omission_left, omission_top, omission_right, omission_bottom = SQD5_OMISSION_REGION_PX
+    draw.rectangle(
+        (omission_left, omission_top, omission_right, omission_bottom),
+        fill="white",
+    )
+    omission_font = load_font(30, bold_font=True)
+    omission_label = SQD5_OMISSION_LABELS[spec["code"]]
+    omission_box = draw.textbbox((0, 0), omission_label, font=omission_font)
+    omission_width = omission_box[2] - omission_box[0]
+    omission_height = omission_box[3] - omission_box[1]
+    draw.text(
+        (
+            (omission_left + omission_right - omission_width) / 2,
+            omission_top
+            + ((omission_bottom - omission_top) - omission_height) / 2
+            - omission_box[1],
+        ),
+        omission_label,
+        font=omission_font,
+        fill=(75, 75, 75),
+    )
     # The supplied English template is branded for Calapi ES. Other schools
     # receive a clean dynamic heading from School Information.
     normalized_school = " ".join(str(school_name or "").upper().split())

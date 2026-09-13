@@ -332,7 +332,7 @@ class DashboardBoard(QFrame):
         self.kpi_grid = QGridLayout()
         self.kpi_grid.setSpacing(8)
         self.total_metric = MetricCard("SURVEY RESPONSES", "0", "No filters applied", accent=theme.ACCENT_CYAN)
-        self.overall_metric = MetricCard("OVERALL SQD1-SQD8", "--", "No valid ratings", accent=theme.ACCENT_TEAL)
+        self.overall_metric = MetricCard("OVERALL ACTIVE SQDs", "--", "SQD5 omitted", accent=theme.ACCENT_TEAL)
         self.band_metric = MetricCard("PERFORMANCE BAND", "No Data", "ARTA interpretation", accent=theme.PURPLE)
         self.sqd0_metric = MetricCard("SQD0 SATISFACTION", "--", "Onsite responses only", accent=theme.WARNING)
         self.metric_cards = [self.total_metric, self.overall_metric, self.band_metric, self.sqd0_metric]

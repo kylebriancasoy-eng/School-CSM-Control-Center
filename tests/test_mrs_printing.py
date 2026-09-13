@@ -7,6 +7,7 @@ import unittest
 from PIL import ImageDraw
 
 from school_csm_control_center.mrs_printing import (
+    SQD5_OMISSION_REGION_PX,
     encode_code128b,
     infer_connection_type,
     is_virtual_printer_descriptor,
@@ -77,6 +78,22 @@ class MRSPrintingTests(unittest.TestCase):
                 self.assertEqual(result["template_id"], spec["template_id"])
                 self.assertEqual(result["barcode"]["value"], CONTROL)
                 self.assertEqual(result["barcode"]["status"], "Normal")
+
+    def test_new_official_pages_visibly_omit_sqd5_without_moving_later_rows(self) -> None:
+        left, top, right, bottom = SQD5_OMISSION_REGION_PX
+        self.assertLess(top, bottom)
+        for language in ("English", "Filipino", "Waray-Waray"):
+            with self.subTest(language=language):
+                page = render_official_mrs_form(
+                    ROOT,
+                    CONTROL,
+                    school_name="Calapi Elementary School",
+                    language=language,
+                )
+                # This point crossed the old SQD5 response-bubble outline. New
+                # prints clear it, while the legacy source templates stay intact.
+                self.assertEqual(page.getpixel((1814, 2774)), (255, 255, 255))
+                self.assertEqual(page.size, (2480, 3508))
 
     def test_end_to_end_barcode_crossout_is_detected(self) -> None:
         with TemporaryDirectory() as temporary:

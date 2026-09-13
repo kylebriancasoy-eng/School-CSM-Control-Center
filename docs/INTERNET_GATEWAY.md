@@ -1,6 +1,6 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.6.2 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.6.4 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 saved gateway configuration, the application stays **Local Only**, starts no
 tunnel, and makes no registration-service request.
@@ -36,6 +36,21 @@ Worker named with the official School ID. The public address has this form:
 https://<SCHOOL_ID>.<ACCOUNT_SUBDOMAIN>.workers.dev
 ```
 
+The current Motiong District pilot reserves the account namespace
+`motiong-district-csm-survey`, producing addresses such as:
+
+```text
+https://123627.motiong-district-csm-survey.workers.dev
+```
+
+The first hostname label changes with the QR code's official School ID. Each
+school still requires a separately provisioned School-ID Worker, named Tunnel,
+VPC Service, connector credential, and Control Center computer. The shared
+namespace is only an address family; it is not a shared response database.
+Changing the account namespace stops the old `workers.dev` names, so update the
+Worker's `PUBLIC_HOST`, the Control Center registration, and all issued QR codes
+as one planned cutover.
+
 Workers VPC is currently a Cloudflare beta service, and Cloudflare describes
 `workers.dev` as intended for non-business-critical use. Treat this route as a
 school pilot, monitor it, and keep Local-Only access available. A future managed
@@ -48,6 +63,13 @@ accepts only the methods used by the Survey and Scanner service, replaces all
 forwarding identity headers, rejects the wrong host or non-HTTPS request, and
 can reach only the fixed VPC Service. The Control Center independently trusts
 only the loopback connector and exact School-ID hostname.
+
+The respondent page displays the School ID and school name supplied by its
+server as locked fields. Those fields help a responder confirm the QR code, but
+they are not trusted routing inputs and are not accepted as editable submission
+data. Cloudflare selects the school from the hostname and that Worker's fixed VPC
+Service binding; the local server overwrites any browser-supplied provenance
+with its own configured School ID.
 
 ### Pilot setup
 

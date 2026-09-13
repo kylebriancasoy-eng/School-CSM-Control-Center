@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from school_csm_control_center.questionnaire import (
     CC_QUESTIONS,
+    LEGACY_SQD_KEYS,
     SQD_QUESTIONS,
     SURVEY_MODES,
     apply_cc_branching,
@@ -568,7 +569,10 @@ class SurveyStore:
         if mode == "online" and answers.get("sqd0") not in (None, ""):
             raise ValueError("SQD0 is available only for onsite surveys.")
 
-        expected = SQD_QUESTIONS[mode]
+        # SQD5 was removed from the active school questionnaire.  Keep accepting
+        # and preserving it when an older record or legacy scanned form already
+        # contains it, while all current respondent UIs use SQD_QUESTIONS only.
+        expected = tuple(SQD_QUESTIONS[mode]) + LEGACY_SQD_KEYS
         normalized: dict[str, int | None] = {}
         for key in expected:
             if key not in answers:

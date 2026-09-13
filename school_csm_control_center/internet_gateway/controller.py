@@ -527,16 +527,117 @@ class InternetGatewayController(QObject):
 
     def configure_direct_worker_vpc_async(self, request: Mapping[str, Any]) -> bool:
         payload = dict(request) if isinstance(request, Mapping) else {}
+        preserve_tunnel_credential = bool(payload.get("preserve_tunnel_credential"))
         return self._run_async(
             "direct_setup",
-            lambda: self.configure_direct_worker_vpc(
-                public_host=payload.get("public_host"),
-                tunnel_id=payload.get("tunnel_id"),
-                tunnel_token=payload.get("tunnel_token"),
-                beta_acknowledged=bool(payload.get("beta_acknowledged")),
+            lambda: (
+                self.update_direct_worker_hostname(
+                    public_host=payload.get("public_host"),
+                    tunnel_id=payload.get("tunnel_id"),
+                    beta_acknowledged=bool(payload.get("beta_acknowledged")),
+                )
+                if preserve_tunnel_credential
+                else self.configure_direct_worker_vpc(
+                    public_host=payload.get("public_host"),
+                    tunnel_id=payload.get("tunnel_id"),
+                    tunnel_token=payload.get("tunnel_token"),
+                    beta_acknowledged=bool(payload.get("beta_acknowledged")),
+                )
             ),
             "Single-school Internet Gateway setup",
         )
+
+    def update_direct_worker_hostname(
+        self,
+        *,
+        public_host: Any,
+        tunnel_id: Any,
+        beta_acknowledged: bool = False,
+    ) -> dict[str, Any]:
+        """Rebind an existing direct pilot to a renamed workers.dev host.
+
+        Changing the account-wide workers.dev subdomain does not change the
+        named Tunnel or its connector credential.  This path therefore updates
+        only non-secret routing identity and deliberately never reads, returns,
+        or rewrites the credential stored in Windows Credential Manager.
+        """
+
+        self._authorization_verified_this_session = False
+        if self.retired:
+            self._emit_retirement()
+            raise RuntimeError(
+                "This installation is retired and cannot change its Internet address."
+            )
+        if self.connected:
+            raise RuntimeError(
+                "Disconnect the Internet Gateway before changing its Cloudflare address."
+            )
+        if not beta_acknowledged:
+            raise ValueError(
+                "Confirm that Cloudflare Workers VPC is a beta school-pilot service before saving."
+            )
+        if not self.direct_mode or not self.configured:
+            raise RuntimeError(
+                "A single-school Cloudflare pilot must already be configured before its address can be changed without a connector token."
+            )
+        if str(self._state.get("authorization_state") or "") != "active":
+            raise RuntimeError(
+                "Only the active authorized installation can change this school's Internet address."
+            )
+
+        local = dict(self._local_settings_provider() or {})
+        school_id = _validate_direct_school_id(local.get("school_id"))
+        if school_id != str(self._state.get("school_id") or ""):
+            raise RuntimeError(
+                "School Information does not match this device's registered School ID."
+            )
+        hostname = _validate_direct_workers_host(public_host, school_id)
+        current_hostname = _normalize_host(self._state.get("public_host"))
+        if hostname == current_hostname:
+            raise ValueError("Enter the new workers.dev hostname before saving.")
+
+        canonical_tunnel_id = _validate_direct_tunnel_id(tunnel_id)
+        current_tunnel_id = _validate_direct_tunnel_id(self._state.get("tunnel_id"))
+        if canonical_tunnel_id != current_tunnel_id:
+            raise ValueError(
+                "The Tunnel ID cannot be changed without entering its connector token."
+            )
+
+        credential_presence = _callable_attr(self._credentials, "exists")
+        if credential_presence is None:
+            raise RuntimeError(
+                "Windows Credential Manager is unavailable for the Internet Gateway connector token."
+            )
+        try:
+            credential_state = _mapping(credential_presence())
+        except Exception as exc:
+            raise RuntimeError(
+                "The saved Internet Gateway connector credential could not be verified."
+            ) from exc
+        if not bool(credential_state.get("tunnel_credential")):
+            raise RuntimeError(
+                "The saved connector token is missing. Paste a replacement token to configure the gateway again."
+            )
+
+        saver = _callable_attr(self._state_store, "save_registration")
+        if saver is None:
+            raise RuntimeError("Internet Gateway registration storage is unavailable.")
+        saver(
+            school_id=school_id,
+            registration_id=str(self._state.get("registration_id") or ""),
+            public_hostname=hostname,
+            tunnel_id=current_tunnel_id,
+            provisioning_state=DIRECT_WORKERS_VPC_MODE,
+            gateway_status="disconnected",
+            authorization_status="ACTIVE",
+            installation_id=str(self._state.get("installation_id") or ""),
+        )
+        state = self.reload()
+        self.notice_requested.emit(
+            "The district Worker address was updated without changing the saved connector token. Restart the Survey Server once, verify authorization, and then reconnect the Internet Gateway.",
+            "success",
+        )
+        return state
 
     def configure_direct_worker_vpc(
         self,

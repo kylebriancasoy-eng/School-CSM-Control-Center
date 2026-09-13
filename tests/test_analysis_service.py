@@ -90,11 +90,12 @@ class AnalysisServiceTests(unittest.TestCase):
         analysis = AnalysisService.analyze(sample_records())
         overview = analysis["overview"]
         self.assertEqual(overview["total_responses"], 2)
-        self.assertEqual(overview["valid_sqd_answers"], 14)
+        self.assertEqual(overview["valid_sqd_answers"], 13)
         self.assertEqual(overview["positive_sqd_answers"], 8)
-        self.assertEqual(overview["positive_rate"], 57.14)
-        self.assertEqual(overview["rating"], "Poor")
+        self.assertEqual(overview["positive_rate"], 61.54)
+        self.assertEqual(overview["rating"], "Fair")
         self.assertEqual(overview["sqd0"]["positive_rate"], 100.0)
+        self.assertNotIn("sqd5", {row["key"] for row in analysis["dimensions"]})
 
         sqd1 = next(row for row in analysis["dimensions"] if row["key"] == "sqd1")
         self.assertEqual(sqd1["valid_responses"], 2)
@@ -103,12 +104,12 @@ class AnalysisServiceTests(unittest.TestCase):
 
         mix = analysis["response_mix"]
         self.assertEqual(mix["not_applicable"], 1)
-        self.assertEqual(mix["unanswered"], 1)
-        self.assertEqual(mix["answered_count"], 15)
-        self.assertEqual(mix["answer_coverage_rate"], 93.75)
-        self.assertEqual(mix["scorable_rate"], 87.5)
-        self.assertEqual(mix["completion_rate"], 93.75)
-        self.assertEqual(mix["unanswered_rate"], 6.25)
+        self.assertEqual(mix["unanswered"], 0)
+        self.assertEqual(mix["answered_count"], 14)
+        self.assertEqual(mix["answer_coverage_rate"], 100.0)
+        self.assertEqual(mix["scorable_rate"], 92.86)
+        self.assertEqual(mix["completion_rate"], 100.0)
+        self.assertEqual(mix["unanswered_rate"], 0.0)
 
         sqd2 = next(row for row in analysis["dimensions"] if row["key"] == "sqd2")
         self.assertEqual(sqd1["rank"], sqd2["rank"])
@@ -141,13 +142,13 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertTrue(analysis["insights"])
         self.assertEqual(len(analysis["recent"]), 2)
         self.assertEqual(analysis["overview"]["feedback_rate"], 100.0)
-        self.assertEqual(analysis["overview"]["answer_coverage_rate"], 93.75)
+        self.assertEqual(analysis["overview"]["answer_coverage_rate"], 100.0)
         self.assertEqual(
             analysis["overview"]["next_band"],
-            {"label": "Fair", "threshold": 60.0, "points_needed": 2.86},
+            {"label": "Satisfactory", "threshold": 80.0, "points_needed": 18.46},
         )
         latest_trend = analysis["trend"][-1]
-        self.assertEqual(latest_trend["valid_responses"], 8)
+        self.assertEqual(latest_trend["valid_responses"], 7)
         self.assertEqual(latest_trend["positive_responses"], 5)
 
     def test_filter_records_supports_mode_service_date_and_demographics(self) -> None:

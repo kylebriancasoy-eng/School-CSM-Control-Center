@@ -2,8 +2,9 @@
 
 The source document contains distinct onsite and online forms.  The onsite
 form includes SQD0 (general service satisfaction), while the online form starts
-at SQD1.  SQD1-SQD8 share dimensions so their results can be compared without
-discarding the wording that belongs to each survey mode.
+at SQD1.  The active school questionnaire omits SQD5 (fees/costs).  Historical
+SQD5 values remain compatible with storage and legacy scanner imports, but the
+question is not presented to new respondents or included in current scoring.
 """
 
 from __future__ import annotations
@@ -63,11 +64,16 @@ SQD_DIMENSIONS = {
     "sqd2": "Reliability",
     "sqd3": "Access and Facilities",
     "sqd4": "Communication",
-    "sqd5": "Costs",
     "sqd6": "Integrity",
     "sqd7": "Assurance",
     "sqd8": "Outcome",
 }
+
+ACTIVE_SQD_KEYS = tuple(SQD_DIMENSIONS)
+"""SQD dimension keys presented and scored by the current questionnaire."""
+
+LEGACY_SQD_KEYS = ("sqd5",)
+"""Retained storage-only keys from earlier forms; never shown or scored."""
 
 
 def _option(value: int, label: str) -> dict[str, Any]:
@@ -190,12 +196,6 @@ SQD_QUESTIONS = {
             "prompt": "I easily found information about my transaction from the office or its website.",
             "onsite_only": False,
         },
-        "sqd5": {
-            "code": "SQD5",
-            "dimension": SQD_DIMENSIONS["sqd5"],
-            "prompt": "I paid a reasonable amount of fees for my transaction.",
-            "onsite_only": False,
-        },
         "sqd6": {
             "code": "SQD6",
             "dimension": SQD_DIMENSIONS["sqd6"],
@@ -238,12 +238,6 @@ SQD_QUESTIONS = {
             "code": "SQD4",
             "dimension": SQD_DIMENSIONS["sqd4"],
             "prompt": "I easily found information about my transaction from the office or its website.",
-            "onsite_only": False,
-        },
-        "sqd5": {
-            "code": "SQD5",
-            "dimension": SQD_DIMENSIONS["sqd5"],
-            "prompt": "I paid an acceptable amount of fees for my transaction.",
             "onsite_only": False,
         },
         "sqd6": {

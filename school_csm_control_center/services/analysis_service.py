@@ -22,6 +22,7 @@ from school_csm_control_center.demographics import (
     region_label,
 )
 from school_csm_control_center.questionnaire import (
+    ACTIVE_SQD_KEYS,
     CC_QUESTIONS,
     POSITIVE_RATINGS,
     RATING_LABELS,
@@ -31,7 +32,7 @@ from school_csm_control_center.questionnaire import (
 from school_csm_control_center.school_services import normalize_service_values, service_display
 
 
-SQD_KEYS = tuple(f"sqd{number}" for number in range(1, 9))
+SQD_KEYS = ACTIVE_SQD_KEYS
 NO_DATA_LABEL = "No Data"
 
 
@@ -740,11 +741,11 @@ def _insights(
             "severity": "positive" if overall_rate is not None and overall_rate >= 90 else "warning",
             "title": f"Overall rating: {overview['rating']}",
             "message": (
-                f"{overview['positive_sqd_answers']}/{overview['valid_sqd_answers']} valid SQD1-SQD8 answers "
+                f"{overview['positive_sqd_answers']}/{overview['valid_sqd_answers']} valid active SQD answers "
                 f"were positive ({overall_rate:.2f}%); {overview['answered_sqd_answers']}/"
                 f"{overview['total_possible_sqd_answers']} items were answered."
                 if overall_rate is not None
-                else "No valid SQD1-SQD8 answers were available."
+                else "No valid active SQD answers were available."
             ),
             "metric": overall_rate,
         }

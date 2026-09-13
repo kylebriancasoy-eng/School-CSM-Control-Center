@@ -63,7 +63,10 @@ class CompactDashboardTests(unittest.TestCase):
         self.assertGreaterEqual(self.board.cc_awareness.label.font().pixelSize(), 11)
         self.assertGreaterEqual(self.board.trend_chart.minimumHeight(), 260)
         self.assertGreaterEqual(self.board.donut_chart.minimumHeight(), 285)
-        self.assertGreaterEqual(self.board.dimension_chart.minimumHeight(), 364)
+        self.assertGreaterEqual(
+            self.board.dimension_chart.minimumHeight(),
+            76 + len(self.board._analysis["dimensions"]) * 36,
+        )
         donut_content = QRectF(
             0,
             0,
@@ -85,15 +88,15 @@ class CompactDashboardTests(unittest.TestCase):
         self.assertIn("2 filtered responses", self.board.header_subtitle.text())
         self.assertIn("1 onsite", self.board.total_metric.detail_label.text())
         self.assertIn("1 online", self.board.total_metric.detail_label.text())
-        self.assertIn("8/14 positive", self.board.overall_metric.detail_label.text())
-        self.assertIn("93.75% answered", self.board.overall_metric.detail_label.text())
-        self.assertIn("2.86 points to Fair", self.board.band_metric.detail_label.text())
+        self.assertIn("8/13 positive", self.board.overall_metric.detail_label.text())
+        self.assertIn("100.00% answered", self.board.overall_metric.detail_label.text())
+        self.assertIn("18.46 points to Satisfactory", self.board.band_metric.detail_label.text())
         self.assertIn("1/1 positive", self.board.sqd0_metric.detail_label.text())
 
         donut = {item.label: item.value for item in self.board.donut_chart.normalized_data}
-        self.assertEqual(donut["Unanswered"], 1)
-        self.assertEqual(sum(donut.values()), 16)
-        self.assertIn("15/16 answered", self.board.donut_chart.context_text)
+        self.assertEqual(donut["Unanswered"], 0)
+        self.assertEqual(sum(donut.values()), 14)
+        self.assertIn("14/14 answered", self.board.donut_chart.context_text)
         self.assertIn("Best", self.board.dimension_chart.context_text)
         self.assertIn("Focus", self.board.dimension_chart.context_text)
         self.assertIn("1/2", self.board.cc_awareness.value.text())

@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.3
+# School CSM Control Center 0.6.4
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,25 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.4 highlights
+
+- The respondent form now shows a locked, server-verified School ID and school
+  name before the language choice and throughout the questionnaire. These
+  display fields cannot be edited or used to redirect a response; the QR
+  hostname and the school server remain authoritative.
+- The Motiong District pilot uses the shared account namespace
+  `<SCHOOL_ID>.motiong-district-csm-survey.workers.dev`, while each school keeps
+  its own School-ID Worker, Tunnel, VPC Service, connector credential, and local
+  response database.
+- Existing direct-pilot installations can change only their Worker hostname
+  after a district namespace rename without re-entering or exposing the saved
+  connector token. A checked maintenance utility creates timestamped state and
+  audit backups before the same migration is applied outside the app UI.
+- SQD5 is omitted from new onsite, online, and manual questionnaires and from
+  current dashboard scoring. Earlier SQD5 answers and legacy hardcopy scans
+  remain readable and are not deleted, so historical records and exact print
+  snapshots remain intact.
 
 ## 0.6.3 highlights
 
@@ -330,7 +349,7 @@ This development build implements the controlled Machine-Readable Survey Form li
 
 - Uses all four unique ArUco markers to identify orientation and correct perspective to the canonical A4 image.
 - Recognizes the Code 128 control number, detects an instructed end-to-end barcode cross-out, and returns barcode/date crops for operator review.
-- Reads the eight `MM/DD/YYYY` digit boxes, age bracket, region, sex, client type, service, CC1–CC3, and SQD0–SQD8.
+- Reads the eight `MM/DD/YYYY` digit boxes, age bracket, region, sex, client type, service, CC1–CC3, and SQD0–SQD8. SQD5 marks on legacy printed forms remain readable for record compatibility but are excluded from current scoring.
 - Displays field confidence, blank/multiple-mark warnings, corrected page preview, barcode status, and registry-match status in the hosted Scanner Remote.
 - Unknown, duplicate, print-unconfirmed, crossed-out, and valid scans are retained as separate scan-attempt records.
 - Only one verified valid response per registered control number is saved to the response database and included in CSM analysis.
@@ -720,7 +739,7 @@ The current release performs:
 - manual four-corner adjustment and reprocessing when automatic detection needs correction;
 - perspective correction to the canonical A4 form layout;
 - contrast normalization and corrected-form preview preparation;
-- interpretation of client type, sex, service, CC1–CC3, and SQD0–SQD8;
+- interpretation of client type, sex, service, CC1–CC3, and the active SQD items (SQD5 omitted; legacy values preserved);
 - field-level confidence and ink-density results;
 - mobile review and correction of interpreted values;
 - strict final validation, duplicate checks, and direct MRS finalization; and

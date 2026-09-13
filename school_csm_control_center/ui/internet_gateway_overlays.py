@@ -232,6 +232,8 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self._school_name = ""
         self._provider_available = False
         self._provider_detail = ""
+        self._current_direct_public_host = ""
+        self._current_direct_tunnel_id = ""
 
         prerequisite = QLabel(
             "Local-Only operation remains available whether or not Internet Gateway setup is completed. No CSM response database is created in the Registration Service."
@@ -321,7 +323,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.direct_heading.setObjectName("gateway_overlay_section")
         self.body_layout.addWidget(self.direct_heading)
         self.direct_copy = QLabel(
-            "This school-pilot route uses the named Tunnel and workers.dev address created in Cloudflare. Response records remain on this computer. The connector token is stored only in Windows Credential Manager. Workers VPC is currently a Cloudflare beta service."
+            "This district pilot uses a separate School-ID Worker and named Tunnel for each school. To apply an account-wide workers.dev namespace change, edit only the hostname and leave the connector token blank; the existing secure token and Tunnel are retained. Response records remain on this computer. Workers VPC is currently a Cloudflare beta service."
         )
         self.direct_copy.setObjectName("gateway_overlay_note")
         self.direct_copy.setWordWrap(True)
@@ -335,7 +337,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         direct_fields.addWidget(self._field_label("Cloudflare Tunnel ID"), 0, 1)
         self.direct_public_host = QLineEdit()
         self.direct_public_host.setPlaceholderText(
-            "123456.school-account.workers.dev"
+            "123456.motiong-district-csm-survey.workers.dev"
         )
         self.direct_public_host.setAccessibleName(
             "Cloudflare Worker public hostname"
@@ -417,14 +419,30 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         use_direct = current_mode == "direct_worker_vpc" or (
             valid_school_id and not self._provider_available
         )
+        self._current_direct_public_host = (
+            str(public_host or "").strip().casefold().rstrip(".")
+            if current_mode == "direct_worker_vpc"
+            else ""
+        )
+        self._current_direct_tunnel_id = (
+            str(tunnel_id or "").strip().casefold()
+            if current_mode == "direct_worker_vpc"
+            else ""
+        )
         self.direct_mode.setChecked(use_direct)
         self.managed_mode.setChecked(not use_direct)
         if current_mode == "direct_worker_vpc":
             self.direct_public_host.setText(str(public_host or "").strip())
             self.direct_tunnel_id.setText(str(tunnel_id or "").strip())
+            self.direct_tunnel_token.setPlaceholderText(
+                "Leave blank when changing only the Worker hostname"
+            )
         else:
             self.direct_public_host.clear()
             self.direct_tunnel_id.clear()
+            self.direct_tunnel_token.setPlaceholderText(
+                "Paste the complete connector token from Cloudflare"
+            )
         self.completion_code.clear()
         self.direct_tunnel_token.clear()
         self.direct_beta_acknowledgement.setChecked(False)
@@ -525,12 +543,21 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         valid_school_id = bool(
             self._school_id.isdigit() and 4 <= len(self._school_id) <= 12
         )
+        public_host = self.direct_public_host.text().strip().casefold().rstrip(".")
+        tunnel_id = self.direct_tunnel_id.text().strip().casefold()
+        token_supplied = bool(self.direct_tunnel_token.text().strip())
+        hostname_only_change = bool(
+            self._current_direct_public_host
+            and public_host
+            and public_host != self._current_direct_public_host
+            and tunnel_id == self._current_direct_tunnel_id
+        )
         ready = bool(
             self.direct_mode.isChecked()
             and valid_school_id
-            and self.direct_public_host.text().strip()
-            and self.direct_tunnel_id.text().strip()
-            and self.direct_tunnel_token.text().strip()
+            and public_host
+            and tunnel_id
+            and (token_supplied or hostname_only_change)
             and self.direct_beta_acknowledgement.isChecked()
             and not self.operation_locked
         )
@@ -548,8 +575,18 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
             self.set_status("Enter the Tunnel ID shown by Cloudflare.")
             self.direct_tunnel_id.setFocus()
             return
-        if not tunnel_token:
-            self.set_status("Paste the complete connector token shown by Cloudflare.")
+        normalized_host = public_host.casefold().rstrip(".")
+        normalized_tunnel = tunnel_id.casefold()
+        hostname_only_change = bool(
+            not tunnel_token
+            and self._current_direct_public_host
+            and normalized_host != self._current_direct_public_host
+            and normalized_tunnel == self._current_direct_tunnel_id
+        )
+        if not tunnel_token and not hostname_only_change:
+            self.set_status(
+                "Paste the connector token, or change only the Worker hostname while keeping the existing Tunnel ID."
+            )
             self.direct_tunnel_token.setFocus()
             return
         if not self.direct_beta_acknowledgement.isChecked():
@@ -562,6 +599,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
                 "tunnel_id": tunnel_id,
                 "tunnel_token": tunnel_token,
                 "beta_acknowledged": True,
+                "preserve_tunnel_credential": hostname_only_change,
             }
         )
         self.direct_tunnel_token.clear()

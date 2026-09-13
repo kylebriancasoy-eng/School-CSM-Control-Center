@@ -17,10 +17,18 @@ from school_csm_control_center.questionnaire import (
 class QuestionnaireSpecificationTests(unittest.TestCase):
     def test_modes_and_mode_specific_sqd_questions_match_annex_a(self) -> None:
         self.assertEqual(SURVEY_MODES, ("onsite", "online"))
-        self.assertEqual(tuple(SQD_QUESTIONS["onsite"]), tuple(f"sqd{i}" for i in range(9)))
-        self.assertEqual(tuple(SQD_QUESTIONS["online"]), tuple(f"sqd{i}" for i in range(1, 9)))
+        self.assertEqual(
+            tuple(SQD_QUESTIONS["onsite"]),
+            ("sqd0", "sqd1", "sqd2", "sqd3", "sqd4", "sqd6", "sqd7", "sqd8"),
+        )
+        self.assertEqual(
+            tuple(SQD_QUESTIONS["online"]),
+            ("sqd1", "sqd2", "sqd3", "sqd4", "sqd6", "sqd7", "sqd8"),
+        )
         self.assertTrue(SQD_QUESTIONS["onsite"]["sqd0"]["onsite_only"])
         self.assertNotIn("sqd0", SQD_QUESTIONS["online"])
+        self.assertNotIn("sqd5", SQD_QUESTIONS["onsite"])
+        self.assertNotIn("sqd5", SQD_QUESTIONS["online"])
 
     def test_rating_options_use_zero_for_explicit_na_and_online_omits_na(self) -> None:
         self.assertEqual([option["value"] for option in RATING_OPTIONS], [1, 2, 3, 4, 5, 0])
@@ -37,7 +45,6 @@ class QuestionnaireSpecificationTests(unittest.TestCase):
                 "Reliability",
                 "Access and Facilities",
                 "Communication",
-                "Costs",
                 "Integrity",
                 "Assurance",
                 "Outcome",

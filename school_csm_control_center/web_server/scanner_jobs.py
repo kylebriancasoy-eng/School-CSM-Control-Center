@@ -373,7 +373,8 @@ class ScannerJobManager:
             missing: list[str] = []
             expected_fields = {
                 "age_bracket", "sex", "client_type", "region", "service_availed",
-                "cc1", "cc2", "cc3", *{f"sqd{number}" for number in range(9)},
+                "cc1", "cc2", "cc3",
+                *{f"sqd{number}" for number in (0, 1, 2, 3, 4, 6, 7, 8)},
             }
             unavailable = sorted(expected_fields.difference(str(name) for name in fields))
             if unavailable and not spoiled:
@@ -388,11 +389,21 @@ class ScannerJobManager:
                 selected = corrections.get(field_name, automatic)
                 selected_text = str(selected if selected is not None else "").strip()
                 valid_options = {str(code) for code in (result.get("scores") or {})}
+                if str(field_name) == "sqd5":
+                    # SQD5 is omitted from forms beginning with v0.6.4. Keep a
+                    # recognized answer from an older form for historical
+                    # fidelity; otherwise record N/A without asking the
+                    # Scanner Operator to invent an answer.
+                    final_responses["sqd5"] = (
+                        selected_text if selected_text in valid_options else "0"
+                    )
+                    continue
                 if selected_text not in valid_options:
                     if not spoiled:
                         missing.append(str(field_name).upper())
                 else:
                     final_responses[str(field_name)] = selected_text
+            final_responses.setdefault("sqd5", "0")
             if missing:
                 raise ScannerJobError("Review and select a valid answer for: " + ", ".join(missing) + ".")
 

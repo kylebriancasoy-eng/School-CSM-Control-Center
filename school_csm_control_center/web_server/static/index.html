@@ -121,6 +121,35 @@
     .address-label { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; font-weight: 800; }
     .address-value { margin-top: 5px; font-size: 12px; color: var(--cyan); word-break: break-all; }
 
+    .school-identity-card {
+      display: grid; gap: 13px; margin-bottom: 20px; padding: 16px;
+      border: 1px solid rgba(57,219,145,.30); border-radius: 15px;
+      background: linear-gradient(135deg, rgba(57,219,145,.08), rgba(43,217,197,.045));
+    }
+    .school-identity-head { display: flex; align-items: flex-start; gap: 11px; }
+    .school-identity-lock {
+      width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center;
+      border-radius: 11px; color: var(--success); background: rgba(57,219,145,.10);
+      border: 1px solid rgba(57,219,145,.28); font-size: 16px;
+    }
+    .school-identity-head strong { display: block; color: var(--text); font-size: 13px; }
+    .school-identity-head p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .school-identity-grid { display: grid; grid-template-columns: minmax(120px,.65fr) minmax(0,1.35fr); gap: 10px; }
+    .school-identity-field { display: grid; gap: 6px; }
+    .school-identity-field label { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .school-identity-field input[readonly] {
+      width: 100%; min-height: 43px; padding: 10px 12px; border-radius: 11px;
+      border: 1px solid rgba(57,219,145,.25); color: var(--text);
+      background: rgba(4,16,30,.66); cursor: default; caret-color: transparent;
+    }
+    .language-school-identity {
+      display: grid; gap: 3px; margin-top: 18px; padding: 13px 15px; border-radius: 14px;
+      border: 1px solid rgba(57,219,145,.28); background: rgba(57,219,145,.07);
+    }
+    .language-school-identity span:first-child { color: var(--success); font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .language-school-identity strong { color: var(--text); font-size: 15px; }
+    .language-school-identity span:last-child { color: var(--text-2); font-size: 11px; }
+
     .step-list { display: grid; gap: 8px; margin-top: 12px; }
     .step-link {
       position: relative; display: grid; grid-template-columns: 32px minmax(0,1fr); gap: 11px; align-items: center;
@@ -304,6 +333,7 @@
       .progress-ring { display: none; }
       .form-body { padding: 18px 15px 24px; }
       .field-grid, .review-grid { grid-template-columns: 1fr; }
+      .school-identity-grid { grid-template-columns: 1fr; }
       .field.full, .review-card.full { grid-column: auto; }
       .choice-row, .choice-row.four, .choice-row.five { grid-template-columns: 1fr; }
       .rating-legend { display: none; }
@@ -592,6 +622,11 @@
         <p class="war">Ano nga yinaknan an karuyag mo gamiton?</p>
       </div>
       <p class="language-note">Your selection changes the survey language. · Babaguhin ng pagpili mo ang wika ng sarbey. · An imo pagpili magbabag-o han yinaknan han surbey.</p>
+      <div class="language-school-identity" aria-live="polite">
+        <span data-key="verifiedQrFor">Verified QR code for</span>
+        <strong id="languageSchoolName">School</strong>
+        <span id="languageSchoolId">School ID</span>
+      </div>
       <div class="language-options">
         <div class="language-option"><input type="radio" id="langEn" name="preferredLanguage" value="en"><label for="langEn"><strong>English</strong><span>English version of the survey</span></label></div>
         <div class="language-option"><input type="radio" id="langFil" name="preferredLanguage" value="fil"><label for="langFil"><strong>Tagalog / Filipino</strong><span>Bersyon ng sarbey sa Filipino</span></label></div>
@@ -634,7 +669,7 @@
       <nav class="step-list" aria-label="Survey progress">
         <button class="step-link active" data-nav="0"><span class="num">1</span><span class="copy"><strong data-step-name="0">Client Profile</strong><span data-key="navProfileSub">Basic transaction information</span></span></button>
         <button class="step-link" data-nav="1"><span class="num">2</span><span class="copy"><strong data-step-name="1">Citizen’s Charter</strong><span data-key="navCCSub">Awareness and usefulness</span></span></button>
-        <button class="step-link" data-nav="2"><span class="num">3</span><span class="copy"><strong data-step-name="2">Service Quality</strong><span data-key="navSQDSub">Nine quality statements</span></span></button>
+        <button class="step-link" data-nav="2"><span class="num">3</span><span class="copy"><strong data-step-name="2">Service Quality</strong><span data-key="navSQDSub">Service quality statements</span></span></button>
         <button class="step-link" data-nav="3"><span class="num">4</span><span class="copy"><strong data-step-name="3">Remarks</strong><span data-key="navRemarksSub">Suggestions and consent</span></span></button>
         <button class="step-link" data-nav="4"><span class="num">5</span><span class="copy"><strong data-step-name="4">Review</strong><span data-key="navReviewSub">Confirm and submit</span></span></button>
       </nav>
@@ -665,6 +700,25 @@
 
         <div class="form-body">
           <form id="surveyForm" novalidate>
+            <section class="school-identity-card" aria-labelledby="schoolIdentityTitle">
+              <div class="school-identity-head">
+                <div class="school-identity-lock" aria-hidden="true">&#128274;</div>
+                <div>
+                  <strong id="schoolIdentityTitle" data-key="schoolIdentityTitle">School receiving this response</strong>
+                  <p data-key="schoolIdentityNote">This information is supplied by the scanned QR code and verified by the Control Center. It cannot be changed here.</p>
+                </div>
+              </div>
+              <div class="school-identity-grid">
+                <div class="school-identity-field">
+                  <label for="verifiedSchoolId" data-key="schoolIdLabel">School ID</label>
+                  <input id="verifiedSchoolId" type="text" readonly tabindex="-1" aria-readonly="true">
+                </div>
+                <div class="school-identity-field">
+                  <label for="verifiedSchoolName" data-key="schoolNameLabel">School name</label>
+                  <input id="verifiedSchoolName" type="text" readonly tabindex="-1" aria-readonly="true">
+                </div>
+              </div>
+            </section>
             <section class="step-section" data-step="0">
               <div class="info-banner">
                 <div class="icon">ⓘ</div>
@@ -846,7 +900,8 @@
       en: {
         langName: "English", brandTitle: "School · Client Satisfaction Survey", surveyOnline: "Survey Online", schoolSurveyForm: "School CSM Survey Form",
         sideHeading: "Your feedback helps us improve.", sideDescription: "Please rate the service you received from the school. The survey usually takes three to five minutes.", localAddress: "Local survey address",
-        navProfileSub: "Basic transaction information", navCCSub: "Awareness and usefulness", navSQDSub: "Nine quality statements", navRemarksSub: "Suggestions and consent", navReviewSub: "Confirm and submit",
+        verifiedQrFor: "Verified QR code for", schoolIdentityTitle: "School receiving this response", schoolIdentityNote: "This information is supplied by the scanned QR code and verified by the Control Center. It cannot be changed here.", schoolIdLabel: "School ID", schoolNameLabel: "School name",
+        navProfileSub: "Basic transaction information", navCCSub: "Awareness and usefulness", navSQDSub: "Service quality statements", navRemarksSub: "Suggestions and consent", navReviewSub: "Confirm and submit",
         privacyText: "Responses are stored only on the school’s local server. Personally identifying fields are optional.",
         profileInfoTitle: "No sign-in is required.", profileInfoText: "This form follows the school’s onsite Client Satisfaction Measurement questionnaire. Fields marked optional may be left blank.",
         clientType: "Client type", requiredSelectOne: "Required · Select one", citizen: "Citizen", business: "Business", government: "Government", age: "Age", optional: "Optional", agePlaceholder: "e.g., 36", sex: "Sex", male: "Male", female: "Female", region: "Region of residence", regionPlaceholder: "Enter region",
@@ -867,7 +922,8 @@
       fil: {
         langName: "Tagalog / Filipino", brandTitle: "Paaralan · Sarbey sa Kasiyahan ng Kliyente", surveyOnline: "Bukas ang Sarbey", schoolSurveyForm: "Pormularyo ng CSM ng Paaralan",
         sideHeading: "Nakakatulong ang inyong puna upang mapabuti ang aming serbisyo.", sideDescription: "Paki-rate ang serbisyong natanggap ninyo mula sa paaralan. Karaniwang tumatagal nang tatlo hanggang limang minuto ang sarbey.", localAddress: "Lokal na address ng sarbey",
-        navProfileSub: "Pangunahing detalye ng transaksyon", navCCSub: "Kaalaman at pakinabang", navSQDSub: "Siyam na pahayag sa kalidad", navRemarksSub: "Mungkahi at pahintulot", navReviewSub: "Suriin at isumite",
+        verifiedQrFor: "Beripikadong QR code para sa", schoolIdentityTitle: "Paaralang tatanggap ng sagot na ito", schoolIdentityNote: "Ang impormasyong ito ay mula sa na-scan na QR code at beripikado ng Control Center. Hindi ito mababago rito.", schoolIdLabel: "School ID", schoolNameLabel: "Pangalan ng paaralan",
+        navProfileSub: "Pangunahing detalye ng transaksyon", navCCSub: "Kaalaman at pakinabang", navSQDSub: "Mga pahayag sa kalidad ng serbisyo", navRemarksSub: "Mungkahi at pahintulot", navReviewSub: "Suriin at isumite",
         privacyText: "Sa lokal na server lamang ng paaralan iniimbak ang mga sagot. Opsyonal ang mga impormasyong maaaring kumilala sa respondent.",
         profileInfoTitle: "Hindi kailangan ang pag-sign in.", profileInfoText: "Ang pormularyong ito ay nakabatay sa onsite Client Satisfaction Measurement questionnaire ng paaralan. Maaaring iwanang blangko ang mga patlang na may markang opsyonal.",
         clientType: "Uri ng kliyente", requiredSelectOne: "Kailangan · Pumili ng isa", citizen: "Mamamayan", business: "Negosyo", government: "Pamahalaan", age: "Edad", optional: "Opsyonal", agePlaceholder: "hal., 36", sex: "Kasarian", male: "Lalaki", female: "Babae", region: "Rehiyong tinitirhan", regionPlaceholder: "Ilagay ang rehiyon",
@@ -888,7 +944,8 @@
       war: {
         langName: "Waray-Waray", brandTitle: "Eskwelahan · Surbey ha Katagbaw han Kliyente", surveyOnline: "Abri an Surbey", schoolSurveyForm: "Porma han CSM han Eskwelahan",
         sideHeading: "An imo komento nabulig ha amon pagpaopay.", sideDescription: "Alayon pag-rate han serbisyo nga imo nakarawat tikang ha eskwelahan. Kasagaran natatapos an surbey ha sulod hin tulo tubtob lima ka minuto.", localAddress: "Lokal nga address han surbey",
-        navProfileSub: "Panguna nga detalye han transaksyon", navCCSub: "Paghibaro ngan kapulsanan", navSQDSub: "Siyam nga pahayag ha kalidad", navRemarksSub: "Suhestyon ngan pagtugot", navReviewSub: "Repasuha ngan isumite",
+        verifiedQrFor: "Beripikado nga QR code para ha", schoolIdentityTitle: "Eskwelahan nga makarawat hini nga baton", schoolIdentityNote: "Ini nga impormasyon tikang ha gin-scan nga QR code ngan ginberipika han Control Center. Diri ini mababag-o dinhi.", schoolIdLabel: "School ID", schoolNameLabel: "Ngaran han eskwelahan",
+        navProfileSub: "Panguna nga detalye han transaksyon", navCCSub: "Paghibaro ngan kapulsanan", navSQDSub: "Mga pahayag ha kalidad han serbisyo", navRemarksSub: "Suhestyon ngan pagtugot", navReviewSub: "Repasuha ngan isumite",
         privacyText: "Ha lokal la nga server han eskwelahan gintitipigan an mga baton. Opsyonal an impormasyon nga mahimo makakilala han respondent.",
         profileInfoTitle: "Diri kinahanglan an pag-sign in.", profileInfoText: "Ini nga porma nasunod ha onsite Client Satisfaction Measurement questionnaire han eskwelahan. Mahimo bayaan nga waray sulod an mga field nga may marka nga opsyonal.",
         clientType: "Klase han kliyente", requiredSelectOne: "Kinahanglan · Pagpili hin usa", citizen: "Sibilyan", business: "Negosyo", government: "Gobyerno", age: "Edad", optional: "Opsyonal", agePlaceholder: "pananglitan, 36", sex: "Sekso", male: "Lalaki", female: "Babaye", region: "Rehiyon nga gin-uukyan", regionPlaceholder: "Ibutang an rehiyon",
@@ -931,7 +988,6 @@
         ["SQD2","Reliability","The office followed the transaction’s requirements and steps based on the information provided."],
         ["SQD3","Access and Facilities","The steps, including payment, that I needed to do for my transaction were easy and simple."],
         ["SQD4","Communication","I easily found information about my transaction from the office or its website."],
-        ["SQD5","Costs","I paid a reasonable amount of fees for my transaction."],
         ["SQD6","Integrity","I feel the office was fair to everyone, or ‘walang palakasan,’ during my transaction."],
         ["SQD7","Assurance","I was treated courteously by the staff, and the staff was helpful when I asked for assistance."],
         ["SQD8","Outcome","I got what I needed from the government office, or a denial of my request was sufficiently explained to me."]
@@ -942,7 +998,6 @@
         ["SQD2","Pagiging Maaasahan","Sinunod ng tanggapan ang mga kinakailangan at hakbang ng transaksyon batay sa impormasyong ibinigay."],
         ["SQD3","Access at Pasilidad","Madali at simple ang mga hakbang, kabilang ang pagbabayad, na kailangan kong gawin para sa aking transaksyon."],
         ["SQD4","Komunikasyon","Madali kong nakita ang impormasyon tungkol sa aking transaksyon mula sa tanggapan o sa website nito."],
-        ["SQD5","Gastos","Nagbayad ako ng makatwirang halaga para sa transaksyon."],
         ["SQD6","Integridad","Sa palagay ko ay patas ang tanggapan sa lahat, o ‘walang palakasan,’ sa aking transaksyon."],
         ["SQD7","Katiyakan","Magalang ang pagtrato sa akin ng mga kawani at matulungin sila nang humingi ako ng tulong."],
         ["SQD8","Kinalabasan","Nakuha ko ang kailangan ko mula sa tanggapan, o sapat na naipaliwanag sa akin ang pagtanggi sa aking kahilingan."]
@@ -953,7 +1008,6 @@
         ["SQD2","Pagkasasarigan","Ginsunod han opisina an mga kinahanglanon ngan pitad han transaksyon sumala han impormasyon nga iginhatag."],
         ["SQD3","Access ngan Pasilidad","Masayon ngan simple an mga pitad, upod an pagbayad, nga kinahanglan ko buhaton para han akon transaksyon."],
         ["SQD4","Komunikasyon","Masayon ko nabilngan an impormasyon mahitungod han akon transaksyon tikang ha opisina o website hito."],
-        ["SQD5","Gastos","Nagbayad ako hin naaayon nga kantidad para han transaksyon."],
         ["SQD6","Integridad","Para ha akon, patas an opisina ha ngatanan, o ‘waray palakasan,’ durante han akon transaksyon."],
         ["SQD7","Kasarigan","Matinalahuron an pagtratar ha akon han mga empleyado ngan mabinuligon hira han nangaro ako hin bulig."],
         ["SQD8","Resulta","Nakarawat ko an akon ginkinahanglan tikang ha opisina, o an pagdumiri han akon hangyo iginsaysay ha akon hin igo."]
@@ -1086,6 +1140,16 @@
 
     function t(key) { return languages[selectedLanguage][key] ?? languages.en[key] ?? key; }
 
+    function renderVerifiedSchoolIdentity() {
+      if (!serverConfig) return;
+      const schoolName = String(serverConfig.school_name || "School").trim() || "School";
+      const schoolId = String(serverConfig.school_id || "").trim();
+      document.getElementById("verifiedSchoolName").value = schoolName;
+      document.getElementById("verifiedSchoolId").value = schoolId || t("notProvided");
+      document.getElementById("languageSchoolName").textContent = schoolName;
+      document.getElementById("languageSchoolId").textContent = `${t("schoolIdLabel")}: ${schoolId || t("notProvided")}`;
+    }
+
     function showToast(message) {
       toast.textContent = message;
       toast.classList.add("show");
@@ -1118,6 +1182,7 @@
         const surveyLabel = selectedLanguage === "fil" ? "Sarbey sa Kasiyahan ng Kliyente" : selectedLanguage === "war" ? "Surbey han Katagbaw han Kliyente" : "Client Satisfaction Survey";
         document.querySelector(".brand-title").textContent = `${school} · ${surveyLabel}`;
         document.title = `${school} · ${surveyLabel}`;
+        renderVerifiedSchoolIdentity();
       }
       renderRatingLegend();
       renderSqd();
@@ -1452,6 +1517,7 @@
         if (privacyText && serverConfig.privacy_notice) privacyText.textContent = serverConfig.privacy_notice;
         scannerLaunch.hidden = !serverConfig.scanner_remote_enabled;
         const school = serverConfig.school_name || "School";
+        renderVerifiedSchoolIdentity();
         document.querySelectorAll(".brand-title").forEach(el => el.textContent = `${school} · Client Satisfaction Survey`);
         document.getElementById("surveyFooterSchoolName").textContent = school;
         const schoolDetails = [serverConfig.school_id ? `School ID ${serverConfig.school_id}` : "", serverConfig.school_district || "", serverConfig.school_division || ""].filter(Boolean).join(" · ");

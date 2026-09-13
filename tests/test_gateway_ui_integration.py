@@ -257,6 +257,54 @@ class GatewayControllerIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(credentials.tunnel, "previous-token")
 
+    def test_direct_hostname_change_preserves_tunnel_credential(self) -> None:
+        local = {
+            "school_id": "123456",
+            "preferred_port": 8080,
+            "server_running": False,
+        }
+        store = _StateStore(
+            {
+                "installation_id": "11111111-1111-4111-8111-111111111111",
+                "gateway_status": "disconnected",
+                "authorization_status": "ACTIVE",
+                "registration": {
+                    "school_id": "123456",
+                    "registration_id": "direct-worker-vpc-22222222-2222-4222-8222-222222222222",
+                    "public_hostname": "123456.old-district.workers.dev",
+                    "tunnel_id": "22222222-2222-4222-8222-222222222222",
+                    "provisioning_state": "direct_worker_vpc",
+                },
+            }
+        )
+        credentials = _Credentials()
+        credentials.tunnel = "existing-token"
+        controller = InternetGatewayController(
+            Path.cwd(),
+            local_settings_provider=lambda: dict(local),
+            state_store=store,
+            credentials=credentials,
+            tunnel=_Tunnel(),
+            public_health_probe=lambda _host: {},
+        )
+
+        state = controller.update_direct_worker_hostname(
+            public_host="123456.motiong-district-csm-survey.workers.dev",
+            tunnel_id="22222222-2222-4222-8222-222222222222",
+            beta_acknowledged=True,
+        )
+
+        self.assertEqual(credentials.tunnel, "existing-token")
+        self.assertEqual(
+            store.saved["public_hostname"],
+            "123456.motiong-district-csm-survey.workers.dev",
+        )
+        self.assertEqual(
+            state["public_host"],
+            "123456.motiong-district-csm-survey.workers.dev",
+        )
+        self.assertFalse(controller.authorization_verified_this_session)
+
     def test_direct_configuration_rejects_wrong_school_host_and_port(self) -> None:
         local = {
             "school_id": "123456",
@@ -1139,6 +1187,35 @@ class GatewayDesktopUiTests(unittest.TestCase):
         self.assertEqual(requests[0]["tunnel_token"], "t" * 64)
         self.assertTrue(requests[0]["beta_acknowledged"])
         self.assertEqual(overlay.direct_tunnel_token.text(), "")
+        parent.deleteLater()
+
+    def test_setup_overlay_allows_hostname_only_district_migration(self) -> None:
+        parent = QWidget()
+        overlay = InternetGatewaySetupOverlay(parent)
+        overlay.configure(
+            school_id="123456",
+            school_name="Test School",
+            provider_available=False,
+            deployment_mode="direct_worker_vpc",
+            public_host="123456.old-district.workers.dev",
+            tunnel_id="22222222-2222-4222-8222-222222222222",
+        )
+        requests = []
+        overlay.direct_configuration_requested.connect(requests.append)
+        overlay.direct_public_host.setText(
+            "123456.motiong-district-csm-survey.workers.dev"
+        )
+        overlay.direct_beta_acknowledgement.setChecked(True)
+        self.assertTrue(overlay.direct_save_button.isEnabled())
+        overlay.direct_save_button.click()
+
+        self.assertEqual(len(requests), 1)
+        self.assertTrue(requests[0]["preserve_tunnel_credential"])
+        self.assertEqual(requests[0]["tunnel_token"], "")
+        self.assertEqual(
+            requests[0]["public_host"],
+            "123456.motiong-district-csm-survey.workers.dev",
+        )
         parent.deleteLater()
 
     def test_setup_overlay_keeps_direct_connector_fields_separate_when_short(self) -> None:
