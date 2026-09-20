@@ -8,8 +8,6 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
-from PIL import Image
-
 from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.storage.file_safety import (
     InterProcessRLock,
@@ -288,12 +286,27 @@ def school_registration_errors(
                     logo_path.is_file()
                     and 0 < logo_path.stat().st_size <= 12 * 1024 * 1024
                 )
-                if valid_file:
-                    with Image.open(logo_path) as image:
+            except OSError:
+                valid_file = False
+            if valid_file:
+                try:
+                    # Pillow belongs to the desktop application, not the independently
+                    # deployed registration service. Import it only when a logo is
+                    # actually being validated so gateway modules remain lightweight.
+                    from PIL import Image as PillowImage
+
+                    with PillowImage.open(logo_path) as image:
                         valid_file = image.format in {"PNG", "JPEG", "BMP", "WEBP"}
                         image.verify()
-            except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
-                valid_file = False
+                except ImportError:
+                    valid_file = False
+                except (
+                    OSError,
+                    SyntaxError,
+                    ValueError,
+                    PillowImage.DecompressionBombError,
+                ):
+                    valid_file = False
             if not valid_file:
                 errors["school_logo_path"] = (
                     "The saved School Seal / Logo is missing or invalid. Upload it again."
