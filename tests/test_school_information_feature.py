@@ -25,6 +25,7 @@ class SchoolInformationFeatureTests(unittest.TestCase):
                     "school_email": "school@example.test",
                     "school_contact": "09123456789",
                     "school_head": "School Head",
+                    "school_administrator": "School Administrator",
                     "csm_focal_person": "CSM Operator",
                     "school_logo_path": "data/csm_survey/school_logo.png",
                 }
@@ -41,6 +42,7 @@ class SchoolInformationFeatureTests(unittest.TestCase):
                 "school_email",
                 "school_contact",
                 "school_head",
+                "school_administrator",
                 "csm_focal_person",
                 "school_logo_path",
             ):
@@ -60,6 +62,9 @@ class SchoolInformationFeatureTests(unittest.TestCase):
         self.assertIn("footer_mosslab_logo", main_window)
         self.assertIn("footer_mosslab_seal", main_window)
         self.assertIn("class SchoolInformationBoard", school_board)
+        self.assertIn("School Administrator", school_board)
+        self.assertIn("CSM Coordinator", school_board)
+        self.assertIn("Save and continue", school_board)
         self.assertIn("Upload or replace the school logo", school_board)
         self.assertIn('class="survey-brand-footer"', survey_html)
         self.assertIn('id="surveySchoolLogo"', survey_html)

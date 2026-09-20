@@ -46,6 +46,7 @@ class WorkspaceOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._return_focus: QWidget | None = None
+        self._dismissible = True
         self.hide()
 
         self.scrim = ClickScrim(self)
@@ -130,6 +131,9 @@ class WorkspaceOverlay(QWidget):
     def close_overlay(self) -> None:
         if not self.isVisible():
             return
+        if not self._dismissible:
+            self.content.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+            return
         return_focus = self._return_focus
         self._return_focus = None
         self.hide()
@@ -147,6 +151,17 @@ class WorkspaceOverlay(QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def set_dismissible(self, dismissible: bool) -> None:
+        """Control whether close, Escape, and the surrounding scrim may dismiss it."""
+
+        self._dismissible = bool(dismissible)
+        self.close_button.setVisible(self._dismissible)
+        self.close_button.setEnabled(self._dismissible)
+
+    @property
+    def dismissible(self) -> bool:
+        return self._dismissible
 
     def _position_children(self) -> None:
         self.scrim.setGeometry(self.rect())

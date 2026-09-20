@@ -7,7 +7,9 @@ part of a School CSM backup or Server and Data migration package.
 
 from __future__ import annotations
 
-from typing import Any
+import hashlib
+import json
+from typing import Any, Mapping
 
 from school_csm_control_center.storage.windows_credential_store import (
     WindowsCredentialManager,
@@ -23,10 +25,14 @@ GATEWAY_INSTALLATION_SECRET_TARGET = (
 GATEWAY_DEVICE_PRIVATE_KEY_TARGET = (
     "MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey"
 )
+GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET = (
+    "MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt"
+)
 GATEWAY_CREDENTIAL_TARGETS = (
     GATEWAY_TUNNEL_CREDENTIAL_TARGET,
     GATEWAY_INSTALLATION_SECRET_TARGET,
     GATEWAY_DEVICE_PRIVATE_KEY_TARGET,
+    GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET,
 )
 
 
@@ -36,6 +42,7 @@ class GatewayCredentialStore:
     tunnel_target = GATEWAY_TUNNEL_CREDENTIAL_TARGET
     installation_secret_target = GATEWAY_INSTALLATION_SECRET_TARGET
     device_private_key_target = GATEWAY_DEVICE_PRIVATE_KEY_TARGET
+    deferred_transfer_receipt_target = GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET
 
     def __init__(self, manager: Any | None = None) -> None:
         self._manager = manager
@@ -67,6 +74,53 @@ class GatewayCredentialStore:
     def delete_device_private_key(self) -> bool:
         return bool(self._backend().delete(self.device_private_key_target))
 
+    @staticmethod
+    def deferred_transfer_receipt_digest(receipt: Mapping[str, Any]) -> str:
+        serialized = json.dumps(
+            dict(receipt),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    def save_deferred_transfer_receipt(self, receipt: Mapping[str, Any]) -> str:
+        """Protect a minimal one-time transfer receipt in Credential Manager."""
+
+        if not isinstance(receipt, Mapping) or not receipt:
+            raise ValueError("Deferred transfer receipt cannot be empty.")
+        serialized = json.dumps(
+            dict(receipt),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        if len(serialized.encode("utf-16-le")) > 2400:
+            raise ValueError("Deferred transfer receipt exceeds the protected storage limit.")
+        self._save(
+            self.deferred_transfer_receipt_target,
+            serialized,
+            "Deferred transfer receipt",
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    def load_deferred_transfer_receipt(self) -> dict[str, Any] | None:
+        serialized = self._load(self.deferred_transfer_receipt_target)
+        if serialized is None:
+            return None
+        try:
+            value = json.loads(serialized)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Deferred transfer receipt is invalid.") from exc
+        if not isinstance(value, dict):
+            raise ValueError("Deferred transfer receipt is invalid.")
+        return value
+
+    def delete_deferred_transfer_receipt(self) -> bool:
+        return bool(self._backend().delete(self.deferred_transfer_receipt_target))
+
     def exists(self) -> dict[str, bool]:
         """Return presence flags without exposing any secret value."""
 
@@ -74,6 +128,9 @@ class GatewayCredentialStore:
             "tunnel_credential": self.load_tunnel_credential() is not None,
             "installation_secret": self.load_installation_secret() is not None,
             "device_private_key": self.load_device_private_key() is not None,
+            "deferred_transfer_receipt": (
+                self._load(self.deferred_transfer_receipt_target) is not None
+            ),
         }
 
     def delete_all(self) -> dict[str, bool]:
@@ -84,6 +141,9 @@ class GatewayCredentialStore:
             "tunnel_credential": bool(backend.delete(self.tunnel_target)),
             "installation_secret": bool(backend.delete(self.installation_secret_target)),
             "device_private_key": bool(backend.delete(self.device_private_key_target)),
+            "deferred_transfer_receipt": bool(
+                backend.delete(self.deferred_transfer_receipt_target)
+            ),
         }
 
     def _save(self, target: str, secret: str, label: str) -> None:

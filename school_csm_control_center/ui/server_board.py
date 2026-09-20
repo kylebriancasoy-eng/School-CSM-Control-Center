@@ -27,6 +27,9 @@ from school_csm_control_center.ui.controls import NoWheelComboBox, NoWheelDateEd
 from school_csm_control_center.ui.overlays import OverlayPrompt
 from school_csm_control_center.ui.internet_gateway_panel import InternetGatewayPanel
 from school_csm_control_center.ui.widgets import TooltipIconButton
+from school_csm_control_center.storage.control_center_settings import (
+    school_registration_complete,
+)
 from school_csm_control_center.web_server.controller import SurveyServerController
 
 
@@ -450,6 +453,14 @@ class SurveyServerBoard(QWidget):
         self._apply_styles()
 
     def start_server(self) -> None:
+        if not school_registration_complete(
+            self.controller.settings(),
+            data_root=self.controller.settings_store.project_root,
+        ):
+            self.status_detail.setText(
+                "Complete School Registration before starting the Survey Server."
+            )
+            return
         self.apply_settings(on_success=self._start_server_after_settings)
 
     def _start_server_after_settings(self) -> None:

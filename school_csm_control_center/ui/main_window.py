@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 from datetime import datetime
 import getpass
+import hmac
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -45,6 +47,10 @@ from school_csm_control_center.storage.narrative_report_store import NarrativeRe
 from school_csm_control_center.storage.print_history_store import PrintHistoryStore
 from school_csm_control_center.storage.survey_store import SurveyStore
 from school_csm_control_center.storage.gateway_credentials import GatewayCredentialStore
+from school_csm_control_center.storage.file_safety import atomic_write_json
+from school_csm_control_center.storage.control_center_settings import (
+    school_registration_complete,
+)
 from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.dashboard_board import DashboardBoard
 from school_csm_control_center.ui.dashboard_print_overlay import DashboardPrintOverlay
@@ -91,6 +97,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._report_startup(22, "Opening the response database…")
         self.project_root = Path(project_root)
         self.data_root = storage_root_for(self.project_root)
+        self._deferred_gateway_transfer_marker = (
+            self.data_root / "migration" / "deferred-authority-transfer.json"
+        )
         self.store = SurveyStore(self.project_root)
         self.print_store = PrintHistoryStore(self.project_root)
         self.snapshot_store = DashboardSnapshotStore(self.project_root)
@@ -213,12 +222,13 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             data_root=self.data_root,
             migration_service=gateway_migration,
         )
+        self.gateway_credentials = GatewayCredentialStore()
         self.gateway_controller = InternetGatewayController(
             self.project_root,
             local_settings_provider=self.server_controller.settings,
             client=gateway_client,
             tunnel=CloudflaredTunnel(self.project_root),
-            credentials=GatewayCredentialStore(),
+            credentials=self.gateway_credentials,
             migration=gateway_migration,
             backup=gateway_backup,
             provider_config=self.gateway_provider_config,
@@ -239,8 +249,17 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.school_information.set_registered_school_id(
             str(self.gateway_controller.state().get("school_id") or "")
         )
+        initial_school_settings = self.server_controller.settings_store.load()
+        self._registration_complete = school_registration_complete(
+            initial_school_settings,
+            data_root=self.data_root,
+        )
+        self.school_information.set_registration_required(
+            not self._registration_complete
+        )
         self.board_stack.addWidget(self.dashboard)
         self.board_stack.addWidget(self.history)
+        self._apply_registration_gate_state()
         shell_layout.addWidget(self.board_stack, 1)
         window_layout.addWidget(self.shell, 1)
         self.branding_footer = self._build_branding_footer()
@@ -264,8 +283,11 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.school_workspace_overlay = WorkspaceOverlay(
             self.shell,
             self.school_information,
-            title="School Information",
-            subtitle="Maintain the school identity used throughout the Control Center and survey form.",
+            title="School Registration and Information",
+            subtitle="Complete or maintain the required school identity, personnel, and contact information.",
+        )
+        self.school_workspace_overlay.set_dismissible(
+            self._registration_complete
         )
         self.mrs_workspace_overlay.closed.connect(
             lambda: self.mrs_nav.setChecked(False)
@@ -323,6 +345,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._restart_server_after_gateway_backup = False
         self._reconnect_gateway_after_backup = False
         self._pending_gateway_transfer_mode = ""
+        self._deferred_gateway_transfer_request = (
+            self._load_deferred_gateway_transfer_request()
+        )
         self._background_startup_enabled = bool(
             self.server_controller.settings().get(
                 "background_server_startup_enabled", False
@@ -372,11 +397,16 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                     timeout_ms=7000,
                 ),
             )
-        initial_settings = self.server_controller.settings_store.load()
-        if not str(initial_settings.get("school_name") or "").strip() or not str(
-            initial_settings.get("school_id") or ""
-        ).strip():
-            QTimer.singleShot(850, self._open_first_run_school_setup)
+        if not self._registration_complete:
+            self._open_first_run_school_setup()
+        elif self._deferred_gateway_transfer_request is not None:
+            deferred = dict(self._deferred_gateway_transfer_request)
+            QTimer.singleShot(
+                0,
+                lambda payload=deferred: self._resume_deferred_gateway_transfer(
+                    payload
+                ),
+            )
 
     def _report_startup(self, value: int, message: str) -> None:
         callback = getattr(self, "_startup_progress", None)
@@ -384,8 +414,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             callback(value, message)
 
     def _connect_actions(self) -> None:
-        self.dashboard.add_requested.connect(self.drawer.open_for_add)
-        self.dashboard.print_requested.connect(self.print_overlay.open_overlay)
+        self.dashboard.add_requested.connect(self._open_add_survey)
+        self.dashboard.print_requested.connect(self._open_dashboard_print)
         self.dashboard.export_requested.connect(lambda: self.export_records(self.dashboard.current_filtered_records()))
         self.dashboard.methodology_requested.connect(self.show_methodology)
         self.history.view_requested.connect(self.view_record)
@@ -527,8 +557,215 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         )
         self.retirement_overlay.exit_requested.connect(self.exit_application)
 
+    def _registration_gate_allows_action(self) -> bool:
+        """Keep keyboard shortcuts from bypassing mandatory registration."""
+
+        if self._registration_complete:
+            return True
+        self._open_first_run_school_setup()
+        self.school_workspace_overlay.raise_()
+        self.toast.show_message(
+            "Complete School Registration before using Control Center actions.",
+            kind="warning",
+            timeout_ms=6500,
+        )
+        return False
+
+    @staticmethod
+    def _normalize_deferred_gateway_transfer_request(
+        request: object,
+    ) -> dict[str, Any] | None:
+        """Fail closed on any altered or stale-shaped deferred receipt."""
+
+        if not isinstance(request, dict) or set(request) != {
+            "transfer_mode",
+            "data_validation",
+        }:
+            return None
+        transfer_mode = str(request.get("transfer_mode") or "").casefold()
+        if transfer_mode not in {"server_and_data", "backup_assisted"}:
+            return None
+        raw_validation = request.get("data_validation")
+        if not isinstance(raw_validation, dict):
+            return None
+        common_fields = {
+            "verified",
+            "transaction_id",
+            "manifest_sha256",
+            "active_tree_sha256",
+            "record_counts",
+        }
+        backup_fields = {
+            "source_kind",
+            "backup_id",
+            "backup_manifest_sha256",
+        }
+        expected_fields = common_fields | (
+            backup_fields if transfer_mode == "backup_assisted" else set()
+        )
+        if set(raw_validation) != expected_fields or raw_validation.get("verified") is not True:
+            return None
+        transaction_id = str(raw_validation.get("transaction_id") or "").strip()
+        manifest_sha256 = str(raw_validation.get("manifest_sha256") or "").casefold()
+        active_tree_sha256 = str(
+            raw_validation.get("active_tree_sha256") or ""
+        ).casefold()
+        hexadecimal = set("0123456789abcdef")
+        if (
+            not transaction_id
+            or len(transaction_id) > 200
+            or len(manifest_sha256) != 64
+            or set(manifest_sha256) - hexadecimal
+            or len(active_tree_sha256) != 64
+            or set(active_tree_sha256) - hexadecimal
+        ):
+            return None
+        counts = raw_validation.get("record_counts")
+        if not isinstance(counts, dict) or any(
+            not isinstance(key, str)
+            or not key
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            for key, value in counts.items()
+        ):
+            return None
+        validation: dict[str, Any] = {
+            "verified": True,
+            "transaction_id": transaction_id,
+            "manifest_sha256": manifest_sha256,
+            "active_tree_sha256": active_tree_sha256,
+            "record_counts": dict(counts),
+        }
+        if transfer_mode == "backup_assisted":
+            backup_id = str(raw_validation.get("backup_id") or "").strip()
+            backup_manifest_sha256 = str(
+                raw_validation.get("backup_manifest_sha256") or ""
+            ).casefold()
+            if (
+                raw_validation.get("source_kind") != "portable_backup"
+                or not backup_id
+                or len(backup_id) > 200
+                or len(backup_manifest_sha256) != 64
+                or set(backup_manifest_sha256) - hexadecimal
+            ):
+                return None
+            validation.update(
+                source_kind="portable_backup",
+                backup_id=backup_id,
+                backup_manifest_sha256=backup_manifest_sha256,
+            )
+        return {
+            "transfer_mode": transfer_mode,
+            "data_validation": validation,
+        }
+
+    def _persist_deferred_gateway_transfer_request(self, request: object) -> bool:
+        normalized = self._normalize_deferred_gateway_transfer_request(request)
+        if normalized is None:
+            return False
+        try:
+            digest = self.gateway_credentials.save_deferred_transfer_receipt(
+                normalized
+            )
+            atomic_write_json(
+                self._deferred_gateway_transfer_marker,
+                {
+                    "file_type": "School CSM Deferred Authority Transfer",
+                    "schema_version": 1,
+                    "credential_sha256": digest,
+                },
+                allow_nan=False,
+            )
+        except Exception:
+            try:
+                self.gateway_credentials.delete_deferred_transfer_receipt()
+            except Exception:
+                pass
+            return False
+        self._deferred_gateway_transfer_request = normalized
+        return True
+
+    def _load_deferred_gateway_transfer_request(self) -> dict[str, Any] | None:
+        marker = self._deferred_gateway_transfer_marker
+        try:
+            if (
+                not marker.is_file()
+                or marker.is_symlink()
+                or marker.stat().st_size > 4096
+            ):
+                return None
+            marker_document = json.loads(marker.read_text(encoding="utf-8"))
+            if not isinstance(marker_document, dict) or set(marker_document) != {
+                "file_type",
+                "schema_version",
+                "credential_sha256",
+            }:
+                return None
+            if (
+                marker_document.get("file_type")
+                != "School CSM Deferred Authority Transfer"
+                or marker_document.get("schema_version") != 1
+            ):
+                return None
+            expected_digest = str(
+                marker_document.get("credential_sha256") or ""
+            ).casefold()
+            if len(expected_digest) != 64:
+                return None
+            protected = self.gateway_credentials.load_deferred_transfer_receipt()
+            normalized = self._normalize_deferred_gateway_transfer_request(protected)
+            if normalized is None:
+                return None
+            actual_digest = self.gateway_credentials.deferred_transfer_receipt_digest(
+                normalized
+            )
+            if not hmac.compare_digest(expected_digest, actual_digest):
+                return None
+            return normalized
+        except (OSError, TypeError, ValueError):
+            return None
+
+    def _clear_deferred_gateway_transfer_request(self) -> None:
+        try:
+            self.gateway_credentials.delete_deferred_transfer_receipt()
+        except Exception:
+            return
+        try:
+            self._deferred_gateway_transfer_marker.unlink(missing_ok=True)
+        except OSError:
+            return
+        self._deferred_gateway_transfer_request = None
+
+    def _apply_registration_gate_state(self) -> None:
+        """Disable covered workspace controls until registration is complete."""
+
+        enabled = bool(self._registration_complete)
+        self.board_stack.setEnabled(enabled)
+        for button in (
+            self.dashboard_nav,
+            self.history_nav,
+            self.mrs_nav,
+            self.server_nav,
+        ):
+            button.setEnabled(enabled)
+        self.school_info_nav.setEnabled(True)
+
+    def _open_add_survey(self) -> None:
+        if self._registration_gate_allows_action():
+            self.drawer.open_for_add()
+
+    def _open_dashboard_print(self) -> None:
+        if self._registration_gate_allows_action():
+            self.print_overlay.open_overlay()
+
     def show_board(self, board: str) -> None:
         target = str(board or "dashboard").casefold()
+        if (
+            not getattr(self, "_registration_complete", True)
+            and target not in {"school", "school_information", "school-info"}
+        ):
+            target = "school_information"
         utility_target = None
         utility_button = None
         if target in {"mrs", "mrs_printing", "mrs-printing"}:
@@ -540,6 +777,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         elif target in {"school", "school_information", "school-info"}:
             utility_target = self.school_workspace_overlay
             utility_button = self.school_info_nav
+            if self._registration_complete:
+                self.school_information.load_settings()
+                self.school_information.set_registration_required(False)
 
         utility_overlays = (
             self.mrs_workspace_overlay,
@@ -660,11 +900,44 @@ class SchoolCSMControlCenterWindow(QMainWindow):
 
     def _school_information_saved(self, settings: object) -> None:
         saved = dict(settings) if isinstance(settings, dict) else self.server_controller.settings_store.load()
+        self._registration_complete = school_registration_complete(
+            saved,
+            data_root=self.data_root,
+        )
+        self.school_information.set_registration_required(
+            not self._registration_complete
+        )
+        self.school_workspace_overlay.set_dismissible(
+            self._registration_complete
+        )
+        self._apply_registration_gate_state()
         self.server_controller.reload_persistent_settings()
         self.gateway_controller.refresh_local_settings()
         self._refresh_branding_footer(saved)
         self.mrs_printing.refresh()
-        self.toast.show_message("School information saved. Control Center and Survey Form branding updated.", kind="success")
+        self._apply_background_lifecycle()
+        if self._registration_complete:
+            self.school_workspace_overlay.close_overlay()
+            self.show_board("dashboard")
+            self.toast.show_message(
+                "School registration complete. The Control Center and Survey Form are ready.",
+                kind="success",
+                timeout_ms=6500,
+            )
+            if self._deferred_gateway_transfer_request is not None:
+                deferred = dict(self._deferred_gateway_transfer_request)
+                QTimer.singleShot(
+                    0,
+                    lambda payload=deferred: self._resume_deferred_gateway_transfer(
+                        payload
+                    ),
+                )
+        else:
+            self.toast.show_message(
+                "School registration is still incomplete.",
+                kind="warning",
+                timeout_ms=6500,
+            )
 
     def _open_gateway_setup(self) -> None:
         local = self.server_controller.settings()
@@ -863,6 +1136,37 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             cutover_locked=True,
         )
 
+    def _resume_deferred_gateway_transfer(self, request: object) -> None:
+        """Resume authority transfer after required restored profile fields are added."""
+
+        normalized = self._normalize_deferred_gateway_transfer_request(request)
+        if normalized is None:
+            return
+        local = self.server_controller.settings()
+        state = self.gateway_controller.state()
+        try:
+            installation_id = self.gateway_controller.ensure_installation_id()
+        except Exception as exc:
+            self.toast.show_message(str(exc), kind="error", timeout_ms=7000)
+            return
+        self._pending_gateway_transfer_mode = str(normalized["transfer_mode"])
+        self.gateway_transfer_overlay.configure(
+            school_id=str(state.get("school_id") or local.get("school_id") or ""),
+            school_name=str(local.get("school_name") or ""),
+            installation_id=installation_id,
+        )
+        if normalized["transfer_mode"] == "backup_assisted":
+            self.gateway_transfer_overlay.backup_assisted.setChecked(True)
+        else:
+            self.gateway_transfer_overlay.server_and_data.setChecked(True)
+        self.gateway_transfer_overlay.set_data_validation_result(
+            dict(normalized["data_validation"])
+        )
+        self.gateway_transfer_overlay.open_overlay(
+            self.server_board.internet_gateway.transfer_button
+        )
+        self._open_gateway_transfer_page(normalized)
+
     def _prepare_gateway_migration(self, request: object) -> None:
         payload = dict(request) if isinstance(request, dict) else {}
         transfer_mode = str(payload.pop("transfer_mode", "") or "").casefold()
@@ -1038,19 +1342,53 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                 else:
                     self.gateway_transfer_overlay.set_data_validation_result(validation)
                     self.server_controller.reload_persistent_settings()
-                    self.school_information.load_settings()
                     self.gateway_controller.refresh_local_settings()
-                    self._refresh_branding_footer()
+                    active_settings = self.server_controller.settings_store.load()
+                    self.school_information.load_settings()
+                    self._registration_complete = school_registration_complete(
+                        active_settings,
+                        data_root=self.data_root,
+                    )
+                    self.school_information.set_registration_required(
+                        not self._registration_complete
+                    )
+                    self.school_workspace_overlay.set_dismissible(
+                        self._registration_complete
+                    )
+                    self._apply_registration_gate_state()
+                    self._apply_background_lifecycle()
+                    self._refresh_branding_footer(active_settings)
                     self.refresh_all()
                     if transfer_mode in {"server_and_data", "backup_assisted"}:
                         request = {
                             "transfer_mode": transfer_mode,
                             "data_validation": dict(validation),
                         }
-                        QTimer.singleShot(
-                            0,
-                            lambda payload=request: self._open_gateway_transfer_page(payload),
+                        receipt_is_durable = (
+                            self._persist_deferred_gateway_transfer_request(request)
                         )
+                        if not receipt_is_durable:
+                            self._deferred_gateway_transfer_request = request
+                            self.toast.show_message(
+                                "The data is safe, but Windows could not protect the pending authority-transfer receipt. Keep the app open and use Repair if transfer cannot continue.",
+                                kind="warning",
+                                timeout_ms=9000,
+                            )
+                        if self._registration_complete:
+                            QTimer.singleShot(
+                                0,
+                                lambda payload=request: self._resume_deferred_gateway_transfer(
+                                    payload
+                                ),
+                            )
+                        else:
+                            self.gateway_transfer_overlay.close_overlay()
+                            self._open_first_run_school_setup()
+                            self.toast.show_message(
+                                "The transferred data is safe. Complete the missing School Registration fields before Internet Server authority transfer continues.",
+                                kind="warning",
+                                timeout_ms=9000,
+                            )
                     else:
                         self.gateway_transfer_overlay.set_progress(
                             "The transfer option was lost after migration. The validated data remains active; choose the transfer option again to continue."
@@ -1125,7 +1463,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         elif operation == "connect" and not busy:
             self._gateway_auto_reconnect_pending = False
         if operation == "completion_code":
-            if self.gateway_transfer_overlay.isVisible():
+            transfer_completion = self.gateway_transfer_overlay.isVisible()
+            if transfer_completion:
                 self.gateway_transfer_overlay.set_progress(
                     message, cutover_locked=busy
                 )
@@ -1142,6 +1481,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                     kind="info",
                     timeout_ms=8500,
                 )
+            if not busy and not document.get("error") and transfer_completion:
+                self._clear_deferred_gateway_transfer_request()
         if document.get("error"):
             self.toast.show_message(message, kind="error", timeout_ms=7500)
 
@@ -1169,13 +1510,19 @@ class SchoolCSMControlCenterWindow(QMainWindow):
 
     def _open_first_run_school_setup(self) -> None:
         settings = self.server_controller.settings_store.load()
-        if str(settings.get("school_name") or "").strip() and str(
-            settings.get("school_id") or ""
-        ).strip():
+        self._registration_complete = school_registration_complete(
+            settings,
+            data_root=self.data_root,
+        )
+        if self._registration_complete:
             return
+        self.school_information.load_settings()
+        self.school_information.set_registration_required(True)
+        self.school_workspace_overlay.set_dismissible(False)
+        self._apply_registration_gate_state()
         self.show_board("school_information")
         self.toast.show_message(
-            "Complete School Information before recording responses or starting the Survey Server.",
+            "Complete all three School Registration sections before using the Control Center or starting the Survey Server.",
             kind="info",
             timeout_ms=7500,
         )
@@ -1200,6 +1547,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
     def background_startup_enabled(self) -> bool:
         return bool(self._background_startup_enabled)
 
+    @property
+    def school_registration_complete(self) -> bool:
+        return bool(self._registration_complete)
+
     def background_startup_readiness(self) -> tuple[bool, str]:
         """Return whether a Windows sign-in launch may remain hidden."""
 
@@ -1210,10 +1561,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         if not self.system_tray.available:
             return False, "The Windows notification area is not available."
         settings = self.server_controller.settings()
-        if not str(settings.get("school_name") or "").strip() or not str(
-            settings.get("school_id") or ""
-        ).strip():
-            return False, "School Information must be completed before background startup."
+        if not school_registration_complete(settings, data_root=self.data_root):
+            return False, "School Registration must be completed before background startup."
         return True, "Ready for background startup."
 
     def reconcile_background_startup_registration(
@@ -1263,6 +1612,12 @@ class SchoolCSMControlCenterWindow(QMainWindow):
     def _set_background_startup(self, enabled: bool) -> None:
         requested = bool(enabled)
         previous = self._background_startup_enabled
+        if requested and not self._registration_complete:
+            detail = "Complete School Registration before enabling background startup."
+            self.server_board.set_background_startup_enabled(previous, detail)
+            self.system_tray.set_background_startup_checked(previous)
+            self.toast.show_message(detail, kind="warning", timeout_ms=6500)
+            return
         try:
             actual = bool(
                 self.server_controller.set_background_server_startup(requested)
@@ -1303,7 +1658,11 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.toast.show_message(detail, kind="success")
 
     def _apply_background_lifecycle(self) -> None:
-        keep_alive = self._background_startup_enabled and self.system_tray.available
+        keep_alive = (
+            self._background_startup_enabled
+            and self._registration_complete
+            and self.system_tray.available
+        )
         app = QApplication.instance()
         if app is not None:
             app.setQuitOnLastWindowClosed(not keep_alive)
@@ -1329,12 +1688,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
 
     def start_saved_server_unattended(self) -> bool:
         settings = self.server_controller.settings()
-        if not str(settings.get("school_name") or "").strip() or not str(
-            settings.get("school_id") or ""
-        ).strip():
-            detail = "Complete School Information before starting the Survey Server."
+        if not school_registration_complete(settings, data_root=self.data_root):
+            detail = "Complete School Registration before starting the Survey Server."
             self.restore_from_tray()
-            self.show_board("school_information")
+            self._open_first_run_school_setup()
             self.toast.show_message(detail, kind="warning", timeout_ms=6500)
             self.system_tray.show_status_message(
                 "Survey Server needs setup", detail, warning=True
@@ -2147,9 +2504,12 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._layout_resize_handles()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if not getattr(self, "_registration_complete", True):
+            self.school_information.save_draft()
         if (
             not self._explicit_exit_requested
             and self._background_startup_enabled
+            and self._registration_complete
             and self.system_tray.available
         ):
             event.ignore()

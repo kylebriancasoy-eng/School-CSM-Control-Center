@@ -34,9 +34,9 @@ The bootstrapper intentionally performs anonymous HTTPS downloads and stores no 
 `school_csm_control_center/version.py` is the single source of truth for this
 release:
 
-- application semantic version: `0.6.4`;
-- Windows executable version: `0.6.4.0`;
-- release tag: `v0.6.4`.
+- application semantic version: `0.6.5`;
+- Windows executable version: `0.6.5.0`;
+- release tag: `v0.6.5`.
 
 After changing the version, regenerate and check the PyInstaller version resource:
 
@@ -112,7 +112,7 @@ Each manifest points its application package at an immutable tagged-release URL.
 ## GitHub release process
 
 1. Merge a tested version change into `main`.
-2. Create and push the matching tag, for example `git tag -a v0.6.4 -m "School CSM Control Center 0.6.4"` followed by `git push origin v0.6.4`.
+2. Create and push the matching tag, for example `git tag -a v0.6.5 -m "School CSM Control Center 0.6.5"` followed by `git push origin v0.6.5`.
 3. The release workflow runs the test suite, builds the compiled app and maintenance setup, verifies all release assets, and publishes them to the tag.
 4. Download setup from the release and test install, update, repair, rollback, normal uninstall, and explicit data removal on a clean Windows machine.
 
@@ -170,8 +170,9 @@ Normal install, update, repair, rollback, and uninstall preserve:
 - `C:\ProgramData\MoSSLab\School CSM Control Center\Configuration\internet_gateway_provider.json`;
 - Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.OpenAIApiKey`;
 - Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential`;
-- Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret`; and
-- Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey`.
+- Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret`;
+- Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey`; and
+- Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt`.
 
 If a validated provider file is found beside the installed EXE, Setup copies it
 to the durable ProgramData location before replacing or removing Program Files.
@@ -180,6 +181,6 @@ rollback, normal uninstall, and explicit current-account data removal retain the
 ProgramData copy.
 
 Only `--uninstall --remove-user-data` or the matching explicit UI checkbox removes
-the standard data folder and all four named credentials for the current Windows
+the standard data folder and all five named credentials for the current Windows
 account. It does not remove the machine-wide provider configuration, data under a
 different Windows account, or data in a deployment-managed custom location.

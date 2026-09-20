@@ -190,7 +190,8 @@ namespace MoSSLab.SchoolCSM.Installer
                 InstallerEngine.OpenAiCredentialTarget,
                 InstallerEngine.GatewayTunnelCredentialTarget,
                 InstallerEngine.GatewayInstallationSecretTarget,
-                InstallerEngine.GatewayDevicePrivateKeyTarget
+                InstallerEngine.GatewayDevicePrivateKeyTarget,
+                InstallerEngine.GatewayDeferredTransferReceiptTarget
             };
             bool success = true;
             foreach (string target in targets)

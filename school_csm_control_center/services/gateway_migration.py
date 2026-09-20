@@ -101,6 +101,7 @@ PORTABLE_SETTINGS_KEYS = frozenset(
         "school_email",
         "school_contact",
         "school_head",
+        "school_administrator",
         "csm_focal_person",
         "school_logo_path",
         "school_identifier",

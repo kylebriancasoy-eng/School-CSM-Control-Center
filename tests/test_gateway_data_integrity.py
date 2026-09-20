@@ -52,6 +52,7 @@ def _source_settings() -> dict:
     return {
         "school_name": "Calapi Elementary School",
         "school_id": SCHOOL_ID,
+        "school_administrator": "Portable School Administrator",
         "school_identifier": "calapi-es",
         "survey_status": "online",
         "preferred_port": 9123,
@@ -245,12 +246,26 @@ class GatewayCredentialTests(unittest.TestCase):
         store.save_tunnel_credential("tunnel-secret")
         store.save_installation_secret("installation-secret")
         store.save_device_private_key("device-private-key")
+        deferred = {
+            "transfer_mode": "server_and_data",
+            "data_validation": {
+                "verified": True,
+                "transaction_id": TRANSACTION_ID,
+                "manifest_sha256": "a" * 64,
+                "active_tree_sha256": "b" * 64,
+                "record_counts": {"survey_responses": 4},
+            },
+        }
+        digest = store.save_deferred_transfer_receipt(deferred)
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(store.load_deferred_transfer_receipt(), deferred)
         self.assertEqual(
             store.exists(),
             {
                 "tunnel_credential": True,
                 "installation_secret": True,
                 "device_private_key": True,
+                "deferred_transfer_receipt": True,
             },
         )
         self.assertEqual(store.delete_all(), {key: True for key in store.exists()})
@@ -320,6 +335,10 @@ class GatewayMigrationIntegrityTests(unittest.TestCase):
             self.assertNotIn("preferred_port", settings)
             self.assertNotIn("network_password", settings)
             self.assertNotIn("background_server_startup_enabled", settings)
+            self.assertEqual(
+                settings["school_administrator"],
+                "Portable School Administrator",
+            )
             paths = {entry["logical_path"] for entry in manifest["files"]}
             self.assertFalse(any(path.startswith(("gateway/", "logs/")) for path in paths))
 
@@ -328,6 +347,10 @@ class GatewayMigrationIntegrityTests(unittest.TestCase):
                 (destination / "data/csm_survey/control_center_settings.json").read_text(encoding="utf-8")
             )
             self.assertEqual(active["school_id"], SCHOOL_ID)
+            self.assertEqual(
+                active["school_administrator"],
+                "Portable School Administrator",
+            )
             self.assertEqual(active["preferred_port"], 8444)
             self.assertEqual(active["network_password"], "destination-device-value")
             self.assertTrue((destination / "gateway/device.json").is_file())

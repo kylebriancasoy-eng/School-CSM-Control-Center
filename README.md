@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.4
+# School CSM Control Center 0.6.5
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,27 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.5 highlights
+
+- First launch now uses a mandatory three-section School Registration: official
+  identity and seal, essential personnel, then school contact details.
+- School ID and School Name have no preset. New installations prefill only
+  **Schools District of Motiong** and **Schools Division of Samar**; every
+  listed field and a valid school seal/logo are required.
+- Each section blocks forward progress until its entries are valid. Completed
+  sections are saved locally, and closing or restarting the app returns the
+  operator to the first incomplete section.
+- Incomplete registration cannot be dismissed to reach the Dashboard, History,
+  MRS tools, Survey Server, Internet Gateway, background startup, or tray-based
+  server startup. Completion is recalculated from the actual saved fields and
+  durable image file rather than trusting a bypassable status flag.
+- Existing installations keep all prior school data and are prompted only for
+  missing requirements, including the new **School Administrator** field. The
+  existing `csm_focal_person` record remains compatible and is now labeled
+  **CSM Coordinator** in the registration interface.
+- Server-and-Data migration and recovery packages now carry the School
+  Administrator together with the other encrypted school-portable information.
 
 ## 0.6.4 highlights
 
@@ -432,11 +453,18 @@ The older authenticated endpoint `POST /api/scanner/submissions` and bundled fil
 - Missing school logos use a compact SCHOOL placeholder instead of collapsing the footer layout.
 - Mouse-wheel movement anywhere over Dashboard Print Preview now zooms in or out. The existing zoom, fit-page, and fit-width icon buttons remain available.
 
-## School Information and shared branding footer
+## School Registration, School Information, and shared branding footer
 
-- Added a dedicated **School Information** dashboard accessible from the school-building icon in the navigation rail.
-- Operators can maintain the school name, School ID, Region, Schools Division, Schools District, address, official email, contact number, School Head, and CSM focal person.
-- Added icon-only controls for saving, uploading/replacing, and removing the official school logo.
+- The dedicated **School Information** workspace is accessible from the
+  school-building icon after registration.
+- Registration is organized into official identity, essential personnel, and
+  contact sections. It requires School ID, School Name, Schools District,
+  Schools Division, School Seal / Logo, School Head, School Administrator, CSM
+  Coordinator, School Address, School Email Address, and School Contact Number.
+- The same layered form remains available for later profile updates; it prevents
+  saving a change that would make a required section invalid.
+- The school seal/logo can be uploaded or replaced but cannot be removed while
+  school registration is required.
 - Uploaded logos are normalized and stored as `data/csm_survey/school_logo.png`.
 - Added a fixed Control Center footer containing the school logo and name, MoSSLab logo, and MoSSLab seal.
 - Added the same school/MoSSLab branding group to the CSM Survey Form footer.

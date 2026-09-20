@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.6.4 is distributed as one setup program. Operators
+School CSM Control Center 0.6.5 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 
@@ -21,6 +21,30 @@ operation when its provider or tunnel is unavailable.
 
 The online setup uses anonymous HTTPS downloads, so its GitHub release assets must be publicly downloadable. It never asks an operator for GitHub credentials.
 
+## Required school registration
+
+The first application launch opens School Registration and keeps the rest of
+the Control Center unavailable until all three sections are complete:
+
+1. **Official school identity:** School ID, School Name, Schools District,
+   Schools Division, and School Seal / Logo.
+2. **Essential personnel:** School Head, School Administrator, and CSM
+   Coordinator.
+3. **Contact details:** School Address, School Email Address, and School Contact
+   Number (mobile or telephone).
+
+School ID and School Name start blank. A new installation prefills **Schools
+District of Motiong** and **Schools Division of Samar**, and the operator may
+correct either value before continuing. Every listed entry is required; email,
+contact-number, School-ID, and image-file checks must pass before the next
+section opens.
+
+Closing the application does not bypass registration. Completed sections remain
+in the preserved Documents data folder, and the next launch returns to the first
+incomplete section. Background startup and the Survey Server remain unavailable
+until registration is complete. An update keeps existing profile values and asks
+only for newly missing required information.
+
 ## Locations and data safety
 
 | Purpose | Location | Removed by a normal uninstall? |
@@ -33,6 +57,7 @@ The online setup uses anonymous HTTPS downloads, so its GitHub release assets mu
 | Internet Gateway tunnel credential | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential` | No |
 | Internet Gateway installation secret | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret` | No |
 | Internet Gateway device private key | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey` | No |
+| Pending verified Server Transfer receipt | Windows Credential Manager target `MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt` | No |
 
 Install, update, repair, and rollback never intentionally modify the Documents data folder. Before replacing an older installation, setup also copies any legacy `data`, `exports`, `logs`, or `backups` folders found beside the old program into the stable Documents location without overwriting different files. Conflicts are retained under `migration\installer-conflicts`.
 
@@ -155,6 +180,7 @@ account and these four exact Credential Manager targets:
 - `MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential`
 - `MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret`
 - `MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey`
+- `MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt`
 
 Data stored in a managed custom location or under another Windows account is
 left in place and must be handled by its owner or administrator. The deployment

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from run_school_csm_control_center import parse_startup_arguments
 from school_csm_control_center.runtime_instance import activate_existing_window
+from school_csm_control_center.storage.control_center_settings import ControlCenterSettingsStore
 from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
 from school_csm_control_center.ui.system_tray import ControlCenterSystemTray
 
@@ -58,7 +59,26 @@ class TrayMenuTests(unittest.TestCase):
             "school_csm_control_center.web_server.controller.is_windows",
             return_value=False,
         ):
-            window = SchoolCSMControlCenterWindow(Path(temporary))
+            root = Path(temporary)
+            logo = root / "data" / "csm_survey" / "school_logo.png"
+            logo.parent.mkdir(parents=True, exist_ok=True)
+            logo.write_bytes(
+                (Path(__file__).parents[1] / "assets" / "deped_logo_ui.png").read_bytes()
+            )
+            ControlCenterSettingsStore(root).save(
+                {
+                    "school_name": "Test Elementary School",
+                    "school_id": "123627",
+                    "school_logo_path": "data/csm_survey/school_logo.png",
+                    "school_head": "Test School Head",
+                    "school_administrator": "Test School Administrator",
+                    "csm_focal_person": "Test CSM Coordinator",
+                    "school_address": "Motiong, Samar",
+                    "school_email": "school@example.test",
+                    "school_contact": "09123456789",
+                }
+            )
+            window = SchoolCSMControlCenterWindow(root)
             window.system_tray._available = True
             window._background_startup_enabled = True
             window._apply_background_lifecycle()

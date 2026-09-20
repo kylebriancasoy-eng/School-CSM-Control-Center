@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from PIL import Image
+
 from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.storage.file_safety import (
     InterProcessRLock,
@@ -20,12 +22,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "school_name": "",
     "school_id": "",
     "school_region": "",
-    "school_division": "",
-    "school_district": "",
+    "school_division": "Schools Division of Samar",
+    "school_district": "Schools District of Motiong",
     "school_address": "",
     "school_email": "",
     "school_contact": "",
     "school_head": "",
+    "school_administrator": "",
     "csm_focal_person": "",
     "school_logo_path": "",
     "school_identifier": "school-csm",
@@ -57,8 +60,48 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "background_server_startup_enabled": False,
 }
 
+DEFAULT_SCHOOL_DISTRICT = "Schools District of Motiong"
+DEFAULT_SCHOOL_DIVISION = "Schools Division of Samar"
+
+SCHOOL_REGISTRATION_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "School identity",
+        (
+            "school_id",
+            "school_name",
+            "school_district",
+            "school_division",
+            "school_logo_path",
+        ),
+    ),
+    (
+        "Essential personnel",
+        ("school_head", "school_administrator", "csm_focal_person"),
+    ),
+    (
+        "Contact details",
+        ("school_address", "school_email", "school_contact"),
+    ),
+)
+
+SCHOOL_REGISTRATION_FIELD_LABELS = {
+    "school_id": "School ID",
+    "school_name": "School Name",
+    "school_district": "Schools District",
+    "school_division": "Schools Division",
+    "school_logo_path": "School Seal / Logo",
+    "school_head": "School Head",
+    "school_administrator": "School Administrator",
+    "csm_focal_person": "CSM Coordinator",
+    "school_address": "School Address",
+    "school_email": "School Email Address",
+    "school_contact": "School Contact Number",
+}
+
 IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 SCHOOL_ID_PATTERN = re.compile(r"^\d{4,12}$")
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+CONTACT_ALLOWED_PATTERN = re.compile(r"^[0-9+().\-\s]+$")
 RESERVED_IDENTIFIERS = {
     "admin", "api", "app", "backup", "dashboard", "dns", "gateway",
     "localhost", "maintenance", "network", "offline", "online", "router",
@@ -164,3 +207,154 @@ def validate_school_id(value: Any, *, required: bool = True) -> str:
     if not SCHOOL_ID_PATTERN.fullmatch(school_id):
         raise ValueError("School ID must contain 4 to 12 digits only.")
     return school_id
+
+
+def clean_registration_text(value: Any) -> str:
+    """Normalize operator-entered profile text without changing its meaning."""
+
+    return " ".join(str(value or "").split())
+
+
+def school_registration_errors(
+    settings: Mapping[str, Any],
+    *,
+    data_root: str | Path | None = None,
+) -> dict[str, str]:
+    """Return every invalid required registration field in display order.
+
+    Completion is derived from the saved values and the durable logo file; it
+    is never trusted from a boolean flag that could become stale after an
+    interrupted update or a manually damaged settings file.
+    """
+
+    errors: dict[str, str] = {}
+    try:
+        validate_school_id(settings.get("school_id"), required=True)
+    except ValueError as exc:
+        errors["school_id"] = str(exc)
+
+    text_limits = {
+        "school_name": 180,
+        "school_district": 180,
+        "school_division": 180,
+        "school_head": 180,
+        "school_administrator": 180,
+        "csm_focal_person": 180,
+        "school_address": 300,
+    }
+    for key, maximum in text_limits.items():
+        value = clean_registration_text(settings.get(key))
+        label = SCHOOL_REGISTRATION_FIELD_LABELS[key]
+        if not value:
+            errors[key] = f"{label} is required."
+        elif len(value) < 2:
+            errors[key] = f"{label} must contain at least 2 characters."
+        elif len(value) > maximum:
+            errors[key] = f"{label} must not exceed {maximum} characters."
+
+    email = clean_registration_text(settings.get("school_email"))
+    if not email:
+        errors["school_email"] = "School Email Address is required."
+    elif len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
+        errors["school_email"] = "Enter a valid School Email Address."
+
+    contact = clean_registration_text(settings.get("school_contact"))
+    contact_digits = re.sub(r"\D", "", contact)
+    if not contact:
+        errors["school_contact"] = "School Contact Number is required."
+    elif (
+        not CONTACT_ALLOWED_PATTERN.fullmatch(contact)
+        or contact.count("+") > 1
+        or ("+" in contact and not contact.lstrip().startswith("+"))
+        or not 7 <= len(contact_digits) <= 15
+    ):
+        errors["school_contact"] = (
+            "Enter a valid mobile or telephone number containing 7 to 15 digits."
+        )
+
+    logo_relative = str(settings.get("school_logo_path") or "").strip()
+    if not logo_relative:
+        errors["school_logo_path"] = "School Seal / Logo is required."
+    elif data_root is not None:
+        root = Path(data_root).expanduser().resolve()
+        try:
+            logo_path = (root / logo_relative).resolve()
+            logo_path.relative_to(root)
+        except (OSError, ValueError):
+            errors["school_logo_path"] = "The saved School Seal / Logo path is invalid."
+        else:
+            try:
+                valid_file = bool(
+                    logo_path.is_file()
+                    and 0 < logo_path.stat().st_size <= 12 * 1024 * 1024
+                )
+                if valid_file:
+                    with Image.open(logo_path) as image:
+                        valid_file = image.format in {"PNG", "JPEG", "BMP", "WEBP"}
+                        image.verify()
+            except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+                valid_file = False
+            if not valid_file:
+                errors["school_logo_path"] = (
+                    "The saved School Seal / Logo is missing or invalid. Upload it again."
+                )
+
+    return errors
+
+
+def school_registration_section_errors(
+    settings: Mapping[str, Any],
+    section_index: int,
+    *,
+    data_root: str | Path | None = None,
+) -> dict[str, str]:
+    """Return errors belonging to one of the three ordered registration steps."""
+
+    if not 0 <= int(section_index) < len(SCHOOL_REGISTRATION_SECTIONS):
+        raise ValueError("School registration section is out of range.")
+    keys = set(SCHOOL_REGISTRATION_SECTIONS[int(section_index)][1])
+    return {
+        key: message
+        for key, message in school_registration_errors(
+            settings,
+            data_root=data_root,
+        ).items()
+        if key in keys
+    }
+
+
+def school_registration_complete(
+    settings: Mapping[str, Any],
+    *,
+    data_root: str | Path | None = None,
+) -> bool:
+    """Return whether all required school-registration data remains valid."""
+
+    return not school_registration_errors(settings, data_root=data_root)
+
+
+def first_incomplete_registration_section(
+    settings: Mapping[str, Any],
+    *,
+    data_root: str | Path | None = None,
+) -> int:
+    """Return the first incomplete step, or the final step when complete."""
+
+    errors = school_registration_errors(settings, data_root=data_root)
+    for index, (_title, keys) in enumerate(SCHOOL_REGISTRATION_SECTIONS):
+        if any(key in errors for key in keys):
+            return index
+    return len(SCHOOL_REGISTRATION_SECTIONS) - 1
+
+
+def validate_school_registration(
+    settings: Mapping[str, Any],
+    *,
+    data_root: str | Path | None = None,
+) -> None:
+    """Raise one concise error when the mandatory registration is incomplete."""
+
+    errors = school_registration_errors(settings, data_root=data_root)
+    if errors:
+        first_message = next(iter(errors.values()))
+        raise ValueError(f"Complete School Registration before continuing. {first_message}")

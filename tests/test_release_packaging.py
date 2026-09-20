@@ -379,6 +379,7 @@ class ReleasePackagingTests(unittest.TestCase):
             "TunnelCredential",
             "InstallationSecret",
             "DevicePrivateKey",
+            "DeferredTransferReceipt",
         ):
             self.assertIn(
                 f"MoSSLab.SchoolCSMControlCenter.InternetGateway.{target}", installer
