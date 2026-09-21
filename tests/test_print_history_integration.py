@@ -15,6 +15,7 @@ from PySide6.QtPrintSupport import QPrinter, QPrintPreviewWidget
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
 
+from school_csm_control_center.storage.control_center_settings import ControlCenterSettingsStore
 from school_csm_control_center.ui.dashboard_print_overlay import DashboardPrintOverlay
 from school_csm_control_center.ui.dashboard_printing import (
     DashboardPrintRenderer,
@@ -83,6 +84,25 @@ class PrintHistoryLifecycleIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        logo = self.root / "data" / "csm_survey" / "school_logo.png"
+        logo.parent.mkdir(parents=True, exist_ok=True)
+        logo.write_bytes(
+            (Path(__file__).parents[1] / "assets" / "deped_logo_ui.png").read_bytes()
+        )
+        ControlCenterSettingsStore(self.root).save(
+            {
+                "school_name": "Test Elementary School",
+                "school_id": "123627",
+                "school_identifier": "test-school",
+                "school_logo_path": "data/csm_survey/school_logo.png",
+                "school_head": "Test School Head",
+                "school_administrator": "Test School Administrator",
+                "csm_focal_person": "Test CSM Coordinator",
+                "school_address": "Motiong, Samar",
+                "school_email": "school@example.test",
+                "school_contact": "09123456789",
+            }
+        )
         self.fixed_time = datetime(
             2026,
             7,
