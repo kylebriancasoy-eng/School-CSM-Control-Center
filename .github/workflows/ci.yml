@@ -35,7 +35,17 @@ jobs:
         run: python -m compileall -q run_school_csm_control_center.py school_csm_control_center scripts
 
       - name: Run tests
-        run: python -m unittest discover -s tests -q
+        shell: pwsh
+        run: |
+          $testOutput = & python -m unittest discover -s tests -q 2>&1
+          $testExitCode = $LASTEXITCODE
+          $testOutput | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "unittest.log")
+          if ($testExitCode -ne 0) {
+            $failureSummary = ($testOutput | Select-Object -Last 160) -join "`n"
+            $failureSummary = $failureSummary.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Python test suite failed::$failureSummary"
+            exit $testExitCode
+          }
 
       - name: Run Cloudflare Worker contract tests
         run: node --test cloudflare_worker/test/proxy.test.mjs
