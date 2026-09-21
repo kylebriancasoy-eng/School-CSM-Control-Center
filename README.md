@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.5
+# School CSM Control Center 0.6.6
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,14 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.6.6 highlights
+
+- The Internet Gateway and registration service can load their shared contracts
+  without the desktop-only Pillow image runtime. Pillow is now loaded only when
+  the Control Center validates an uploaded school seal/logo.
+- This patch preserves the mandatory three-section School Registration and all
+  user-data, credential, installer, repair, and update safeguards from 0.6.5.
 
 ## 0.6.5 highlights
 

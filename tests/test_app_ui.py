@@ -54,6 +54,15 @@ class ApplicationUiTests(unittest.TestCase):
         self.app.processEvents()
         self.temp.cleanup()
 
+    def _wait_for(self, predicate, description: str, *, timeout_ms: int = 3000) -> None:
+        for _ in range(max(1, timeout_ms // 50)):
+            self.app.processEvents()
+            if predicate():
+                return
+            QTest.qWait(50)
+        self.app.processEvents()
+        self.assertTrue(predicate(), f"Timed out waiting for {description}.")
+
     def test_shell_has_two_primary_boards_and_utility_overlays_with_icon_only_actions(self) -> None:
         self.assertEqual(self.window.board_stack.count(), 2)
         self.assertEqual(self.window.dashboard.objectName(), "dashboard_board")
@@ -90,7 +99,12 @@ class ApplicationUiTests(unittest.TestCase):
 
     def test_add_drawer_saves_live_and_history_can_view_edit_delete_in_overlays(self) -> None:
         QTest.mouseClick(self.window.dashboard.add_button, Qt.MouseButton.LeftButton)
-        QTest.qWait(360)
+        self._wait_for(
+            lambda: self.window.drawer.isVisible()
+            and self.window.drawer.is_open
+            and self.window.drawer.drawer.x() == 0,
+            "the survey drawer to open",
+        )
         self.assertTrue(self.window.drawer.isVisible())
         self.assertTrue(self.window.drawer.is_open)
         self.assertEqual(self.window.drawer.drawer.x(), 0)
@@ -110,7 +124,10 @@ class ApplicationUiTests(unittest.TestCase):
         self.assertEqual(self.window.dashboard.total_metric.value_label.text(), "1")
 
         self.window.drawer.close_drawer()
-        QTest.qWait(260)
+        self._wait_for(
+            lambda: not self.window.drawer.isVisible(),
+            "the survey drawer to close",
+        )
         QTest.mouseClick(self.window.history_nav, Qt.MouseButton.LeftButton)
         self.app.processEvents()
         self.assertIs(self.window.board_stack.currentWidget(), self.window.history)
@@ -133,11 +150,19 @@ class ApplicationUiTests(unittest.TestCase):
         QTest.mouseClick(self.window.prompt.accept_button, Qt.MouseButton.LeftButton)
 
         QTest.mouseClick(self.window.history.edit_button, Qt.MouseButton.LeftButton)
-        QTest.qWait(260)
+        self._wait_for(
+            lambda: self.window.drawer.isVisible()
+            and self.window.drawer.is_open
+            and self.window.drawer.drawer.x() == 0,
+            "the survey drawer to reopen for editing",
+        )
         self.assertTrue(self.window.drawer.is_open)
         self.assertEqual(self.window.drawer.control_input.text(), generated_control)
         self.window.drawer.close_drawer()
-        QTest.qWait(260)
+        self._wait_for(
+            lambda: not self.window.drawer.isVisible(),
+            "the edited survey drawer to close",
+        )
 
         self.window.history.table.selectRow(0)
         QTest.mouseClick(self.window.history.delete_button, Qt.MouseButton.LeftButton)
@@ -162,7 +187,12 @@ class ApplicationUiTests(unittest.TestCase):
         }
 
         self.window.drawer.open_for_edit(legacy)
-        QTest.qWait(260)
+        self._wait_for(
+            lambda: self.window.drawer.isVisible()
+            and self.window.drawer.is_open
+            and self.window.drawer.drawer.x() == 0,
+            "the legacy survey drawer to open",
+        )
         certification = SERVICE_BY_ID["certified_copies.walk_in"].label
         self.assertEqual(self.window.drawer.service_input.values(), [certification])
         self.assertEqual(self.window.drawer.age_spin.optional_value(), 0)

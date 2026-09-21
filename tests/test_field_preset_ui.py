@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
 
+from school_csm_control_center.storage.control_center_settings import ControlCenterSettingsStore
 from school_csm_control_center.storage.field_preset_store import FieldPresetStore
 from school_csm_control_center.ui.main_window import SchoolCSMControlCenterWindow
 from school_csm_control_center.ui.widgets import TooltipIconButton
@@ -41,6 +42,25 @@ class FieldPresetOverlayUiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.project_root = Path(self.temporary.name)
+        logo = self.project_root / "data" / "csm_survey" / "school_logo.png"
+        logo.parent.mkdir(parents=True, exist_ok=True)
+        logo.write_bytes(
+            (Path(__file__).parents[1] / "assets" / "deped_logo_ui.png").read_bytes()
+        )
+        ControlCenterSettingsStore(self.project_root).save(
+            {
+                "school_name": "Test Elementary School",
+                "school_id": "123627",
+                "school_identifier": "test-school",
+                "school_logo_path": "data/csm_survey/school_logo.png",
+                "school_head": "Test School Head",
+                "school_administrator": "Test School Administrator",
+                "csm_focal_person": "Test CSM Coordinator",
+                "school_address": "Motiong, Samar",
+                "school_email": "school@example.test",
+                "school_contact": "09123456789",
+            }
+        )
         self.window = self._make_window()
 
     def tearDown(self) -> None:
@@ -61,9 +81,22 @@ class FieldPresetOverlayUiTests(unittest.TestCase):
             self.window.dashboard.add_button,
             Qt.MouseButton.LeftButton,
         )
-        QTest.qWait(250)
-        self.app.processEvents()
+        self._wait_for(
+            lambda: self.window.drawer.isVisible()
+            and self.window.drawer.is_open
+            and self.window.drawer.drawer.x() == 0,
+            "the survey drawer to open",
+        )
         self.assertTrue(self.window.drawer.is_open)
+
+    def _wait_for(self, predicate, description: str, *, timeout_ms: int = 3000) -> None:
+        for _ in range(max(1, timeout_ms // 50)):
+            self.app.processEvents()
+            if predicate():
+                return
+            QTest.qWait(50)
+        self.app.processEvents()
+        self.assertTrue(predicate(), f"Timed out waiting for {description}.")
 
     def _open_preset_overlay(self) -> None:
         QTest.mouseClick(
@@ -178,8 +211,12 @@ class FieldPresetOverlayUiTests(unittest.TestCase):
 
         saved = self.window.store.add(editable_record())
         self.window.drawer.open_for_edit(saved)
-        QTest.qWait(250)
-        self.app.processEvents()
+        self._wait_for(
+            lambda: self.window.drawer.isVisible()
+            and self.window.drawer.is_open
+            and self.window.drawer.drawer.x() == 0,
+            "the survey drawer to open for editing",
+        )
         self.assertEqual(
             self.window.drawer.title_label.text(),
             "Edit Survey Result",
