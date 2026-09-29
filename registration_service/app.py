@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -15,7 +15,7 @@ from time import monotonic
 from typing import Any, Mapping
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from webauthn import (
     generate_authentication_options,
@@ -33,9 +33,21 @@ from webauthn.helpers.structs import (
 )
 
 from .cloudflare import CloudflareTunnelProvisioner
-from .core import RegistrationRepository, RegistrationService, ServiceError
+from .core import (
+    RegistrationRepository,
+    RegistrationService,
+    ServiceError,
+    validate_installation_id,
+    validate_school_id,
+)
 from .signing import AuthorizationEnvelopeSigner
 from .handoff import CredentialHandoffVault
+from .district_auth import (
+    CSRF_HEADER,
+    SESSION_COOKIE,
+    DistrictAdminSession,
+    DistrictAdminSessions,
+)
 
 
 class _EphemeralRateLimiter:
@@ -153,6 +165,37 @@ class PasskeyResetComplete(PasskeyResetBegin):
     passkey_label: str = Field(default="Recovered administrator passkey", max_length=120)
 
 
+class DistrictLogin(StrictModel):
+    access_token: str = Field(min_length=24, max_length=512)
+
+
+class DistrictSchoolSave(StrictModel):
+    school_id: str
+    school_name: str = Field(min_length=1, max_length=200)
+    school_district: str = Field(
+        default="Schools District of Motiong", min_length=1, max_length=160
+    )
+    school_division: str = Field(
+        default="Schools Division of Samar", min_length=1, max_length=160
+    )
+
+
+class DistrictSchoolStatus(StrictModel):
+    status: str = Field(min_length=1, max_length=20)
+
+
+class DistrictActivationIssue(StrictModel):
+    valid_days: int = Field(default=14, ge=1, le=30)
+
+
+class InstallationHeartbeat(StrictModel):
+    application_version: str = Field(min_length=1, max_length=40)
+    local_server_state: str = Field(min_length=1, max_length=24)
+    gateway_state: str = Field(min_length=1, max_length=24)
+    survey_status: str = Field(min_length=1, max_length=24)
+    error_code: str = Field(default="", max_length=80)
+
+
 def _b64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(bytes(value)).decode("ascii").rstrip("=")
 
@@ -184,7 +227,11 @@ def build_service() -> RegistrationService:
     )
 
 
-def create_app(service: RegistrationService | None = None) -> FastAPI:
+def create_app(
+    service: RegistrationService | None = None,
+    *,
+    district_admin_token_sha256: str | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="School CSM Internet Gateway Registration Service",
         version="1.0.0",
@@ -195,6 +242,11 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
     app.state.registration_service = service
     app.state.handoff_vault = None
     app.state.rate_limiter = _EphemeralRateLimiter()
+    app.state.district_admin_sessions = (
+        DistrictAdminSessions.from_environment()
+        if district_admin_token_sha256 is None
+        else DistrictAdminSessions(district_admin_token_sha256)
+    )
 
     def current_service(request: Request) -> RegistrationService:
         if request.app.state.registration_service is None:
@@ -217,15 +269,34 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
                 raise HTTPException(503, "Credential handoff is not provisioned.") from exc
         return request.app.state.handoff_vault
 
+    def current_district_admin(request: Request) -> DistrictAdminSession:
+        session_id = request.cookies.get(SESSION_COOKIE, "")
+        session = request.app.state.district_admin_sessions.get(session_id)
+        if session is None:
+            raise HTTPException(401, "District administrator sign-in is required.")
+        return session
+
+    def current_district_mutation(
+        request: Request,
+        session: DistrictAdminSession = Depends(current_district_admin),
+    ) -> DistrictAdminSession:
+        if not request.app.state.district_admin_sessions.csrf_matches(
+            session, request.headers.get(CSRF_HEADER, "")
+        ):
+            raise HTTPException(403, "The district administrator request could not be verified.")
+        return session
+
     @app.exception_handler(ServiceError)
     async def service_error_handler(_request: Request, exc: ServiceError):
-        from fastapi.responses import JSONResponse
-
         status = 409 if exc.code in {
             "school_already_registered", "data_validation_required", "school_not_active"
         } else 400
         if exc.code in {"authorization_failed", "passkey_not_found"}:
             status = 401
+        elif exc.code == "school_not_found":
+            status = 404
+        elif exc.code == "school_suspended":
+            status = 403
         return JSONResponse(status_code=status, content={"ok": False, "code": exc.code, "detail": str(exc)})
 
     @app.middleware("http")
@@ -243,7 +314,13 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
             if declared <= 0 or declared > 1024 * 1024:
                 return _json_error(413, "The request body is too large.")
         path = request.url.path
-        if (
+        if path == "/v1/admin/session" and request.method == "POST":
+            client = request.client.host if request.client else "unknown"
+            if not request.app.state.rate_limiter.allow(
+                client, "district-admin-login", limit=10, window=900
+            ):
+                return _json_error(429, "Too many sign-in attempts. Try again later.")
+        elif (
             path.startswith("/v1/registrations")
             or path.startswith("/v1/transfers")
             or path.startswith("/v1/passkeys")
@@ -280,8 +357,12 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; "
+            "default-src 'none'; script-src 'self'; style-src 'self'; "
             "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
             "form-action 'self'; frame-ancestors 'none'"
         )
@@ -308,6 +389,186 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/assets/manage.css", response_class=FileResponse)
+    def manage_stylesheet():
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "manage.css",
+            media_type="text/css",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/district", response_class=FileResponse)
+    def district_page():
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "district.html",
+            media_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/assets/district.css", response_class=FileResponse)
+    def district_stylesheet():
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "district.css",
+            media_type="text/css",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/assets/district.js", response_class=FileResponse)
+    def district_script():
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "district.js",
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/v1/admin/session")
+    def district_login(body: DistrictLogin, request: Request):
+        sessions: DistrictAdminSessions = request.app.state.district_admin_sessions
+        if not sessions.configured:
+            raise HTTPException(503, "District administrator access is not configured.")
+        session = sessions.login(body.access_token)
+        if session is None:
+            raise HTTPException(401, "The district administrator access token is invalid.")
+        response = JSONResponse(
+            {
+                "ok": True,
+                "role": "district_administrator",
+                "csrf_token": session.csrf_token,
+                "expires_at": session.expires_at.isoformat(),
+            }
+        )
+        max_age = max(
+            1,
+            int((session.expires_at - datetime.now(timezone.utc)).total_seconds()),
+        )
+        response.set_cookie(
+            key=SESSION_COOKIE,
+            value=session.session_id,
+            max_age=max_age,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    @app.get("/v1/admin/session")
+    def district_session(
+        session: DistrictAdminSession = Depends(current_district_admin),
+    ):
+        return {
+            "ok": True,
+            "role": "district_administrator",
+            "csrf_token": session.csrf_token,
+            "expires_at": session.expires_at.isoformat(),
+        }
+
+    @app.delete("/v1/admin/session")
+    def district_logout(
+        request: Request,
+        _session: DistrictAdminSession = Depends(current_district_mutation),
+    ):
+        request.app.state.district_admin_sessions.logout(
+            request.cookies.get(SESSION_COOKIE, "")
+        )
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(
+            SESSION_COOKIE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    @app.get("/v1/admin/overview")
+    def district_overview(
+        _session: DistrictAdminSession = Depends(current_district_admin),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return service.district_overview()
+
+    @app.get("/v1/admin/schools")
+    def district_schools(
+        q: str = "",
+        status: str = "all",
+        limit: int = 200,
+        _session: DistrictAdminSession = Depends(current_district_admin),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return {
+            "schools": service.list_district_schools(
+                query=q, status=status, limit=limit
+            )
+        }
+
+    @app.post("/v1/admin/schools")
+    def district_school_save(
+        body: DistrictSchoolSave,
+        _session: DistrictAdminSession = Depends(current_district_mutation),
+        service: RegistrationService = Depends(current_service),
+    ):
+        school = service.save_directory_school(
+            school_id=body.school_id,
+            school_name=body.school_name,
+            school_district=body.school_district,
+            school_division=body.school_division,
+        )
+        return {"ok": True, "school": school}
+
+    @app.get("/v1/admin/schools/{school_id}")
+    def district_school_detail(
+        school_id: str,
+        _session: DistrictAdminSession = Depends(current_district_admin),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return {"school": service.district_school_detail(school_id)}
+
+    @app.patch("/v1/admin/schools/{school_id}")
+    def district_school_status(
+        school_id: str,
+        body: DistrictSchoolStatus,
+        _session: DistrictAdminSession = Depends(current_district_mutation),
+        service: RegistrationService = Depends(current_service),
+    ):
+        school = service.set_directory_school_status(school_id, body.status)
+        return {"ok": True, "school": school}
+
+    @app.post("/v1/admin/schools/{school_id}/activation-codes")
+    def district_activation_code(
+        school_id: str,
+        body: DistrictActivationIssue,
+        _session: DistrictAdminSession = Depends(current_district_mutation),
+        service: RegistrationService = Depends(current_service),
+    ):
+        valid_for = timedelta(days=body.valid_days)
+        code = service.issue_directory_activation_code(
+            school_id, valid_for=valid_for
+        )
+        return {
+            "ok": True,
+            "school_id": school_id,
+            "activation_code": code,
+            "valid_days": body.valid_days,
+            "expires_at": (
+                datetime.now(timezone.utc) + valid_for
+            ).isoformat(timespec="seconds"),
+        }
+
+    @app.get("/v1/admin/audit")
+    def district_audit(
+        school_id: str = "",
+        event_type: str = "",
+        limit: int = 100,
+        _session: DistrictAdminSession = Depends(current_district_admin),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return {
+            "events": service.list_audit_events(
+                school_id=school_id, event_type=event_type, limit=limit
+            )
+        }
+
     @app.get("/v1/schools/{school_id}")
     def school_lookup(school_id: str, service: RegistrationService = Depends(current_service)):
         return service.school_lookup(school_id)
@@ -316,11 +577,17 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
     def begin_registration(body: RegistrationBegin, service: RegistrationService = Depends(current_service)):
         # Validate the one-time activation code without consuming it.  It is
         # consumed atomically only after the passkey ceremony succeeds.
+        school_id = validate_school_id(body.school_id)
+        installation_id = validate_installation_id(body.installation_id)
         digest = __import__("hashlib").sha256(body.activation_code.strip().upper().encode()).hexdigest()
         with service.repository.read() as connection:
             activation = connection.execute(
                 "SELECT * FROM activation_codes WHERE code_hash=? AND school_id=?",
-                (digest, body.school_id),
+                (digest, school_id),
+            ).fetchone()
+            directory = connection.execute(
+                "SELECT school_name,status FROM district_schools WHERE school_id=?",
+                (school_id,),
             ).fetchone()
         if (
             activation is None
@@ -328,12 +595,22 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
             or datetime.fromisoformat(activation["expires_at"]) <= datetime.now(timezone.utc)
         ):
             raise ServiceError("The activation code is invalid or expired.", code="activation_invalid")
+        if directory is not None and str(directory["status"]) != "approved":
+            raise ServiceError(
+                "This school's Internet Gateway enrollment is suspended.",
+                code="school_suspended",
+            )
+        official_school_name = (
+            str(directory["school_name"])
+            if directory is not None
+            else " ".join(body.school_name.split())
+        )
         options = generate_registration_options(
             rp_id=_rp_id(),
             rp_name="School CSM Internet Gateway",
-            user_id=body.school_id.encode("ascii"),
-            user_name=body.school_id,
-            user_display_name=body.school_name,
+            user_id=school_id.encode("ascii"),
+            user_name=school_id,
+            user_display_name=official_school_name,
             authenticator_selection=AuthenticatorSelectionCriteria(
                 resident_key=ResidentKeyRequirement.PREFERRED,
                 user_verification=UserVerificationRequirement.REQUIRED,
@@ -342,12 +619,16 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
         )
         ceremony_id = service.repository.create_ceremony(
             purpose="registration",
-            school_id=body.school_id,
-            installation_id=body.installation_id,
+            school_id=school_id,
+            installation_id=installation_id,
             challenge=options.challenge,
-            context={"activation_code_hash": digest, "school_name": body.school_name},
+            context={"activation_code_hash": digest, "school_name": official_school_name},
         )
-        return {"ceremony_id": ceremony_id, "public_key": json.loads(options_to_json(options))}
+        return {
+            "ceremony_id": ceremony_id,
+            "school_name": official_school_name,
+            "public_key": json.loads(options_to_json(options)),
+        }
 
     @app.post("/v1/registrations/complete")
     def complete_registration(
@@ -798,6 +1079,23 @@ def create_app(service: RegistrationService | None = None) -> FastAPI:
             "tunnel_token": str(provisioned.get("tunnel_token") or ""),
             "tunnel_id": str(row["tunnel_id"]),
         }
+
+    @app.post("/v1/installations/{installation_id}/heartbeat")
+    def installation_heartbeat(
+        installation_id: str,
+        body: InstallationHeartbeat,
+        authorization: str | None = Header(default=None),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return service.record_heartbeat(
+            installation_id=installation_id,
+            installation_secret=_bearer(authorization),
+            application_version=body.application_version,
+            local_server_state=body.local_server_state,
+            gateway_state=body.gateway_state,
+            survey_status=body.survey_status,
+            error_code=body.error_code,
+        )
 
     return app
 

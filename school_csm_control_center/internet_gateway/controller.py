@@ -248,6 +248,9 @@ class InternetGatewayController(QObject):
         self._public_health_probe = public_health_probe
         self._operation = ""
         self._operation_lock = RLock()
+        self._heartbeat_lock = RLock()
+        self._heartbeat_pending: tuple[Any, str, str, dict[str, str]] | None = None
+        self._heartbeat_running = False
         self._last_error = ""
         # Persisted ACTIVE state is useful UI context, but it is not authority
         # to widen the local listener in a new process. Only a successful
@@ -1419,8 +1422,10 @@ class InternetGatewayController(QObject):
         status = str(result.get("state") or result.get("status") or "").casefold()
         if status not in {"connected", "running", "started"}:
             self._set_gateway_state("error", _clean_text(result.get("detail")) or "The tunnel did not start.")
+            self._report_heartbeat()
             return False
         self._set_gateway_state("connected", _clean_text(result.get("detail")) or "Internet Gateway is connected.")
+        self._report_heartbeat()
         return True
 
     def disconnect(self) -> None:
@@ -1432,6 +1437,7 @@ class InternetGatewayController(QObject):
                 self._last_error = _clean_text(exc)
         if self.configured and not self.retired:
             self._set_gateway_state("disconnected", "Internet Gateway is disconnected. Local access remains available.")
+            self._report_heartbeat()
 
     def check_authorization(self) -> dict[str, Any]:
         self._authorization_verified_this_session = False
@@ -1504,6 +1510,7 @@ class InternetGatewayController(QObject):
                 updater(authorization_status="ACTIVE", checked_at=checked_at, detail="Authorization verified.")
             state = self.reload()
             self._authorization_verified_this_session = True
+            self._report_heartbeat()
             return state
         if status in RETIRED_AUTHORIZATION_STATES:
             envelope = result.get("envelope") or getattr(authorization, "envelope", None)
@@ -1560,6 +1567,87 @@ class InternetGatewayController(QObject):
                 detail="Authorization status changed.",
             )
         return self.reload()
+
+    def _report_heartbeat(self) -> None:
+        """Queue bounded status reporting without blocking the desktop or shutdown."""
+
+        if self.direct_mode or self._client is None or self._credentials is None:
+            return
+        heartbeat = _callable_attr(self._client, "heartbeat")
+        if heartbeat is None:
+            return
+        installation_id = str(self._state.get("installation_id") or "")
+        if not installation_id:
+            return
+        try:
+            installation_secret = self._credentials.load_installation_secret()
+            if not installation_secret:
+                return
+            local = dict(self._local_settings_provider() or {})
+            raw_gateway = str(self._state.get("gateway_state") or "").casefold()
+            if raw_gateway in {"connected", "connecting", "error", "not_configured"}:
+                gateway_state = raw_gateway
+            else:
+                gateway_state = "disconnected"
+            survey_status = str(local.get("survey_status") or "offline").casefold()
+            if survey_status not in {"online", "offline", "maintenance"}:
+                survey_status = "offline"
+            error_code = ""
+            if gateway_state == "error":
+                error_code = "gateway_error"
+            elif str(self._state.get("authorization_state") or "") == "unknown_offline":
+                error_code = "authorization_offline"
+            from school_csm_control_center.version import __version__
+
+            pending = (
+                heartbeat,
+                installation_id,
+                installation_secret,
+                {
+                    "application_version": __version__,
+                    "local_server_state": (
+                        "running" if bool(local.get("server_running")) else "stopped"
+                    ),
+                    "gateway_state": gateway_state,
+                    "survey_status": survey_status,
+                    "error_code": error_code,
+                },
+            )
+        except Exception:
+            # Even a failed settings/credential read must not affect the server.
+            return
+        with self._heartbeat_lock:
+            # Keep only the newest waiting snapshot. A single worker preserves
+            # ordering, so a slow earlier request cannot overwrite a later stop.
+            self._heartbeat_pending = pending
+            if self._heartbeat_running:
+                return
+            self._heartbeat_running = True
+        try:
+            Thread(
+                target=self._send_pending_heartbeats,
+                name="SchoolCSMGateway-status",
+                daemon=True,
+            ).start()
+        except Exception:
+            with self._heartbeat_lock:
+                self._heartbeat_pending = None
+                self._heartbeat_running = False
+
+    def _send_pending_heartbeats(self) -> None:
+        while True:
+            with self._heartbeat_lock:
+                pending = self._heartbeat_pending
+                self._heartbeat_pending = None
+                if pending is None:
+                    self._heartbeat_running = False
+                    return
+            heartbeat, installation_id, installation_secret, payload = pending
+            try:
+                heartbeat(installation_id, installation_secret, payload)
+            except Exception:
+                # A future check-in replaces stale monitoring information.
+                pass
 
     def run_diagnostics(self) -> dict[str, Any]:
         local = dict(self._local_settings_provider() or {})

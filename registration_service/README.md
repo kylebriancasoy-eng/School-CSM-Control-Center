@@ -1,14 +1,18 @@
 # School CSM Internet Gateway registration service
 
 This is the separately deployed infrastructure-control service for the optional
-Internet Gateway in School CSM Control Center 0.5.1. It does not host the survey
+Internet Gateway in School CSM Control Center. It does not host the survey
 application and its schema contains no survey responses, scanner images,
 narrative content, portable backup content, or print records.
 
 ## Responsibilities
 
 - issue and consume one-time School activation codes;
+- maintain the district's approved School-ID directory and provide a protected
+  district operations portal;
 - register a School-ID hostname and the first active installation;
+- accept bounded, installation-authenticated health check-ins without receiving
+  school survey content;
 - enroll and verify WebAuthn passkeys;
 - enforce one active Internet Server per School ID;
 - provision and rotate remotely managed Cloudflare tunnels and DNS routes;
@@ -31,6 +35,8 @@ does not contain production values:
 - `SCHOOL_CSM_AUTHORIZATION_KEY_ID`
 - `SCHOOL_CSM_AUTHORIZATION_PRIVATE_KEY_BASE64` (raw 32-byte Ed25519 private key)
 - `SCHOOL_CSM_HANDOFF_ENCRYPTION_KEY_BASE64` (32 random bytes)
+- `SCHOOL_CSM_DISTRICT_ADMIN_TOKEN_SHA256` (the SHA-256 digest of a separate,
+  high-entropy district administrator access token)
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, and a least-privilege
   `CLOUDFLARE_API_TOKEN`
 - `SCHOOL_CSM_TUNNEL_ORIGIN`, the service-owned origin passed to newly provisioned
@@ -55,16 +61,18 @@ python -m pip install -r registration_service/requirements.txt
 python -m pip install -r registration_service/requirements-test.txt
 python -m unittest tests.test_registration_service_core `
   tests.test_registration_service_app `
+  tests.test_district_portal `
   tests.test_registration_service_cloudflare `
   tests.test_internet_gateway_provider -v
 ```
 
 For production, run `registration_service.app:app` behind an HTTPS reverse proxy.
 The supplied Dockerfile starts a non-root Uvicorn process on port 8000 and trusts
-forwarded headers only from loopback. Publish the health check at `/healthz` and
-the passkey/registration interface at `/manage`. Set the public WebAuthn origin
-to the exact HTTPS registration origin and the RP ID to its correct registrable
-host scope; WebAuthn fails closed for a different origin or RP ID.
+forwarded headers only from loopback. Publish the health check at `/healthz`, the
+passkey/registration interface at `/manage`, and the protected district portal
+at `/district`. Set the public WebAuthn origin to the exact HTTPS registration
+origin and the RP ID to its correct registrable host scope; WebAuthn fails closed
+for a different origin or RP ID.
 
 Mount the SQLite parent directory on persistent storage and inject secrets at
 runtime through the hosting platform. The container image and public repository
@@ -72,10 +80,72 @@ are not secret stores. The reverse proxy must terminate TLS, prevent direct
 public access to Uvicorn, and preserve the exact public origin needed by
 WebAuthn.
 
+## District management portal
+
+The district portal is a small infrastructure-management surface, separate from
+school passkeys and installation credentials. It can maintain the official
+School-ID roster, issue one-time activation codes, display registration and
+gateway health, suspend enrollment, and review safe audit summaries. It cannot
+read School CSM responses, remarks, scanner images, reports, portable backups,
+or OpenAI API credentials because none of those records are sent to or stored by
+this service.
+
+Provision its administrator credential from a secure service-host terminal:
+
+```powershell
+python -m registration_service.admin generate-district-admin-token
+```
+
+Store the access token in the district's approved password manager and give it
+only to authorized district operators. Put only the printed digest in
+`SCHOOL_CSM_DISTRICT_ADMIN_TOKEN_SHA256` through the hosting platform's secret
+manager. The raw token is never stored by the service and cannot be recovered
+from its digest. Generate a new token and replace the digest to revoke the old
+credential; existing in-memory sessions also end when the service restarts.
+
+Open `/district` only over HTTPS and enter the access token. A successful login
+creates a short-lived, opaque `Secure`, `HttpOnly`, `SameSite=Strict` cookie. The
+browser client also sends the per-session CSRF token on every administrative
+change. Sessions are intentionally bounded and process-local, so deploy the
+reference service as one worker. Put the portal behind the district's private
+network or identity-aware access policy where available; the access token is a
+second boundary, not a reason to expose an administration surface broadly.
+
+A normal first-enrollment workflow is:
+
+1. Add the school using its official School ID and name, then verify the district
+   and division labels.
+2. Issue a short-lived activation code only after verifying the requesting school
+   coordinator through an approved district channel.
+3. Deliver the code through that approved channel. It is returned once and is
+   stored by the service only as a digest. Issuing a replacement through the
+   portal invalidates any earlier unused, unexpired code for that school.
+4. The school completes `/manage` registration and creates its own administrator
+   passkey. The district access token cannot replace that passkey.
+5. The active installation sends a small authenticated heartbeat. A check-in
+   contains only the application version, local-server state, gateway state,
+   survey availability state, and an optional bounded error code.
+
+The installed app normally checks in every five minutes. The portal treats a
+registered installation with no check-in as unseen and a check-in older than 20
+minutes as stale, allowing multiple transient failures before raising attention.
+“Connected” means a fresh check-in reported both a connected gateway and a
+running local Survey Server with no reported error; it does not prove that an
+individual response was submitted. Suspending a directory entry blocks new activation codes and initial
+Internet Gateway enrollment. It does not delete school-owned data or remotely
+disable the school's local survey workflow.
+
+The administrative API lives under `/v1/admin`. Browser sessions protect roster,
+overview, activation, and audit endpoints.
+`/v1/installations/{installation_id}/heartbeat` uses that installation's bearer
+secret instead of a district session. Do not place either credential in URLs,
+logs, monitoring labels, or support tickets.
+
 ## Initial activation
 
-Issue an activation code from a protected administrative shell on the service
-host:
+For a school in the district roster, use the protected district portal workflow
+above. A protected administrative shell on the service host remains available
+for controlled recovery or deployments that do not use the portal:
 
 ```powershell
 python -m registration_service.admin issue-activation --school-id 123456
@@ -133,7 +203,8 @@ school-owned desktop data and remain outside this service.
 - Keep the Cloudflare token scoped to the required account tunnel and DNS zone
   operations.
 - Monitor rate-limit, activation, passkey, authorization, transfer, and tunnel
-  audit events without recording raw client IPs or school response content.
+  audit events without recording access tokens, activation codes, installation
+  secrets, raw client IPs, or school response content.
 - Keep the service on one controlled worker unless the deployment supplies a
   shared rate-limit backend; the reference in-memory limiter is process-local,
   bounded, and applies per-client and per-installation throttles before repeated
@@ -167,11 +238,13 @@ uninstall.
 
 ## Deployment validation
 
-Before issuing production activation codes, test exact-origin WebAuthn, public
-hostname routing, one-active-server enforcement, database-backout route rollback,
-old-tunnel revocation, lost-passkey recovery, additional-passkey enrollment,
-encrypted handoff expiry/redemption, signed desktop retirement, service backup
-restore, and Local Only behavior when the service is unavailable.
+Before issuing production activation codes, test district login and logout,
+CSRF rejection, directory suspension, heartbeat authentication and staleness,
+exact-origin WebAuthn, public hostname routing, one-active-server enforcement,
+database-backout route rollback, old-tunnel revocation, lost-passkey recovery,
+additional-passkey enrollment, encrypted handoff expiry/redemption, signed
+desktop retirement, service backup restore, and Local Only behavior when the
+service is unavailable.
 
 See [`../docs/INTERNET_GATEWAY.md`](../docs/INTERNET_GATEWAY.md) for the desktop
 and operator lifecycle.

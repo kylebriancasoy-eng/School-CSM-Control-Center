@@ -15,10 +15,13 @@ from typing import Any, Iterator, Mapping, Protocol
 from uuid import UUID, uuid4
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ACTIVE = "active"
 TRANSFERRED = "transferred"
 REVOKED = "revoked"
+DIRECTORY_APPROVED = "approved"
+DIRECTORY_SUSPENDED = "suspended"
+DIRECTORY_STATUSES = {DIRECTORY_APPROVED, DIRECTORY_SUSPENDED}
 
 
 class ServiceError(RuntimeError):
@@ -101,6 +104,23 @@ def validate_school_id(value: Any) -> str:
     if not school_id.isdigit() or not 4 <= len(school_id) <= 12:
         raise ServiceError("School ID must contain 4 to 12 digits.", code="invalid_school_id")
     return school_id
+
+
+def _clean_required_text(value: Any, *, label: str, maximum: int = 200) -> str:
+    text = " ".join(str(value or "").split())[:maximum]
+    if not text:
+        raise ServiceError(f"{label} is required.", code="invalid_school_directory")
+    return text
+
+
+def _directory_status(value: Any) -> str:
+    status = str(value or "").strip().casefold()
+    if status not in DIRECTORY_STATUSES:
+        raise ServiceError(
+            "School directory status must be approved or suspended.",
+            code="invalid_school_directory",
+        )
+    return status
 
 
 def validate_installation_id(value: Any) -> str:
@@ -315,6 +335,15 @@ class RegistrationRepository:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS district_schools (
+                    school_id TEXT PRIMARY KEY,
+                    school_name TEXT NOT NULL,
+                    school_district TEXT NOT NULL,
+                    school_division TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('approved','suspended')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS installations (
                     installation_id TEXT PRIMARY KEY,
                     school_id TEXT NOT NULL REFERENCES schools(school_id),
@@ -323,6 +352,16 @@ class RegistrationRepository:
                     registered_at TEXT NOT NULL,
                     retired_at TEXT,
                     retirement_transaction_id TEXT
+                );
+                CREATE TABLE IF NOT EXISTS installation_heartbeats (
+                    installation_id TEXT PRIMARY KEY REFERENCES installations(installation_id),
+                    school_id TEXT NOT NULL REFERENCES schools(school_id),
+                    received_at TEXT NOT NULL,
+                    application_version TEXT NOT NULL,
+                    local_server_state TEXT NOT NULL,
+                    gateway_state TEXT NOT NULL,
+                    survey_status TEXT NOT NULL,
+                    error_code TEXT NOT NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS one_active_installation_per_school
                     ON installations(school_id) WHERE state='active';
@@ -437,23 +476,83 @@ class RegistrationRepository:
                    ON credential_handoffs(operation_id) WHERE operation_id IS NOT NULL"""
             )
             connection.execute(
-                "INSERT OR IGNORE INTO service_meta(key,value) VALUES('schema_version',?)",
+                """INSERT OR IGNORE INTO district_schools(
+                       school_id,school_name,school_district,school_division,
+                       status,created_at,updated_at
+                   )
+                   SELECT school_id,school_name,'Schools District of Motiong',
+                          'Schools Division of Samar','approved',created_at,updated_at
+                   FROM schools"""
+            )
+            schema_row = connection.execute(
+                "SELECT value FROM service_meta WHERE key='schema_version'"
+            ).fetchone()
+            if schema_row is not None:
+                try:
+                    existing_schema = int(str(schema_row["value"]))
+                except (TypeError, ValueError) as exc:
+                    raise ServiceError(
+                        "The registration database schema version is invalid.",
+                        code="schema_invalid",
+                    ) from exc
+                if existing_schema > SCHEMA_VERSION:
+                    raise ServiceError(
+                        "The registration database was created by a newer service version.",
+                        code="schema_newer",
+                    )
+            connection.execute(
+                """INSERT INTO service_meta(key,value) VALUES('schema_version',?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
                 (str(SCHEMA_VERSION),),
             )
 
     def issue_activation_code(
-        self, school_id: str, *, valid_for: timedelta = timedelta(days=14)
+        self,
+        school_id: str,
+        *,
+        valid_for: timedelta = timedelta(days=14),
+        replace_existing: bool = False,
     ) -> str:
         school_id = validate_school_id(school_id)
+        with self.transaction() as connection:
+            return self._issue_activation_code_in_transaction(
+                connection,
+                school_id,
+                valid_for=valid_for,
+                replace_existing=replace_existing,
+            )
+
+    def _issue_activation_code_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        school_id: str,
+        *,
+        valid_for: timedelta,
+        replace_existing: bool,
+    ) -> str:
+        """Issue a code while retaining the caller's write lock."""
+
         code = "-".join(secrets.token_hex(3).upper() for _ in range(3))
         digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
         now = utc_now()
-        with self.transaction() as connection:
-            connection.execute(
-                "INSERT INTO activation_codes(code_hash,school_id,expires_at,created_at) VALUES(?,?,?,?)",
-                (digest, school_id, timestamp(now + valid_for), timestamp(now)),
-            )
-            self._audit(connection, school_id, "", "activation_code_issued", {})
+        superseded = 0
+        if replace_existing:
+            superseded = connection.execute(
+                """UPDATE activation_codes SET used_at=?
+                   WHERE school_id=? AND used_at IS NULL AND expires_at>?""",
+                (timestamp(now), school_id, timestamp(now)),
+            ).rowcount
+        connection.execute(
+            "INSERT INTO activation_codes(code_hash,school_id,expires_at,created_at) VALUES(?,?,?,?)",
+            (digest, school_id, timestamp(now + valid_for), timestamp(now)),
+        )
+        self._audit(
+            connection,
+            school_id,
+            "",
+            "activation_code_issued",
+            {"superseded_unused_codes": int(superseded)},
+        )
         return code
 
     def create_ceremony(
@@ -803,6 +902,445 @@ class RegistrationService:
             "has_active_server": bool(row and row["active_installation_id"]),
         }
 
+    def save_directory_school(
+        self,
+        *,
+        school_id: str,
+        school_name: str,
+        school_district: str = "Schools District of Motiong",
+        school_division: str = "Schools Division of Samar",
+        status: str | None = None,
+    ) -> Mapping[str, Any]:
+        school = validate_school_id(school_id)
+        name = _clean_required_text(school_name, label="School name")
+        district = _clean_required_text(
+            school_district, label="School district", maximum=160
+        )
+        division = _clean_required_text(
+            school_division, label="School division", maximum=160
+        )
+        directory_status = (
+            _directory_status(status) if status is not None else DIRECTORY_APPROVED
+        )
+        now = timestamp()
+        with self.repository.transaction() as connection:
+            connection.execute(
+                """INSERT INTO district_schools(
+                       school_id,school_name,school_district,school_division,
+                       status,created_at,updated_at
+                   ) VALUES(?,?,?,?,?,?,?)
+                   ON CONFLICT(school_id) DO UPDATE SET
+                       school_name=excluded.school_name,
+                       school_district=excluded.school_district,
+                       school_division=excluded.school_division,
+                       status=CASE WHEN ? IS NULL
+                                   THEN district_schools.status
+                                   ELSE excluded.status END,
+                       updated_at=excluded.updated_at""",
+                (
+                    school,
+                    name,
+                    district,
+                    division,
+                    directory_status,
+                    now,
+                    now,
+                    status,
+                ),
+            )
+            saved = connection.execute(
+                "SELECT status FROM district_schools WHERE school_id=?", (school,)
+            ).fetchone()
+            self.repository._audit(
+                connection,
+                school,
+                "",
+                "district_school_saved",
+                {"status": str(saved["status"]) if saved else directory_status},
+            )
+        return self.district_school_detail(school)
+
+    def set_directory_school_status(
+        self, school_id: str, status: str
+    ) -> Mapping[str, Any]:
+        school = validate_school_id(school_id)
+        directory_status = _directory_status(status)
+        with self.repository.transaction() as connection:
+            changed = connection.execute(
+                """UPDATE district_schools SET status=?,updated_at=?
+                   WHERE school_id=?""",
+                (directory_status, timestamp(), school),
+            ).rowcount
+            if changed != 1:
+                raise ServiceError(
+                    "The school is not in the district directory.",
+                    code="school_not_found",
+                )
+            self.repository._audit(
+                connection,
+                school,
+                "",
+                "district_school_status_changed",
+                {"status": directory_status},
+            )
+        return self.district_school_detail(school)
+
+    def issue_directory_activation_code(
+        self, school_id: str, *, valid_for: timedelta = timedelta(days=14)
+    ) -> str:
+        school = validate_school_id(school_id)
+        duration = min(max(valid_for, timedelta(hours=1)), timedelta(days=30))
+        with self.repository.transaction() as connection:
+            directory = connection.execute(
+                "SELECT status FROM district_schools WHERE school_id=?", (school,)
+            ).fetchone()
+            registered = connection.execute(
+                "SELECT 1 FROM schools WHERE school_id=?", (school,)
+            ).fetchone()
+            if directory is None:
+                raise ServiceError(
+                    "Add and approve the school in the district directory first.",
+                    code="school_not_found",
+                )
+            if str(directory["status"]) != DIRECTORY_APPROVED:
+                raise ServiceError(
+                    "The school is suspended and cannot receive an activation code.",
+                    code="school_suspended",
+                )
+            if registered is not None:
+                raise ServiceError(
+                    "This School ID is already registered.",
+                    code="school_already_registered",
+                )
+            return self.repository._issue_activation_code_in_transaction(
+                connection,
+                school,
+                valid_for=duration,
+                replace_existing=True,
+            )
+
+    def district_overview(self) -> Mapping[str, Any]:
+        schools = self.list_district_schools(limit=500)
+        counts = {
+            "total": len(schools),
+            "pending": sum(item["health_status"] == "pending" for item in schools),
+            "registered": sum(item["registration_state"] == "registered" for item in schools),
+            "connected": sum(item["health_status"] == "connected" for item in schools),
+            "attention": sum(
+                item["health_status"]
+                in {"attention", "disconnected", "stale", "unseen", "suspended"}
+                for item in schools
+            ),
+        }
+        return {"counts": counts, "generated_at": timestamp()}
+
+    def list_district_schools(
+        self,
+        *,
+        query: str = "",
+        status: str = "all",
+        limit: int = 200,
+    ) -> list[Mapping[str, Any]]:
+        search = " ".join(str(query or "").split())[:160]
+        requested_status = str(status or "all").strip().casefold()
+        allowed_filters = {
+            "all",
+            DIRECTORY_APPROVED,
+            DIRECTORY_SUSPENDED,
+            "registered",
+            "pending",
+            "connected",
+            "attention",
+            "offline",
+            "maintenance",
+        }
+        if requested_status not in allowed_filters:
+            raise ServiceError("The school filter is invalid.", code="invalid_filter")
+        maximum = min(max(1, int(limit)), 500)
+        parameters: list[Any] = []
+        where = ""
+        if search:
+            where = "WHERE d.school_id LIKE ? OR d.school_name LIKE ?"
+            pattern = f"%{search}%"
+            parameters.extend((pattern, pattern))
+        # Apply filtered result limits after classification so a matching
+        # school cannot disappear merely because earlier alphabetical rows had
+        # different health states.
+        parameters.append(maximum if requested_status == "all" else 500)
+        with self.repository.read() as connection:
+            rows = connection.execute(
+                f"""SELECT d.*,s.public_host,s.registration_id,
+                            s.active_installation_id,s.tunnel_id,
+                            i.state AS installation_state,i.registered_at,
+                            h.received_at,h.application_version,
+                            h.local_server_state,h.gateway_state,
+                            h.survey_status,h.error_code,
+                            (SELECT COUNT(*) FROM passkeys p
+                             WHERE p.school_id=d.school_id) AS passkey_count,
+                            (SELECT COUNT(*) FROM activation_codes a
+                             WHERE a.school_id=d.school_id AND a.used_at IS NULL
+                               AND a.expires_at>?) AS pending_activation_count
+                     FROM district_schools d
+                     LEFT JOIN schools s ON s.school_id=d.school_id
+                     LEFT JOIN installations i
+                            ON i.installation_id=s.active_installation_id
+                     LEFT JOIN installation_heartbeats h
+                            ON h.installation_id=s.active_installation_id
+                     {where}
+                     ORDER BY d.school_name COLLATE NOCASE,d.school_id
+                     LIMIT ?""",
+                (timestamp(), *parameters),
+            ).fetchall()
+        documents = [self._district_school_document(row) for row in rows]
+        if requested_status == "all":
+            return documents
+        if requested_status in DIRECTORY_STATUSES:
+            filtered = [
+                item for item in documents if item["directory_status"] == requested_status
+            ]
+        elif requested_status == "registered":
+            filtered = [
+                item for item in documents if item["registration_state"] == "registered"
+            ]
+        elif requested_status == "attention":
+            filtered = [
+                item
+                for item in documents
+                if item["health_status"]
+                in {"attention", "disconnected", "stale", "unseen", "suspended"}
+            ]
+        elif requested_status in {"offline", "maintenance"}:
+            filtered = [
+                item
+                for item in documents
+                if item["survey_status"] == requested_status
+            ]
+        else:
+            filtered = [
+                item for item in documents if item["health_status"] == requested_status
+            ]
+        return filtered[:maximum]
+
+    def district_school_detail(self, school_id: str) -> Mapping[str, Any]:
+        school = validate_school_id(school_id)
+        with self.repository.read() as connection:
+            row = connection.execute(
+                """SELECT d.*,s.public_host,s.registration_id,
+                          s.active_installation_id,s.tunnel_id,
+                          i.state AS installation_state,i.registered_at,
+                          h.received_at,h.application_version,
+                          h.local_server_state,h.gateway_state,
+                          h.survey_status,h.error_code,
+                          (SELECT COUNT(*) FROM passkeys p
+                           WHERE p.school_id=d.school_id) AS passkey_count,
+                          (SELECT COUNT(*) FROM activation_codes a
+                           WHERE a.school_id=d.school_id AND a.used_at IS NULL
+                             AND a.expires_at>?) AS pending_activation_count
+                   FROM district_schools d
+                   LEFT JOIN schools s ON s.school_id=d.school_id
+                   LEFT JOIN installations i
+                          ON i.installation_id=s.active_installation_id
+                   LEFT JOIN installation_heartbeats h
+                          ON h.installation_id=s.active_installation_id
+                   WHERE d.school_id=?""",
+                (timestamp(), school),
+            ).fetchone()
+            if row is None:
+                raise ServiceError(
+                    "The school is not in the district directory.",
+                    code="school_not_found",
+                )
+            installations = [
+                dict(item)
+                for item in connection.execute(
+                    """SELECT installation_id,state,registered_at,retired_at,
+                              retirement_transaction_id
+                       FROM installations WHERE school_id=?
+                       ORDER BY registered_at DESC,installation_id""",
+                    (school,),
+                ).fetchall()
+            ]
+            passkeys = [
+                dict(item)
+                for item in connection.execute(
+                    """SELECT label,created_at,last_used_at FROM passkeys
+                       WHERE school_id=? ORDER BY created_at,label""",
+                    (school,),
+                ).fetchall()
+            ]
+        document = dict(self._district_school_document(row))
+        document["installations"] = installations
+        document["passkeys"] = passkeys
+        return document
+
+    def list_audit_events(
+        self,
+        *,
+        school_id: str = "",
+        event_type: str = "",
+        limit: int = 100,
+    ) -> list[Mapping[str, Any]]:
+        school = validate_school_id(school_id) if str(school_id or "").strip() else ""
+        event = str(event_type or "").strip()[:80]
+        if event and not all(character.isalnum() or character in "_-" for character in event):
+            raise ServiceError("The audit event filter is invalid.", code="invalid_filter")
+        where: list[str] = []
+        parameters: list[Any] = []
+        if school:
+            where.append("school_id=?")
+            parameters.append(school)
+        if event:
+            where.append("event_type=?")
+            parameters.append(event)
+        clause = " WHERE " + " AND ".join(where) if where else ""
+        parameters.append(min(max(1, int(limit)), 500))
+        with self.repository.read() as connection:
+            rows = connection.execute(
+                """SELECT sequence,event_id,occurred_at,school_id,
+                          installation_id,event_type,detail_json
+                   FROM audit_events"""
+                + clause
+                + " ORDER BY sequence DESC LIMIT ?",
+                parameters,
+            ).fetchall()
+        result: list[Mapping[str, Any]] = []
+        for row in rows:
+            document = dict(row)
+            try:
+                detail = json.loads(str(document.pop("detail_json") or "{}"))
+            except json.JSONDecodeError:
+                detail = {}
+            document["detail"] = detail if isinstance(detail, Mapping) else {}
+            result.append(document)
+        return result
+
+    def record_heartbeat(
+        self,
+        *,
+        installation_id: str,
+        installation_secret: str,
+        application_version: str,
+        local_server_state: str,
+        gateway_state: str,
+        survey_status: str,
+        error_code: str = "",
+    ) -> Mapping[str, Any]:
+        installation = self.authenticate_installation(
+            installation_id, installation_secret
+        )
+        if str(installation["state"]) != ACTIVE:
+            raise ServiceError(
+                "This installation is not the active school server.",
+                code="authorization_failed",
+            )
+        application = str(application_version or "").strip()[:40]
+        server = str(local_server_state or "").strip().casefold()
+        gateway = str(gateway_state or "").strip().casefold()
+        survey = str(survey_status or "").strip().casefold()
+        error = str(error_code or "").strip()[:80]
+        if not application or any(character.isspace() for character in application):
+            raise ServiceError("Application version is invalid.", code="invalid_heartbeat")
+        if server not in {"running", "stopped", "starting", "stopping", "error"}:
+            raise ServiceError("Local server state is invalid.", code="invalid_heartbeat")
+        if gateway not in {
+            "connected",
+            "disconnected",
+            "connecting",
+            "error",
+            "not_configured",
+        }:
+            raise ServiceError("Gateway state is invalid.", code="invalid_heartbeat")
+        if survey not in {"online", "offline", "maintenance"}:
+            raise ServiceError("Survey status is invalid.", code="invalid_heartbeat")
+        if error not in {
+            "",
+            "authorization_offline",
+            "gateway_error",
+            "local_server_error",
+            "tunnel_start_failed",
+        }:
+            raise ServiceError("Heartbeat error code is invalid.", code="invalid_heartbeat")
+        received = timestamp()
+        with self.repository.transaction() as connection:
+            connection.execute(
+                """INSERT INTO installation_heartbeats(
+                       installation_id,school_id,received_at,application_version,
+                       local_server_state,gateway_state,survey_status,error_code
+                   ) VALUES(?,?,?,?,?,?,?,?)
+                   ON CONFLICT(installation_id) DO UPDATE SET
+                       school_id=excluded.school_id,
+                       received_at=excluded.received_at,
+                       application_version=excluded.application_version,
+                       local_server_state=excluded.local_server_state,
+                       gateway_state=excluded.gateway_state,
+                       survey_status=excluded.survey_status,
+                       error_code=excluded.error_code""",
+                (
+                    str(installation["installation_id"]),
+                    str(installation["school_id"]),
+                    received,
+                    application,
+                    server,
+                    gateway,
+                    survey,
+                    error,
+                ),
+            )
+        return {"ok": True, "received_at": received}
+
+    @staticmethod
+    def _district_school_document(row: Mapping[str, Any]) -> Mapping[str, Any]:
+        values = dict(row)
+        registered = bool(values.get("public_host"))
+        last_seen = str(values.get("received_at") or "")
+        fresh = False
+        if last_seen:
+            try:
+                observed = datetime.fromisoformat(last_seen)
+                fresh = utc_now() - observed.astimezone(timezone.utc) <= timedelta(minutes=20)
+            except (ValueError, TypeError):
+                fresh = False
+        if str(values.get("status")) == DIRECTORY_SUSPENDED:
+            health = "suspended"
+        elif not registered:
+            health = "pending"
+        elif not last_seen:
+            health = "unseen"
+        elif not fresh:
+            health = "stale"
+        elif (
+            str(values.get("gateway_state")) == "error"
+            or bool(values.get("error_code"))
+            or str(values.get("local_server_state")) != "running"
+        ):
+            health = "attention"
+        elif str(values.get("gateway_state")) == "connected":
+            health = "connected"
+        else:
+            health = "disconnected"
+        return {
+            "school_id": str(values.get("school_id") or ""),
+            "school_name": str(values.get("school_name") or ""),
+            "school_district": str(values.get("school_district") or ""),
+            "school_division": str(values.get("school_division") or ""),
+            "directory_status": str(values.get("status") or DIRECTORY_APPROVED),
+            "registration_state": "registered" if registered else "not_registered",
+            "public_host": str(values.get("public_host") or ""),
+            "registration_id": str(values.get("registration_id") or ""),
+            "active_installation_id": str(values.get("active_installation_id") or ""),
+            "installation_state": str(values.get("installation_state") or ""),
+            "registered_at": str(values.get("registered_at") or ""),
+            "last_seen_at": last_seen,
+            "application_version": str(values.get("application_version") or ""),
+            "local_server_state": str(values.get("local_server_state") or "unknown"),
+            "gateway_state": str(values.get("gateway_state") or "unknown"),
+            "survey_status": str(values.get("survey_status") or "unknown"),
+            "error_code": str(values.get("error_code") or ""),
+            "passkey_count": int(values.get("passkey_count") or 0),
+            "pending_activation_count": int(values.get("pending_activation_count") or 0),
+            "health_status": health,
+        }
+
     def list_passkeys(self, school_id: str) -> list[Mapping[str, Any]]:
         school = validate_school_id(school_id)
         with self.repository.read() as connection:
@@ -1004,6 +1542,19 @@ class RegistrationService:
         }
         try:
             with self.repository.transaction() as connection:
+                directory = connection.execute(
+                    "SELECT school_name,status FROM district_schools WHERE school_id=?",
+                    (school_id,),
+                ).fetchone()
+                if directory is not None and str(directory["status"]) != DIRECTORY_APPROVED:
+                    raise ServiceError(
+                        "This school's Internet Gateway enrollment is suspended.",
+                        code="school_suspended",
+                    )
+                if directory is not None:
+                    # The district roster, not browser-supplied form text, is
+                    # authoritative for the identity attached to this School ID.
+                    name = str(directory["school_name"])
                 activation = connection.execute(
                     "SELECT * FROM activation_codes WHERE code_hash=? AND school_id=?",
                     (code_hash, school_id),
@@ -1036,6 +1587,21 @@ class RegistrationService:
                         registration_id,
                         installation_id,
                         tunnel_id,
+                        timestamp(now),
+                        timestamp(now),
+                    ),
+                )
+                connection.execute(
+                    """INSERT OR IGNORE INTO district_schools(
+                           school_id,school_name,school_district,school_division,
+                           status,created_at,updated_at
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (
+                        school_id,
+                        name,
+                        "Schools District of Motiong",
+                        "Schools Division of Samar",
+                        DIRECTORY_APPROVED,
                         timestamp(now),
                         timestamp(now),
                     ),

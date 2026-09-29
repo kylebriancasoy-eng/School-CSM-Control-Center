@@ -98,6 +98,7 @@ $("registration").addEventListener("submit", async event => {
   try {
     showStatus("Preparing Windows passkey registration…");
     const begin = await request("/v1/registrations/begin", payload);
+    $("school-name").value = begin.school_name || payload.school_name;
     const credential = await navigator.credentials.create({publicKey: publicKeyOptions(begin.public_key)});
     const complete = await request("/v1/registrations/complete", {...payload, ceremony_id: begin.ceremony_id, passkey_response: normalizeCredential(credential)});
     $("activation-code").value = "";

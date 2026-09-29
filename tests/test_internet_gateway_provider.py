@@ -138,6 +138,30 @@ class InternetGatewayProviderTests(unittest.TestCase):
         self.assertNotIn("secret-value", args[1])
         self.assertTrue(connection.closed)
 
+    def test_heartbeat_uses_installation_path_and_keeps_secret_out_of_payload(self) -> None:
+        connection = _Connection({"ok": True, "received_at": "2026-09-27T08:00:00Z"})
+        client = GatewayProviderClient(
+            parse_gateway_provider_config(_config_document()),
+            connection_factory=lambda parsed, timeout: connection,
+        )
+        payload = {
+            "application_version": "0.7.0",
+            "local_server_state": "running",
+            "gateway_state": "connected",
+            "survey_status": "maintenance",
+            "error_code": "",
+        }
+        result = client.heartbeat("installation-1", "secret-value", payload)
+        self.assertTrue(result["ok"])
+        args, kwargs = connection.request_args
+        self.assertEqual(
+            args[:2],
+            ("POST", "/base/v1/installations/installation-1/heartbeat"),
+        )
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret-value")
+        self.assertNotIn("secret-value", str(kwargs.get("body") or ""))
+        self.assertNotIn("school_id", str(kwargs.get("body") or ""))
+
     def test_registration_and_public_health_probes_are_bounded_and_sanitized(self) -> None:
         registration = _Connection(
             {"ok": True, "service": "school-csm-gateway-registration"}

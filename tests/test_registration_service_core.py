@@ -125,6 +125,20 @@ class RegistrationServiceCoreTests(unittest.TestCase):
                 sign_count=0,
             )
 
+    def test_newer_database_schema_is_never_silently_downgraded(self) -> None:
+        with self.repository.transaction() as connection:
+            connection.execute(
+                "UPDATE service_meta SET value='999' WHERE key='schema_version'"
+            )
+        with self.assertRaises(ServiceError) as context:
+            RegistrationRepository(self.repository.path)
+        self.assertEqual(context.exception.code, "schema_newer")
+        with self.repository.read() as connection:
+            stored = connection.execute(
+                "SELECT value FROM service_meta WHERE key='schema_version'"
+            ).fetchone()
+        self.assertEqual(stored["value"], "999")
+
     def test_transfer_requires_verified_data_unless_server_only(self) -> None:
         self._register()
         with self.assertRaisesRegex(ServiceError, "verified staged migration"):

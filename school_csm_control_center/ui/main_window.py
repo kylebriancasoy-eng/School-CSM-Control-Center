@@ -366,7 +366,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._tray_urls_changed(*self.server_controller.urls())
         self._gateway_state_changed(self.gateway_controller.state())
         self._authorization_timer = QTimer(self)
-        self._authorization_timer.setInterval(15 * 60 * 1000)
+        # A five-minute cadence tolerates several transient failures before the
+        # district portal's 20-minute freshness window expires.
+        self._authorization_timer.setInterval(5 * 60 * 1000)
         self._authorization_timer.timeout.connect(
             self.gateway_controller.check_authorization_async
         )

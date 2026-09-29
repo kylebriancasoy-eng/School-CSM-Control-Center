@@ -5,6 +5,7 @@ import inspect
 from pathlib import Path
 import socket
 from tempfile import TemporaryDirectory
+from threading import Condition, Event
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -118,6 +119,8 @@ class _Client:
         self.health_checks = 0
         self.acknowledged = None
         self.acknowledgement_failures = 0
+        self.heartbeats = []
+        self.heartbeat_condition = Condition()
 
     def redeem_handoff(self, code, installation_id):
         self.redeemed = (code, installation_id)
@@ -154,6 +157,20 @@ class _Client:
 
     def authorization_status(self, school_id, installation_id, secret):
         return {"state": "active", "school_id": school_id, "installation_id": installation_id}
+
+    def heartbeat(self, installation_id, secret, payload):
+        with self.heartbeat_condition:
+            self.heartbeats.append((installation_id, secret, dict(payload)))
+            self.heartbeat_condition.notify_all()
+        return {"ok": True}
+
+    def wait_for_heartbeat(self, gateway_state):
+        with self.heartbeat_condition:
+            return self.heartbeat_condition.wait_for(
+                lambda: bool(self.heartbeats)
+                and self.heartbeats[-1][2]["gateway_state"] == gateway_state,
+                timeout=3,
+            )
 
 
 class _Tunnel:
@@ -602,6 +619,68 @@ class GatewayControllerIntegrationTests(unittest.TestCase):
         self.assertTrue(controller.connect_or_reconnect())
         self.assertEqual(client.tunnel_request[-1], 8123)
         self.assertEqual(tunnel.received, "refreshed-token")
+        self.assertTrue(client.wait_for_heartbeat("connected"))
+        installation_id, secret, heartbeat = client.heartbeats[-1]
+        self.assertEqual(installation_id, store.installation_id)
+        self.assertEqual(secret, "installation-secret")
+        self.assertEqual(heartbeat["gateway_state"], "connected")
+        self.assertEqual(heartbeat["local_server_state"], "running")
+        self.assertEqual(heartbeat["survey_status"], "offline")
+        self.assertNotIn("school_id", heartbeat)
+
+    def test_slow_heartbeat_does_not_block_disconnect_and_latest_state_wins(self) -> None:
+        entered = Event()
+        release = Event()
+        self.addCleanup(release.set)
+        client = _Client(_config())
+        original = client.heartbeat
+
+        def slow_heartbeat(installation_id, secret, payload):
+            if not entered.is_set():
+                entered.set()
+                release.wait(5)
+            return original(installation_id, secret, payload)
+
+        client.heartbeat = slow_heartbeat
+        store = _StateStore({
+            "installation_id": "11111111-1111-4111-8111-111111111111",
+            "gateway_status": "disconnected",
+            "authorization_status": "ACTIVE",
+            "registration": {
+                "school_id": "123456",
+                "registration_id": "registration-1",
+                "public_hostname": "123456.csm.example.gov.ph",
+                "tunnel_id": "tunnel-1",
+            },
+        })
+        credentials = _Credentials()
+        credentials.installation = "installation-secret"
+        local = {"school_id": "123456", "server_running": True, "survey_status": "online"}
+        controller = InternetGatewayController(
+            Path.cwd(), local_settings_provider=lambda: dict(local),
+            state_store=store, client=client, tunnel=_Tunnel(),
+            credentials=credentials, provider_config=_config(),
+        )
+        controller._state["gateway_state"] = "connected"
+        controller._report_heartbeat()
+        self.assertTrue(entered.wait(2))
+        # A blocked monitoring request must not hold the application's controls.
+        local["survey_status"] = "maintenance"
+        controller._report_heartbeat()
+        controller.disconnect()
+        self.assertFalse(release.is_set())
+        self.assertEqual(controller.state()["gateway_state"], "disconnected")
+        release.set()
+        self.assertTrue(client.wait_for_heartbeat("disconnected"))
+        self.assertEqual([item[2]["gateway_state"] for item in client.heartbeats],
+                         ["connected", "disconnected"])
+        self.assertEqual(client.heartbeats[-1][2]["survey_status"], "maintenance")
+
+        def broken_settings():
+            raise RuntimeError("Settings are temporarily unavailable")
+
+        controller._local_settings_provider = broken_settings
+        controller._report_heartbeat()  # Monitoring remains best effort.
 
     def test_cached_active_state_requires_a_fresh_provider_check_each_session(self) -> None:
         store = _StateStore(

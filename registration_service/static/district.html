@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071729">
+  <title>Motiong District CSM Management</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/district.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <main class="login-screen" id="login-view" aria-labelledby="login-title" hidden>
+    <section class="login-card">
+      <div class="login-brand" aria-hidden="true">MD</div>
+      <p class="section-kicker">Restricted district service</p>
+      <h1 id="login-title">Motiong District CSM Management</h1>
+      <p class="login-intro">Sign in with the district administrator access token issued by the service owner.</p>
+      <form id="login-form" novalidate>
+        <label for="admin-token">Administrator access token</label>
+        <div class="secret-field">
+          <input id="admin-token" name="access_token" type="password" minlength="24" maxlength="512" autocomplete="current-password" autocapitalize="none" spellcheck="false" required aria-describedby="token-help login-error">
+          <button class="secret-toggle" id="token-visibility" type="button" aria-label="Show access token" aria-pressed="false">Show</button>
+        </div>
+        <p class="field-help" id="token-help">The token is sent only to this service over HTTPS and is never saved in browser storage.</p>
+        <div class="form-error" id="login-error" role="alert" hidden></div>
+        <button class="button button--primary button--wide" id="login-button" type="submit">Sign in securely</button>
+      </form>
+      <p class="login-foot"><span aria-hidden="true">◈</span> Survey responses, reports, scanner images, and API keys never enter this portal.</p>
+    </section>
+  </main>
+
+  <div class="session-check" id="session-check" role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span><span>Checking your district session…</span>
+  </div>
+
+  <div class="app-shell" id="app-shell" hidden>
+    <aside class="sidebar" id="sidebar" aria-label="District portal navigation">
+      <div class="district-mark" aria-label="Motiong District CSM Management">
+        <span class="district-mark__seal" aria-hidden="true">MD</span>
+        <span>
+          <strong>Motiong District</strong>
+          <small>CSM Management</small>
+        </span>
+      </div>
+      <nav class="nav-list" aria-label="Main">
+        <button class="nav-item is-active" type="button" data-view="overview" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+        </button>
+        <button class="nav-item" type="button" data-view="schools">
+          <span class="nav-icon" aria-hidden="true">▦</span><span>Schools</span><span class="nav-count" id="nav-school-count">—</span>
+        </button>
+        <button class="nav-item" type="button" data-view="enrollment">
+          <span class="nav-icon" aria-hidden="true">＋</span><span>Add &amp; enroll school</span>
+        </button>
+        <button class="nav-item" type="button" data-view="activity">
+          <span class="nav-icon" aria-hidden="true">≡</span><span>Activity log</span>
+        </button>
+      </nav>
+      <div class="privacy-card">
+        <strong>School data stays local</strong>
+        <p>This portal monitors connectivity and authorization only. It never receives survey answers, reports, scanner images, or OpenAI keys.</p>
+      </div>
+      <div class="sidebar-foot">
+        <span class="service-dot" id="service-dot" aria-hidden="true"></span>
+        <span><strong id="service-label">Checking service…</strong><small id="service-detail">District gateway</small></span>
+      </div>
+      <button class="nav-logout" id="logout-button" type="button"><span aria-hidden="true">→</span> Sign out</button>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
+        <div>
+          <p class="eyebrow">District operations</p>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <div class="topbar-actions">
+          <p class="last-updated" id="last-updated" aria-live="polite">Not refreshed yet</p>
+          <button class="button button--secondary" id="refresh-button" type="button">
+            <span aria-hidden="true">↻</span> Refresh
+          </button>
+        </div>
+      </header>
+
+      <main id="main-content" tabindex="-1">
+        <div class="notice notice--error" id="load-error" role="alert" hidden>
+          <div><strong>District information could not be loaded.</strong><p id="load-error-detail">Check the management service and try again.</p></div>
+          <button class="button button--secondary" id="retry-button" type="button">Try again</button>
+        </div>
+
+        <section class="view" id="view-overview" data-view-panel="overview" aria-labelledby="page-title">
+          <div class="welcome-row">
+            <div>
+              <p class="section-kicker">District at a glance</p>
+              <h2>School Internet Gateway status</h2>
+              <p>See which schools are ready to accept online survey responses and which need help.</p>
+            </div>
+            <button class="button button--primary" type="button" data-go-view="enrollment">Enroll a school</button>
+          </div>
+
+          <div class="metric-grid" aria-label="District status summary">
+            <article class="metric-card">
+              <div class="metric-icon metric-icon--blue" aria-hidden="true">▦</div>
+              <div><p>Registered schools</p><strong id="metric-registered">—</strong><small id="metric-registered-note">Loading roster</small></div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon--green" aria-hidden="true">✓</div>
+              <div><p>Connected now</p><strong id="metric-connected">—</strong><small id="metric-connected-note">Current gateway check-ins</small></div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon--amber" aria-hidden="true">!</div>
+              <div><p>Needs attention</p><strong id="metric-attention">—</strong><small id="metric-attention-note">Offline or overdue</small></div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon--violet" aria-hidden="true">→</div>
+              <div><p>Awaiting setup</p><strong id="metric-pending">—</strong><small id="metric-pending-note">Not connected yet</small></div>
+            </article>
+          </div>
+
+          <div class="overview-grid">
+            <section class="panel" aria-labelledby="gateway-heading">
+              <div class="panel-heading"><div><p class="section-kicker">Live operations</p><h2 id="gateway-heading">Gateway health</h2></div><span class="status-chip status-chip--checking" id="district-health">Checking</span></div>
+              <div class="health-list" id="health-list" aria-live="polite">
+                <div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div>
+              </div>
+            </section>
+            <section class="panel" aria-labelledby="attention-heading">
+              <div class="panel-heading"><div><p class="section-kicker">Action queue</p><h2 id="attention-heading">Needs attention</h2></div><button class="text-button" type="button" data-go-view="schools" data-status-filter="attention">View all</button></div>
+              <div class="attention-list" id="attention-list" aria-live="polite">
+                <div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel" aria-labelledby="recent-schools-heading">
+            <div class="panel-heading"><div><p class="section-kicker">School roster</p><h2 id="recent-schools-heading">Recently active schools</h2></div><button class="text-button" type="button" data-go-view="schools">Open school directory</button></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">School</th><th scope="col">Internet survey</th><th scope="col">Gateway</th><th scope="col">Last check-in</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody id="recent-schools-body"><tr><td colspan="5"><div class="skeleton skeleton--table"></div></td></tr></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-schools" data-view-panel="schools" hidden aria-labelledby="page-title">
+          <div class="toolbar">
+            <label class="search-field" for="school-search"><span aria-hidden="true">⌕</span><span class="visually-hidden">Search schools</span><input id="school-search" type="search" autocomplete="off" placeholder="Search by school name or School ID"></label>
+            <label class="filter-field" for="school-status"><span class="visually-hidden">Filter schools by status</span><select id="school-status"><option value="all">All statuses</option><option value="connected">Connected</option><option value="attention">Needs attention</option><option value="pending">Awaiting setup</option><option value="registered">Registered</option><option value="approved">Approved</option><option value="suspended">Suspended</option></select></label>
+            <button class="button button--secondary" id="add-school-button" type="button">Add official school</button>
+            <button class="button button--primary" type="button" data-go-view="enrollment">Issue activation</button>
+          </div>
+          <section class="panel roster-panel" aria-labelledby="school-directory-heading">
+            <div class="panel-heading"><div><p class="section-kicker">Official roster</p><h2 id="school-directory-heading">District schools</h2></div><p id="roster-result-count" class="panel-meta" aria-live="polite">Loading…</p></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">School</th><th scope="col">Gateway</th><th scope="col">Survey form</th><th scope="col">App version</th><th scope="col">Last check-in</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody id="school-roster-body"><tr><td colspan="6"><div class="skeleton skeleton--table"></div></td></tr></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="roster-empty" hidden><div aria-hidden="true">⌕</div><h3>No matching schools</h3><p>Try changing the search or status filter.</p></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-enrollment" data-view-panel="enrollment" hidden aria-labelledby="page-title">
+          <section class="add-school-banner" aria-labelledby="add-school-heading">
+            <div>
+              <p class="section-kicker">District directory</p>
+              <h2 id="add-school-heading">School not listed yet?</h2>
+              <p>Add its official identity before issuing a one-time activation code.</p>
+            </div>
+            <button class="button button--secondary" type="button" data-open-school-dialog>Add official school</button>
+          </section>
+          <div class="enrollment-grid">
+            <section class="panel enrollment-card" aria-labelledby="enrollment-heading">
+              <p class="section-kicker">One-time district approval</p>
+              <h2 id="enrollment-heading">Prepare a school for Internet Gateway setup</h2>
+              <p>Create a short-lived activation code only after verifying the school and its designated CSM coordinator through an approved district channel.</p>
+              <ol class="step-list" aria-label="Enrollment steps">
+                <li class="is-current"><span>1</span><div><strong>Select the official school</strong><small>Use the district roster to prevent duplicate or mistaken School IDs.</small></div></li>
+                <li><span>2</span><div><strong>Issue a one-time activation code</strong><small>The code is copied directly to your clipboard and is never displayed on this page.</small></div></li>
+                <li><span>3</span><div><strong>Send it through an approved channel</strong><small>The school uses it once to authorize its first Control Center computer.</small></div></li>
+              </ol>
+              <form id="activation-form">
+                <label for="activation-school">Official school</label>
+                <select id="activation-school" required><option value="">Choose a school…</option></select>
+                <div class="selected-school" id="selected-school" hidden>
+                  <div><span class="school-avatar" id="selected-school-avatar" aria-hidden="true">SC</span><div><strong id="selected-school-name"></strong><small id="selected-school-detail"></small></div></div>
+                  <span id="selected-school-status"></span>
+                </div>
+                <div class="safety-note"><span aria-hidden="true">⌁</span><p><strong>Secure handling</strong><br>The activation code expires automatically and can be used only for the selected School ID. It will not be written to this page or to the activity details.</p></div>
+                <button class="button button--primary button--wide" id="issue-activation-button" type="submit">Review and issue activation code</button>
+              </form>
+            </section>
+            <aside class="panel enrollment-aside" aria-labelledby="enrollment-help-heading">
+              <p class="section-kicker">What the school does</p>
+              <h2 id="enrollment-help-heading">Simple four-step setup</h2>
+              <ol class="compact-steps">
+                <li><span>1</span><p>Complete Mandatory School Registration.</p></li>
+                <li><span>2</span><p>Open the Server Dashboard.</p></li>
+                <li><span>3</span><p>Go to Internet Gateway.</p></li>
+                <li><span>4</span><p>Select <strong>Connect or reconnect the Internet Gateway</strong> and use the one-time approval when prompted.</p></li>
+              </ol>
+              <div class="boundary-card"><strong>The district portal never stores:</strong><ul><li>Survey answers or remarks</li><li>Scanner images</li><li>School reports or backups</li><li>OpenAI API credentials</li></ul></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-activity" data-view-panel="activity" hidden aria-labelledby="page-title">
+          <div class="toolbar">
+            <label class="filter-field filter-field--wide" for="audit-school"><span class="visually-hidden">Filter activity by school</span><select id="audit-school"><option value="">All schools</option></select></label>
+            <label class="filter-field" for="audit-type"><span class="visually-hidden">Filter by activity type</span><select id="audit-type"><option value="">All activity</option><option value="activation_code_issued">Activation code issued</option><option value="initial_registration_completed">Initial registration</option><option value="district_school_saved">School saved</option><option value="district_school_status_changed">School status changed</option><option value="transfer_intent_created">Transfer started</option><option value="authorization_transferred">Authorization transferred</option><option value="administrator_passkey_added">Passkey added</option><option value="administrator_passkey_revoked">Passkey revoked</option><option value="administrator_passkeys_recovered">Passkeys recovered</option><option value="passkey_reset_code_issued">Passkey recovery issued</option><option value="source_tunnel_revocation_pending">Tunnel cleanup pending</option></select></label>
+            <button class="button button--secondary" id="audit-refresh-button" type="button">Refresh log</button>
+          </div>
+          <section class="panel" aria-labelledby="activity-heading">
+            <div class="panel-heading"><div><p class="section-kicker">Accountability</p><h2 id="activity-heading">District activity log</h2></div><p class="panel-meta">Sensitive values are intentionally omitted.</p></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">Date and time</th><th scope="col">School</th><th scope="col">Activity</th><th scope="col">Result</th></tr></thead>
+                <tbody id="audit-body"><tr><td colspan="4"><div class="skeleton skeleton--table"></div></td></tr></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="audit-empty" hidden><div aria-hidden="true">≡</div><h3>No activity found</h3><p>No safe audit summaries match these filters.</p></div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <button class="nav-backdrop" id="nav-backdrop" type="button" aria-label="Close navigation" hidden></button>
+
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+  <aside class="school-drawer" id="school-drawer" aria-labelledby="drawer-title" aria-hidden="true">
+    <div class="drawer-head">
+      <div><p class="section-kicker">School details</p><h2 id="drawer-title">School</h2><p id="drawer-subtitle"></p></div>
+      <button class="icon-button" id="close-drawer" type="button" aria-label="Close school details">×</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <dialog class="school-dialog" id="school-dialog" aria-labelledby="school-dialog-title">
+    <form id="school-form" novalidate>
+      <div class="dialog-head">
+        <div><p class="section-kicker">Official directory</p><h2 id="school-dialog-title">Add a district school</h2></div>
+        <button class="icon-button" id="close-school-dialog" type="button" aria-label="Close add school form">×</button>
+      </div>
+      <p>Use the School ID and name from the official district roster. The school can be updated later without creating a duplicate.</p>
+      <div class="form-grid">
+        <div>
+          <label for="new-school-id">School ID</label>
+          <input id="new-school-id" name="school_id" inputmode="numeric" pattern="[0-9]{4,12}" minlength="4" maxlength="12" autocomplete="off" required aria-describedby="new-school-id-help">
+          <small id="new-school-id-help">4 to 12 digits</small>
+        </div>
+        <div>
+          <label for="new-school-name">Official school name</label>
+          <input id="new-school-name" name="school_name" maxlength="200" autocomplete="organization" required>
+        </div>
+        <div>
+          <label for="new-school-district">School district</label>
+          <input id="new-school-district" name="school_district" maxlength="160" value="Schools District of Motiong" required>
+        </div>
+        <div>
+          <label for="new-school-division">School division</label>
+          <input id="new-school-division" name="school_division" maxlength="160" value="Schools Division of Samar" required>
+        </div>
+      </div>
+      <div class="form-error" id="school-form-error" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="button button--secondary" id="cancel-school-dialog" type="button">Cancel</button>
+        <button class="button button--primary" id="save-school-button" type="submit">Add to directory</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="confirm-dialog" id="activation-dialog" aria-labelledby="activation-dialog-title">
+    <form method="dialog" id="activation-dialog-form">
+      <div class="dialog-icon" aria-hidden="true">⌁</div>
+      <h2 id="activation-dialog-title">Issue a one-time activation code?</h2>
+      <p id="activation-dialog-school"></p>
+      <div class="dialog-warning"><strong>Before continuing</strong><p>Verify the requester through an approved district channel. The new code will be copied to this device’s clipboard and will not be shown on screen.</p></div>
+      <div class="dialog-actions">
+        <button class="button button--secondary" value="cancel" type="submit">Cancel</button>
+        <button class="button button--primary" id="confirm-activation-button" value="confirm" type="submit">Issue and copy code</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+  <script src="/assets/district.js" defer></script>
+</body>
+</html>

@@ -7,8 +7,8 @@ import school_csm_control_center
 
 
 class ReleaseContractTests(unittest.TestCase):
-    def test_package_version_is_v066(self) -> None:
-        self.assertEqual(school_csm_control_center.__version__, "0.6.6")
+    def test_package_version_is_v070(self) -> None:
+        self.assertEqual(school_csm_control_center.__version__, "0.7.0")
 
     def test_manual_corner_editor_starts_without_marker_center_prefill(self) -> None:
         root = Path(__file__).parents[1]
@@ -17,6 +17,14 @@ class ReleaseContractTests(unittest.TestCase):
         )
         self.assertIn("cornerPoints=[];drawCorners();updateCornerMessage()", html)
         self.assertNotIn("const suggested=currentJob?.recognition?.source_corners", html)
+
+    def test_district_checkin_cadence_has_stale_window_headroom(self) -> None:
+        root = Path(__file__).parents[1]
+        source = (root / "school_csm_control_center" / "ui" / "main_window.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("setInterval(5 * 60 * 1000)", source)
+        self.assertNotIn("setInterval(15 * 60 * 1000)", source)
 
 
 if __name__ == "__main__":

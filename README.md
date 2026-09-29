@@ -1,4 +1,4 @@
-# School CSM Control Center 0.6.6
+# School CSM Control Center 0.7.0
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,31 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.7.0 highlights
+
+- Managed multi-school deployments now include a separate, responsive **Motiong
+  District CSM Management** web portal for the official School-ID roster,
+  one-time first-enrollment approvals, infrastructure status, and safe audit
+  summaries.
+- District administration uses a high-entropy access token stored by the service
+  only as a SHA-256 digest, an expiring `Secure`/`HttpOnly` session, and CSRF
+  checks on every change. Activation codes are returned once and stored only as
+  digests.
+- Registered Control Centers send a minimal authenticated check-in containing
+  only application, local-server, gateway, and Survey Form states. Survey
+  answers, respondent information, scans, reports, backups, and OpenAI
+  credentials remain exclusively on the school's computer.
+- Every School ID retains its own hostname, tunnel, active server, and Survey
+  Form status. Taking one school Offline or Under Maintenance does not change
+  any other school.
+- District suspension is intentionally limited to **new enrollment**. It blocks
+  new activation codes without silently stopping an existing school server or
+  its Local-Only survey workflow.
+
+The district portal is deployed with the separate registration service; it is
+not bundled into every school's Windows installation. The compiled school app
+and Setup EXE continue to run without Python installed.
 
 ## 0.6.6 highlights
 

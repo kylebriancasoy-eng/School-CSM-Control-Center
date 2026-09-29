@@ -134,6 +134,21 @@ class GatewayProviderClient:
             bearer=installation_secret,
         )
 
+    def heartbeat(
+        self,
+        installation_id: str,
+        installation_secret: str,
+        payload: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Send a minimal operational check-in without school response data."""
+
+        return self._request(
+            "POST",
+            f"/v1/installations/{quote(str(installation_id), safe='')}/heartbeat",
+            payload,
+            bearer=installation_secret,
+        )
+
     def redeem_handoff(
         self, completion_code: str, installation_id: str
     ) -> Mapping[str, Any]:

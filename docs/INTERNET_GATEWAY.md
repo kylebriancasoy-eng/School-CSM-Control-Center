@@ -1,6 +1,6 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.6.6 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.7.0 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 saved gateway configuration, the application stays **Local Only**, starts no
 tunnel, and makes no registration-service request.
@@ -24,6 +24,52 @@ tunnel, and makes no registration-service request.
 Local Survey and Scanner access continues to use the verified LAN addresses.
 Internet Survey and Scanner links are separate and appear only for a configured,
 registered, authorized installation.
+
+## District management portal
+
+The managed multi-school deployment includes a separate, browser-based
+**Motiong District CSM Management** portal at the registration service's
+`/district` address. It is not installed as another copy of the School Control
+Center and it does not become a shared survey database. Authorized district
+operators use it to maintain the official School-ID roster, issue short-lived
+first-enrollment approvals, see infrastructure check-ins, and review safe audit
+summaries.
+
+Every school remains isolated:
+
+- its School ID selects its own permanent hostname and tunnel;
+- its one active Control Center remains the only origin for that hostname;
+- its Survey Form status, including **Offline** or **Under Maintenance**, applies
+  only to that school;
+- its responses, remarks, scans, reports, backups, and OpenAI credentials stay on
+  its own computer; and
+- another school's registration, outage, suspension, or server transfer does not
+  change its settings or receive its traffic.
+
+The active school installation sends the district service only a small signed-in
+check-in: application version, local-server state, gateway state, Survey Form
+availability, and a bounded error category. A check-in does not contain response
+counts, respondent information, survey answers, scanner images, or report text.
+Failure to send a check-in makes the portal status stale but never stops the
+local Survey Server.
+
+For a school's first managed connection, the district operator first confirms
+the official school entry and issues a one-time activation code through the
+portal. The school then follows this non-technical workflow:
+
+1. Complete **Mandatory School Registration** in the Control Center.
+2. Open **Survey Server and Respondent Access**.
+3. Go to **Internet Gateway** and select **Connect or reconnect the Internet
+   Gateway**.
+4. Use the district's one-time approval when the secure registration page asks
+   for it, then create the school's administrator passkey.
+
+After that first enrollment, normal reconnects use the device authorization
+already protected by Windows Credential Manager. Suspending a directory entry
+in the district portal blocks new activation codes; it is deliberately labeled
+**Suspend new enrollment** because it does not silently shut down an already
+active school server. The school's own operator still controls whether its
+Survey Form is Online, Offline, or Under Maintenance.
 
 ## Single-school Cloudflare pilot without a custom domain
 

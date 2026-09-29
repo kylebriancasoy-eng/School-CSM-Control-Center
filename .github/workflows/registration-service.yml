@@ -6,12 +6,14 @@ on:
       - "registration_service/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
+      - "tests/test_district_portal.py"
       - ".github/workflows/registration-service.yml"
   pull_request:
     paths:
       - "registration_service/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
+      - "tests/test_district_portal.py"
       - ".github/workflows/registration-service.yml"
 
 permissions:
@@ -29,6 +31,11 @@ jobs:
           cache-dependency-path: |
             registration_service/requirements.txt
             registration_service/requirements-test.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify district portal session behavior
+        run: node --test registration_service/test/district.test.mjs
       - name: Install service dependencies
         run: >-
           python -m pip install --disable-pip-version-check
@@ -39,6 +46,7 @@ jobs:
           python -m unittest
           tests.test_registration_service_core
           tests.test_registration_service_app
+          tests.test_district_portal
           tests.test_registration_service_cloudflare
           tests.test_internet_gateway_provider
           -q

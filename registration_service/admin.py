@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from .core import RegistrationRepository, RegistrationService
+from .district_auth import generate_district_admin_token
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,7 +36,18 @@ def main(argv: list[str] | None = None) -> int:
     revoke.add_argument("--school-id", required=True)
     revoke.add_argument("--credential-id", required=True)
     revoke.add_argument("--confirm", action="store_true", required=True)
+    subcommands.add_parser(
+        "generate-district-admin-token",
+        help="Generate the district portal's one-time administrator access token",
+    )
     arguments = parser.parse_args(argv)
+    if arguments.command == "generate-district-admin-token":
+        token, digest = generate_district_admin_token()
+        print("District administrator access token (show once):")
+        print(token)
+        print("\nSet this only on the registration service:")
+        print(f"SCHOOL_CSM_DISTRICT_ADMIN_TOKEN_SHA256={digest}")
+        return 0
     repository = RegistrationRepository(arguments.database)
     if arguments.command == "issue-activation":
         code = repository.issue_activation_code(arguments.school_id)
