@@ -4,16 +4,24 @@ on:
   push:
     paths:
       - "registration_service/**"
+      - "district_gateway_worker/**"
+      - "district_management_server/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
       - "tests/test_district_portal.py"
+      - "tests/test_district_management_server.py"
+      - "tests/test_district_release_packaging.py"
       - ".github/workflows/registration-service.yml"
   pull_request:
     paths:
       - "registration_service/**"
+      - "district_gateway_worker/**"
+      - "district_management_server/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
       - "tests/test_district_portal.py"
+      - "tests/test_district_management_server.py"
+      - "tests/test_district_release_packaging.py"
       - ".github/workflows/registration-service.yml"
 
 permissions:
@@ -35,7 +43,10 @@ jobs:
         with:
           node-version: "22"
       - name: Verify district portal session behavior
-        run: node --test registration_service/test/district.test.mjs
+        run: >-
+          node --test
+          registration_service/test/district.test.mjs
+          district_gateway_worker/test/proxy.test.mjs
       - name: Install service dependencies
         run: >-
           python -m pip install --disable-pip-version-check
@@ -49,4 +60,6 @@ jobs:
           tests.test_district_portal
           tests.test_registration_service_cloudflare
           tests.test_internet_gateway_provider
+          tests.test_district_management_server
+          tests.test_district_release_packaging
           -q

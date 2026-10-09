@@ -87,6 +87,32 @@ class GatewayReleasePackagingTests(unittest.TestCase):
                 loaded = load_gateway_provider_config(install_root, required=True)
                 self.assertEqual(loaded.managed_domain, "replacement.example.gov.ph")
 
+    def test_bundled_default_enables_district_install_but_durable_config_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            install_root = root / "installed-app"
+            install_root.mkdir()
+            bundled = install_root / "internet_gateway_provider.default.json"
+            bundled.write_text(json.dumps(self._provider_document()), encoding="utf-8")
+            program_data = root / "program-data"
+            with patch.dict(os.environ, {"PROGRAMDATA": str(program_data)}):
+                loaded = load_gateway_provider_config(install_root, required=True)
+                self.assertEqual(loaded.managed_domain, "csm.example.gov.ph")
+
+                durable = (
+                    program_data
+                    / "MoSSLab"
+                    / "School CSM Control Center"
+                    / "Configuration"
+                    / "internet_gateway_provider.json"
+                )
+                durable.parent.mkdir(parents=True)
+                replacement = self._provider_document()
+                replacement["managed_domain"] = "district.example.gov.ph"
+                durable.write_text(json.dumps(replacement), encoding="utf-8")
+                loaded = load_gateway_provider_config(install_root, required=True)
+                self.assertEqual(loaded.managed_domain, "district.example.gov.ph")
+
     def test_build_fetch_pin_matches_runtime_integrity_pin(self) -> None:
         self.assertEqual(fetch_cloudflared.VERSION, CLOUDFLARED_VERSION)
         self.assertEqual(

@@ -22,19 +22,25 @@ dependencies = [
 [project.optional-dependencies]
 build = ["PyInstaller>=6.11,<7"]
 test = ["pytest>=8,<10"]
+district = [
+  "fastapi==0.139.2",
+  "uvicorn==0.51.0",
+  "webauthn==3.0.0",
+]
 
 [project.scripts]
 school-csm-control-center = "run_school_csm_control_center:main"
+school-csm-district-management-server = "run_district_management_server:main"
 
 [tool.setuptools]
-py-modules = ["run_school_csm_control_center"]
+py-modules = ["run_school_csm_control_center", "run_district_management_server"]
 include-package-data = true
 
 [tool.setuptools.dynamic]
 version = { attr = "school_csm_control_center.version.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["school_csm_control_center*"]
+include = ["school_csm_control_center*", "district_management_server*", "registration_service*"]
 
 [tool.setuptools.package-data]
 school_csm_control_center = [

@@ -1,4 +1,4 @@
-# School CSM Control Center 0.7.0
+# School CSM Control Center 0.8.0
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -30,6 +30,28 @@ must be selected explicitly; it removes the current account's standard saved-dat
 folder and named application credentials, but retains the machine-wide provider
 configuration.
 
+## 0.8.0 highlights
+
+- A separate compiled **School CSM District Management Server** now hosts the
+  Motiong roster, activation approvals, passkey enrollment, safe health
+  summaries, and automatic gateway provisioning without requiring Python.
+- First-run setup creates a dedicated management tunnel, narrow Workers VPC
+  Service, and `management` Worker. Cloudflare and connector tokens stay in
+  Windows Credential Manager; the district administrator token is shown once
+  and only its digest is retained.
+- Each approved School ID receives its own named tunnel, fixed VPC Service,
+  ordinary numeric Worker, connector token, and public address under
+  `motiong-district-csm-survey.workers.dev`. Transfer rollback restores the
+  previous binding before replacement resources are removed.
+- The district server listens only on loopback, starts the outbound connector
+  only after its health check succeeds, supports notification-area operation
+  and sign-in startup, and preserves its database outside the replaceable app.
+- The district app creates and restores matched encrypted `.mossdistrict`
+  recovery backups, while refusing to overwrite an already configured host.
+- A separate, checksummed district Windows archive is built and published with
+  tagged releases. It excludes runtime databases, logs, configuration, and
+  secrets and does not become part of a school's installation.
+
 ## 0.7.0 highlights
 
 - Managed multi-school deployments now include a separate, responsive **Motiong
@@ -52,8 +74,17 @@ configuration.
   its Local-Only survey workflow.
 
 The district portal is deployed with the separate registration service; it is
-not bundled into every school's Windows installation. The compiled school app
-and Setup EXE continue to run without Python installed.
+not bundled into every school's Windows installation. A compiled **School CSM
+District Management Server** package can host the free pilot on one designated
+district Windows computer without a separate Python installation. That computer
+and its internet connection must remain available for the public portal,
+activation, provisioning, and check-ins; a district-host outage does not remove
+school data or stop Local-Only collection. See
+[`docs/DISTRICT_MANAGEMENT_SERVER.md`](docs/DISTRICT_MANAGEMENT_SERVER.md) for
+setup, school onboarding, backup, security, and recovery responsibilities.
+
+The compiled school app and Setup EXE also continue to run without Python
+installed.
 
 ## 0.6.6 highlights
 
@@ -90,12 +121,12 @@ and Setup EXE continue to run without Python installed.
   name before the language choice and throughout the questionnaire. These
   display fields cannot be edited or used to redirect a response; the QR
   hostname and the school server remain authoritative.
-- The Motiong District pilot uses the shared account namespace
+- The Motiong District pilot uses the account's shared `workers.dev` subdomain
   `<SCHOOL_ID>.motiong-district-csm-survey.workers.dev`, while each school keeps
   its own School-ID Worker, Tunnel, VPC Service, connector credential, and local
   response database.
 - Existing direct-pilot installations can change only their Worker hostname
-  after a district namespace rename without re-entering or exposing the saved
+  after a district subdomain rename without re-entering or exposing the saved
   connector token. A checked maintenance utility creates timestamped state and
   audit backups before the same migration is applied outside the app UI.
 - SQD5 is omitted from new onsite, online, and manual questionnaires and from

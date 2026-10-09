@@ -8,6 +8,7 @@ WORKDIR /service
 COPY registration_service/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --requirement requirements.txt
 COPY registration_service ./registration_service
+COPY cloudflare_worker/src/index.js ./cloudflare_worker/src/index.js
 RUN mkdir -p /var/lib/school-csm-registration && \
     chown -R schoolcsm:schoolcsm /var/lib/school-csm-registration /service
 

@@ -1,6 +1,6 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.7.0 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.8.0 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 saved gateway configuration, the application stays **Local Only**, starts no
 tunnel, and makes no registration-service request.
@@ -34,6 +34,17 @@ Center and it does not become a shared survey database. Authorized district
 operators use it to maintain the official School-ID roster, issue short-lived
 first-enrollment approvals, see infrastructure check-ins, and review safe audit
 summaries.
+
+For the no-custom-domain district pilot, the separately compiled **School CSM
+District Management Server** can host that service on a designated Windows
+computer and publish the portal at
+`https://management.motiong-district-csm-survey.workers.dev/district`. The
+district computer, service, outbound connector, power, and internet connection
+must remain available for the portal, activation, automatic school provisioning,
+and check-ins. An outage does not delete school data or stop Local-Only
+collection, but it can temporarily stop those central functions. See
+[`DISTRICT_MANAGEMENT_SERVER.md`](DISTRICT_MANAGEMENT_SERVER.md) before treating
+the free pilot as an operational service.
 
 Every school remains isolated:
 
@@ -70,6 +81,13 @@ in the district portal blocks new activation codes; it is deliberately labeled
 **Suspend new enrollment** because it does not silently shut down an already
 active school server. The school's own operator still controls whether its
 Survey Form is Online, Offline, or Under Maintenance.
+
+In the district-managed `workers.dev` pilot, the school operator does not create
+Cloudflare resources manually. After district roster approval and first
+activation, the registration service provisions that School ID's named tunnel,
+narrow VPC Service, ordinary Worker, and connector credential. The manual
+single-school process below remains useful only when a school is not enrolling
+through the district provider.
 
 ## Single-school Cloudflare pilot without a custom domain
 
@@ -332,7 +350,25 @@ interface before continuing.
 - The registration service cannot retrieve school response content because that
   content is not stored there.
 
-## Production deployment checklist
+## Free district-pilot checklist
+
+1. Install the compiled District Management Server on a dedicated, managed
+   Windows host; no separate Python installation is required.
+2. Configure `workers_vpc` mode, the account's `workers.dev` namespace,
+   Cloudflare account ID, and a token scoped only to Tunnel write, Connectivity
+   Directory Admin, and Workers Scripts write.
+3. Keep the district runtime database and non-secret configuration in ProgramData
+   and secrets in Windows Credential Manager.
+4. Publish the `management` portal through its own narrow outbound route; never
+   expose the local Uvicorn port directly.
+5. Use the district app to create and test an encrypted `.mossdistrict` recovery
+   backup before onboarding schools. Keep the raw administrator token and backup
+   password separately in the approved password manager.
+6. Add the official school roster, issue activation through a verified district
+   channel, and test one school's unique public Survey and Scanner routes.
+7. Monitor host uptime and keep Local-Only operation tested at every school.
+
+## Custom-domain production deployment checklist
 
 1. Deploy the separately tested registration service using
    [`registration_service/README.md`](../registration_service/README.md).
@@ -351,8 +387,8 @@ interface before continuing.
    source retirement, update/repair/rollback, normal uninstall, and explicit
    current-account data removal on clean Windows computers.
 
-The public repository does not supply a production managed domain, registration
-service, authorization keys, Cloudflare account/zone/token, DNS ownership,
-reverse proxy, TLS certificates, secret manager, monitoring, or backup service.
-Those are deployment-owner responsibilities and must be provisioned before the
-optional gateway can be enabled.
+The repository may publish the reviewed non-secret Motiong provider default so
+school installations know the district HTTPS origin and public signing key. It
+never supplies private authorization keys, Cloudflare account tokens, connector
+credentials, activation codes, school data, DNS ownership, a secret manager, or
+monitoring. Those remain deployment-owner responsibilities.

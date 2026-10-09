@@ -1,0 +1,16 @@
+{
+  "authorization_signing_keys": [
+    {
+      "key_id": "motiong-district-2026",
+      "public_key_base64": "MyQlsENrh5r7s9ViBxpw02bRZUrhd3mIY9ttSXUtJqs="
+    }
+  ],
+  "managed_domain": "motiong-district-csm-survey.workers.dev",
+  "provider_name": "Schools District of Motiong School CSM Internet Gateway",
+  "registration_service_url": "https://management.motiong-district-csm-survey.workers.dev",
+  "schema_version": "1.0",
+  "trusted_proxy_addresses": [
+    "127.0.0.1",
+    "::1"
+  ]
+}

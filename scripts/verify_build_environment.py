@@ -32,7 +32,7 @@ _MISSING_MODULE_PATTERN = re.compile(
 
 # Import the actual modules exercised by the compiled desktop application, not
 # just their distribution metadata.  This also catches broken native wheels.
-RUNTIME_IMPORTS = (
+DESKTOP_RUNTIME_IMPORTS = (
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtPrintSupport",
@@ -44,18 +44,53 @@ RUNTIME_IMPORTS = (
     "qrcode.image.pil",
 )
 
+DISTRICT_RUNTIME_IMPORTS = (
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "fastapi",
+    "uvicorn",
+    "webauthn",
+)
+
+# Backwards-compatible name for callers and tests that exercise the desktop
+# release profile directly.
+RUNTIME_IMPORTS = DESKTOP_RUNTIME_IMPORTS
+
 # Only exact top-level misses are actionable for packages with generated or
 # optional submodules.  Cryptography is stricter because every hazmat import in
 # this application is release-critical and must be present in the bundle.
-REQUIRED_WARNING_MODULES = frozenset(
+DESKTOP_REQUIRED_WARNING_MODULES = frozenset(
     {
-        *RUNTIME_IMPORTS,
+        *DESKTOP_RUNTIME_IMPORTS,
         "PySide6",
         "PIL",
         "openai",
         "cryptography",
     }
 )
+DISTRICT_REQUIRED_WARNING_MODULES = frozenset(
+    {
+        *DISTRICT_RUNTIME_IMPORTS,
+        "PySide6",
+        "cryptography",
+    }
+)
+
+# Backwards-compatible default for the main School CSM Control Center build.
+REQUIRED_WARNING_MODULES = DESKTOP_REQUIRED_WARNING_MODULES
+
+
+def _runtime_imports(profile: str) -> tuple[str, ...]:
+    if profile == "district":
+        return DISTRICT_RUNTIME_IMPORTS
+    return DESKTOP_RUNTIME_IMPORTS
+
+
+def _required_warning_modules(profile: str) -> frozenset[str]:
+    if profile == "district":
+        return DISTRICT_REQUIRED_WARNING_MODULES
+    return DESKTOP_REQUIRED_WARNING_MODULES
 
 
 @dataclass(frozen=True)
@@ -177,17 +212,19 @@ def run_functional_probes(
     importer: Callable[[str], object] = import_module,
     openai_probe: Callable[[Callable[[str], object]], None] = _probe_openai,
     cryptography_probe: Callable[[Callable[[str], object]], None] = _probe_cryptography,
+    *,
+    profile: str = "desktop",
 ) -> list[str]:
     errors: list[str] = []
-    for module_name in RUNTIME_IMPORTS:
+    for module_name in _runtime_imports(profile):
         try:
             importer(module_name)
         except Exception as exc:
             errors.append(f"Could not import {module_name}: {type(exc).__name__}: {exc}")
-    for label, probe in (
-        ("OpenAI SDK", openai_probe),
-        ("cryptography AES-256-GCM/Ed25519", cryptography_probe),
-    ):
+    probes = [("cryptography AES-256-GCM/Ed25519", cryptography_probe)]
+    if profile == "desktop":
+        probes.insert(0, ("OpenAI SDK", openai_probe))
+    for label, probe in probes:
         try:
             probe(importer)
         except Exception as exc:
@@ -195,19 +232,20 @@ def run_functional_probes(
     return errors
 
 
-def scan_pyinstaller_warnings(path: Path) -> list[str]:
+def scan_pyinstaller_warnings(path: Path, *, profile: str = "desktop") -> list[str]:
     """Find missing release dependencies in PyInstaller's analysis warnings."""
 
     if not path.is_file():
         return [f"PyInstaller warning report was not created: {path}"]
     errors: list[str] = []
+    required_modules = _required_warning_modules(profile)
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         match = _MISSING_MODULE_PATTERN.search(line)
         if match is None:
             continue
         module_name = match.group("name")
         root = module_name.split(".", 1)[0]
-        if module_name in REQUIRED_WARNING_MODULES or root == "cryptography":
+        if module_name in required_modules or root == "cryptography":
             errors.append(f"PyInstaller did not bundle required module {module_name}: {line}")
     return errors
 
@@ -224,6 +262,12 @@ def _python_version_error() -> str | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--profile",
+        choices=("desktop", "district"),
+        default="desktop",
+        help="Select the runtime dependency set for the executable being built.",
+    )
     parser.add_argument("--requirements", type=Path, help="Exact release lock file.")
     parser.add_argument(
         "--pyinstaller-warnings",
@@ -264,10 +308,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         errors.extend(pyinstaller_errors)
         if pyinstaller_version is not None:
             installed_rows.append(f"PyInstaller=={pyinstaller_version}")
-        errors.extend(run_functional_probes())
+        errors.extend(run_functional_probes(profile=args.profile))
 
     if args.pyinstaller_warnings is not None:
-        errors.extend(scan_pyinstaller_warnings(args.pyinstaller_warnings))
+        errors.extend(scan_pyinstaller_warnings(args.pyinstaller_warnings, profile=args.profile))
 
     if errors:
         print("Windows build dependency verification FAILED:", file=sys.stderr)

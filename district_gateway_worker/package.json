@@ -1,0 +1,8 @@
+{
+  "name": "school-csm-district-gateway-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/proxy.test.mjs"
+  }
+}

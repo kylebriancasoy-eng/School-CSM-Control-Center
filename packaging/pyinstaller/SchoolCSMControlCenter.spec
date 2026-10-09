@@ -44,6 +44,9 @@ datas += [
     (str(repo_root / "School CSM Control Center Icon.ico"), "."),
     (str(repo_root / "School CSM Control Center Icon.png"), "."),
 ]
+default_provider = repo_root / "internet_gateway_provider.default.json"
+if default_provider.is_file():
+    datas.append((str(default_provider), "."))
 
 # The frozen launcher uses importlib.metadata for its startup diagnostics, and
 # the OpenAI SDK also reads its installed distribution metadata.  PyInstaller

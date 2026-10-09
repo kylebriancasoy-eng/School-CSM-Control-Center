@@ -98,6 +98,8 @@ class CloudflaredTunnel:
             "--no-autoupdate",
             "--loglevel",
             "info",
+            "--protocol",
+            "quic",
             "run",
         ]
         startupinfo = None

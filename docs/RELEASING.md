@@ -9,6 +9,10 @@
 - `packaging/installer/` contains the dependency-free .NET Framework online maintenance program.
 - `registration_service/` contains the separately deployed, metadata-only
   Internet Gateway registration and passkey service.
+- `district_management_server/` contains the compiled Windows host/controller
+  for the separate district service; it is not part of a school's app bundle.
+- `district_gateway_worker/` contains the public `management` edge Worker and
+  its contract tests. Numeric school Workers remain separate.
 - `scripts/` contains repeatable build, manifest, checksum, and verification tools.
 - `.github/workflows/` contains continuous integration and tagged-release automation.
 - `docs/` contains operator and maintainer documentation.
@@ -34,9 +38,9 @@ The bootstrapper intentionally performs anonymous HTTPS downloads and stores no 
 `school_csm_control_center/version.py` is the single source of truth for this
 release:
 
-- application semantic version: `0.7.0`;
-- Windows executable version: `0.7.0.0`;
-- release tag: `v0.7.0`.
+- application semantic version: `0.8.0`;
+- Windows executable version: `0.8.0.0`;
+- release tag: `v0.8.0`.
 
 After changing the version, regenerate and check the PyInstaller version resource:
 
@@ -76,6 +80,32 @@ powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 `
 
 The final release assets are written to `release\artifacts`. Intermediate compiled files remain in `release\build`, which is excluded from source control.
 
+The tagged Windows workflow builds the district host in an isolated Python 3.12
+environment using its fully resolved dependency lock. Local district builds
+should use the same environment. To build only that host:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_district_management_server.ps1 `
+  -Python release/district-venv/Scripts/python.exe `
+  -OutputRoot release/build-district `
+  -Clean
+```
+
+Prepare `release/district-venv` with Python 3.12 and install
+`district_management_server/requirements-lock.txt` before running that command.
+The build verifies its pinned dependencies, bundles the reviewed Worker and
+portal assets, and runs the compiled EXE's `--runtime-self-test`. That test starts
+the real registration service on loopback with temporary credentials and a
+temporary database, then checks the health endpoint and district portal assets.
+
+To create its deterministic archive and checksum after compiling:
+
+```powershell
+python scripts/package_district_management_server.py `
+  --app-dir "release/build-district/app/School CSM District Management Server" `
+  --output release/artifacts
+```
+
 To compile only setup without downloading or packaging application dependencies:
 
 ```powershell
@@ -91,13 +121,28 @@ Each tagged release contains:
 - `School-CSM-Control-Center-X.Y.Z-windows-x64.zip` — compiled application files only;
 - `release.json` — immutable tag URLs, versions, sizes, entry point, and SHA-256 checksums;
 - `SHA256SUMS.txt` — independent checksums for the package, setup program, and manifest.
+- `School-CSM-District-Management-Server-vX.Y.Z-win-x64.zip` — the separate
+  compiled district pilot host; and
+- `School-CSM-District-Management-Server-vX.Y.Z-win-x64.zip.sha256` — its
+  independent SHA-256 checksum.
 
 The compiled ZIP contains the application runtime and the verified tunnel
 component, so an operator does not need Python or a separate `cloudflared`
-installation. It must not contain `internet_gateway_provider.json`: the production
-managed domain, service URL, signing public keys, and trusted proxy addresses are
-deployment configuration, not public release content. Release creation fails if
-that production filename is present.
+installation. It must not contain the mutable sidecar filename
+`internet_gateway_provider.json`; release creation fails if that filename is
+present. A deployment-specific school release may and, for the Motiong managed
+rollout, must contain `internet_gateway_provider.default.json`. That bundled
+default is public configuration only: HTTPS management origin, managed domain,
+Ed25519 public signing key, and trusted proxy addresses. It must contain no
+private key, Cloudflare token, connector credential, activation code, or school
+data.
+
+The district ZIP is not consumed by the school Setup program and must never be
+installed on every school computer. Its package check rejects a copied runtime
+database, `server.json`, SQLite sidecars, logs, top-level runtime directories,
+source launch files, and redirected paths. The district database, keys, access
+token, and Cloudflare token are deployment state and must never be GitHub
+release assets.
 
 `scripts/create_release.py` builds the ZIP in sorted order with normalized timestamps and refuses redirected source entries. `scripts/verify_release.py` cross-checks the central version, GitHub repository and tag URLs, asset sizes and checksums, and rejects unsafe or colliding ZIP paths, symbolic links, reparse points, source launch files, oversized archives, and missing or altered entry points.
 
@@ -112,9 +157,15 @@ Each manifest points its application package at an immutable tagged-release URL.
 ## GitHub release process
 
 1. Merge a tested version change into `main`.
-2. Create and push the matching tag, for example `git tag -a v0.7.0 -m "School CSM Control Center 0.7.0"` followed by `git push origin v0.7.0`.
-3. The release workflow runs the test suite, builds the compiled app and maintenance setup, verifies all release assets, and publishes them to the tag.
-4. Download setup from the release and test install, update, repair, rollback, normal uninstall, and explicit data removal on a clean Windows machine.
+2. Create and push the matching tag, for example `git tag -a v0.8.0 -m "School CSM Control Center 0.8.0"` followed by `git push origin v0.8.0`.
+3. The release workflow runs the test suite, builds the compiled school app,
+   maintenance setup, and separate district host, verifies their release
+   assets, and publishes them to the tag.
+4. Download setup from the release and test school install, update, repair,
+   rollback, normal uninstall, and explicit data removal on a clean Windows
+   machine. Separately extract the district ZIP on an isolated test host and
+   verify that its checksum, loopback listener, runtime-state location, portal,
+   and clean shutdown match the documented contract.
 
 A manual workflow run may publish an existing matching tag.
 
@@ -132,22 +183,33 @@ file, Credential Manager, registration service, or release asset. Tests must kee
 strict format classification, inert staging, portable-data allowlists, complete
 hash and record-count validation, atomic commit, and rollback behavior intact.
 
-## Registration service deployment
+## Registration service and district host deployment
 
-The public Windows release does not create the managed domain or host the
-registration service. A deployment owner must separately provide:
+The public school Setup does not create Cloudflare infrastructure or host the
+registration service. A deployment owner must separately configure either the
+compiled Windows district pilot host or an approved hosted deployment. The free
+Windows pilot depends on its designated district PC remaining powered on,
+connected, and running; it is not independently hosted. A deployment owner must
+provide:
 
 - an HTTPS reverse proxy and exact WebAuthn origin/RP ID;
 - a persistent infrastructure-only SQLite volume;
 - an Ed25519 authorization signing key and a separate random 32-byte handoff key;
 - a managed DNS zone and least-privilege Cloudflare account/zone token;
 - a secret manager, monitoring, encrypted backups, and recovery procedures; and
-- a non-secret provider file installed on each managed Windows computer.
+- a reviewed non-secret provider profile bundled as
+  `internet_gateway_provider.default.json` or installed on each managed Windows
+  computer.
 
 Use [`../registration_service/README.md`](../registration_service/README.md) for
 the container, environment variables, activation codes, administrator passkeys,
-and recovery commands. Never add production secrets or the real provider file to
-GitHub release assets.
+and recovery commands. Use
+[`DISTRICT_MANAGEMENT_SERVER.md`](DISTRICT_MANAGEMENT_SERVER.md) for the compiled
+pilot's installation, onboarding, backup, security, update, and incident
+sequence. Never add production secrets, runtime database files, or the mutable
+`internet_gateway_provider.json` sidecar to GitHub release assets. The reviewed
+public default profile is safe to publish under its distinct `.default.json`
+filename.
 
 ## Optional Authenticode signing
 
@@ -156,7 +218,10 @@ For production, configure these repository secrets:
 - `WINDOWS_CERTIFICATE_BASE64` — base64-encoded PFX;
 - `WINDOWS_CERTIFICATE_PASSWORD` — PFX password.
 
-The release workflow imports the certificate into the temporary runner and passes its thumbprint to the build. Both the application EXE and setup EXE are signed and timestamped before checksums are calculated. The hosted runner is discarded after the job.
+The release workflow imports the certificate into the temporary runner and
+passes its thumbprint to the build. The school application EXE, setup EXE, and
+district-server EXE are signed and timestamped before checksums are calculated.
+The hosted runner is discarded after the job.
 
 Without these secrets, release files are checksummed but unsigned. SHA-256 proves that the package matches its manifest; it does not establish publisher identity if an attacker controls the repository or release. Authenticode and protected GitHub release permissions are therefore strongly recommended.
 

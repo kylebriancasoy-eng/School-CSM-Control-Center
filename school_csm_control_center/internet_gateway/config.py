@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 
 PROVIDER_CONFIG_FILENAME = "internet_gateway_provider.json"
+PROVIDER_DEFAULT_FILENAME = "internet_gateway_provider.default.json"
 PROVIDER_CONFIG_PROGRAM_DATA_PARTS = (
     "MoSSLab",
     "School CSM Control Center",
@@ -79,7 +80,13 @@ def load_gateway_provider_config(
             if program_data
             else None
         )
-        target = sidecar if sidecar.is_file() or durable is None else durable
+        bundled_default = Path(install_root) / PROVIDER_DEFAULT_FILENAME
+        if sidecar.is_file():
+            target = sidecar
+        elif durable is not None and durable.is_file():
+            target = durable
+        else:
+            target = bundled_default
     if not target.is_file():
         if required:
             raise GatewayProviderConfigurationError(

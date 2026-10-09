@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.7.0 is distributed as one setup program. Operators
+School CSM Control Center 0.8.0 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 
@@ -66,8 +66,11 @@ Setup also preserves a valid administrator-installed
 uninstall. If an older deployment placed the file beside the application EXE,
 Setup copies the exact validated file into the durable ProgramData location
 before changing Program Files. A sidecar file beside the EXE has deliberate
-runtime precedence when both locations exist. The public GitHub release does not
-contain a production provider file.
+runtime precedence when both locations exist. The release never contains the
+mutable `internet_gateway_provider.json` sidecar. A district-managed release can
+contain the reviewed non-secret `internet_gateway_provider.default.json`, which
+allows a school operator to select the managed route without a separate
+file-copy step. A ProgramData or sidecar profile still overrides that default.
 
 The current PySide6 runtime is 64-bit and requires 64-bit Windows 10 or Windows 11. The application is placed in the requested `Program Files (x86)` organizational path even though its bundled Python runtime is 64-bit.
 
@@ -78,11 +81,11 @@ does not require Internet Gateway registration. Internet Gateway setup offers
 two routes described in [`INTERNET_GATEWAY.md`](INTERNET_GATEWAY.md):
 
 Installing the EXE on a different school's computer creates an independent
-local server and data store, but it does not automatically create that school's
-public Internet link. For the current pilot, every school must use its own
-official School ID, Worker, Tunnel, VPC Service, and connector token on a
-separate Windows computer/account. Never reuse another school's Cloudflare
-resources or credentials.
+local server and data store. With the Motiong bundled provider default, that
+school completes Mandatory School Registration and then chooses **Connect or
+reconnect the Internet Gateway**; the district service creates the school's own
+School-ID Worker, Tunnel, VPC Service, and connector token. It never reuses
+another school's resources, route, form status, or response database.
 
 - **Single-school Cloudflare pilot** uses a free `workers.dev` address, one
   narrow Workers VPC Service, and one named Tunnel. It needs no custom domain or

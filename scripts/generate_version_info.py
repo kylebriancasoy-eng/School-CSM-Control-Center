@@ -31,12 +31,12 @@ TEMPLATE = """VSVersionInfo(
         u'040904B0',
         [
           StringStruct(u'CompanyName', u'MoSSLab'),
-          StringStruct(u'FileDescription', u'School CSM Control Center'),
+          StringStruct(u'FileDescription', u'{product_name}'),
           StringStruct(u'FileVersion', u'{file_version_text}'),
-          StringStruct(u'InternalName', u'School CSM Control Center'),
+          StringStruct(u'InternalName', u'{product_name}'),
           StringStruct(u'LegalCopyright', u'Copyright MoSSLab'),
-          StringStruct(u'OriginalFilename', u'School CSM Control Center.exe'),
-          StringStruct(u'ProductName', u'School CSM Control Center'),
+          StringStruct(u'OriginalFilename', u'{original_filename}'),
+          StringStruct(u'ProductName', u'{product_name}'),
           StringStruct(u'ProductVersion', u'{product_version}')
         ]
       )
@@ -54,11 +54,15 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "packaging" / "pyinstaller" / "version_info.txt",
     )
+    parser.add_argument("--product-name", default="School CSM Control Center")
+    parser.add_argument("--original-filename", default="School CSM Control Center.exe")
     args = parser.parse_args()
     content = TEMPLATE.format(
         file_version=WINDOWS_FILE_VERSION,
         file_version_text=WINDOWS_FILE_VERSION_TEXT,
         product_version=__version__,
+        product_name=args.product_name,
+        original_filename=args.original_filename,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if not args.output.exists() or args.output.read_text(encoding="utf-8") != content:

@@ -37,8 +37,9 @@ does not contain production values:
 - `SCHOOL_CSM_HANDOFF_ENCRYPTION_KEY_BASE64` (32 random bytes)
 - `SCHOOL_CSM_DISTRICT_ADMIN_TOKEN_SHA256` (the SHA-256 digest of a separate,
   high-entropy district administrator access token)
-- `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, and a least-privilege
-  `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID` and a least-privilege `CLOUDFLARE_API_TOKEN`;
+  `CLOUDFLARE_ZONE_ID` is additionally required only by custom-domain
+  `dns_tunnel` mode
 - `SCHOOL_CSM_TUNNEL_ORIGIN`, the service-owned origin passed to newly provisioned
   remotely managed tunnels
 - a persistent `SCHOOL_CSM_REGISTRATION_DATABASE` location
@@ -46,6 +47,15 @@ does not contain production values:
 Use the hosting platform's secret manager. Do not place secret values in `.env`,
 container images, Git commits, desktop provider configuration, or support logs.
 `.env.example` lists variable names only.
+
+For the free no-custom-domain pilot, set
+`SCHOOL_CSM_CLOUDFLARE_MODE=workers_vpc` and use the account's exact
+`workers.dev` account subdomain as `SCHOOL_CSM_MANAGED_DOMAIN`. The provisioner creates
+one named tunnel, narrow VPC Service, ordinary School-ID Worker, and connector
+credential for each school. The scoped account token needs Cloudflare Tunnel
+write, Connectivity Directory Admin, and Workers Scripts write. The
+custom-domain path uses `SCHOOL_CSM_CLOUDFLARE_MODE=dns_tunnel` and keeps its
+zone-ID requirement.
 
 `SCHOOL_CSM_ALLOW_INSECURE_TEST_CLIENT=1` exists only for the in-process test
 client. Never set it in a deployed service.
@@ -79,6 +89,13 @@ runtime through the hosting platform. The container image and public repository
 are not secret stores. The reverse proxy must terminate TLS, prevent direct
 public access to Uvicorn, and preserve the exact public origin needed by
 WebAuthn.
+
+The separately compiled Windows pilot host is documented in
+[`../docs/DISTRICT_MANAGEMENT_SERVER.md`](../docs/DISTRICT_MANAGEMENT_SERVER.md).
+It runs without a separate Python installation, but the designated district PC,
+service, outbound connector, power, and internet connection must remain
+available. Keep Local-Only school access tested and do not present this free
+pilot as independently hosted infrastructure.
 
 ## District management portal
 
@@ -232,9 +249,11 @@ C:\ProgramData\MoSSLab\School CSM Control Center\Configuration\internet_gateway_
 
 The public provider file must not contain the private signing key, handoff key,
 Cloudflare token, tunnel credentials, activation/recovery codes, or passkey
-private material. Do not publish the real file in the public GitHub release.
-Setup preserves the ProgramData copy across update, repair, rollback, and
-uninstall.
+private material. A reviewed deployment profile may be published under the
+immutable bundled-default filename `internet_gateway_provider.default.json`;
+the mutable `internet_gateway_provider.json` sidecar must not be a release
+asset. Setup preserves the ProgramData copy across update, repair, rollback,
+and uninstall.
 
 ## Deployment validation
 

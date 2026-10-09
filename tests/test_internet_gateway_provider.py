@@ -271,6 +271,8 @@ class InternetGatewayProviderTests(unittest.TestCase):
             self.assertEqual(snapshot.state, "connected")
             arguments, kwargs = calls[0]
             self.assertNotIn("private-tunnel-token", arguments)
+            self.assertIn("--protocol", arguments)
+            self.assertIn("quic", arguments)
             self.assertEqual(kwargs["env"]["TUNNEL_TOKEN"], "private-tunnel-token")
             tunnel.stop()
 

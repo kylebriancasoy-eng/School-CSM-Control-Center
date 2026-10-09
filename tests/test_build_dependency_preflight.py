@@ -65,6 +65,28 @@ class BuildDependencyPreflightTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("Could not import cv2", errors[0])
 
+    def test_district_profile_omits_desktop_only_probes(self) -> None:
+        imported: list[str] = []
+
+        def importer(name: str) -> object:
+            imported.append(name)
+            return object()
+
+        def unexpected_openai_probe(_importer) -> None:
+            self.fail("The district profile must not require the optional OpenAI SDK.")
+
+        errors = preflight.run_functional_probes(
+            importer,
+            openai_probe=unexpected_openai_probe,
+            cryptography_probe=lambda _importer: None,
+            profile="district",
+        )
+        self.assertEqual(errors, [])
+        self.assertIn("fastapi", imported)
+        self.assertIn("webauthn", imported)
+        self.assertNotIn("cv2", imported)
+        self.assertNotIn("openai", imported)
+
     def test_pyinstaller_major_version_seven_is_rejected(self) -> None:
         actual, errors = preflight.check_pyinstaller_version(lambda _name: "7")
         self.assertEqual(actual, "7")
@@ -84,6 +106,20 @@ class BuildDependencyPreflightTests(unittest.TestCase):
         self.assertEqual(len(errors), 2)
         self.assertTrue(any("PySide6.QtPrintSupport" in row for row in errors))
         self.assertTrue(any("cryptography.hazmat" in row for row in errors))
+
+    def test_district_warning_scan_uses_district_required_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            warning_path = Path(directory) / "warn.txt"
+            warning_path.write_text(
+                "missing module named 'fastapi' - imported by district_server\n"
+                "missing module named 'openai' - imported by optional_school_feature\n",
+                encoding="utf-8",
+            )
+            errors = preflight.scan_pyinstaller_warnings(
+                warning_path, profile="district"
+            )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("fastapi", errors[0])
 
     def test_windows_build_runs_preflight_before_pyinstaller_and_scans_warnings(self) -> None:
         source = (REPO_ROOT / "scripts" / "build_app.ps1").read_text(encoding="utf-8")
