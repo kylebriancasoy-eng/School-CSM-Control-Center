@@ -413,6 +413,14 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/assets/district-seal.png", response_class=FileResponse)
+    def district_seal():
+        return FileResponse(
+            Path(__file__).resolve().parent / "static" / "district-seal.png",
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/assets/district.js", response_class=FileResponse)
     def district_script():
         return FileResponse(

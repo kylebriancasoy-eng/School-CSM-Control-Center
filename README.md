@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.0
+# School CSM Control Center 0.8.1
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,18 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.1 highlights
+
+- The district app and portal use the supplied Motiong district seal and its
+  cyan, ivory, green, and gold palette. Each school's own branding is unchanged.
+- District token resets now reload authentication settings and invalidate old
+  sessions; Open Status restores hidden and minimized district windows.
+- A masked **Replace Cloudflare API Token** action verifies the replacement
+  before saving it, restarts with fresh settings, and attempts rollback on
+  failure. It never revokes Cloudflare tokens or changes school routes.
+- District Exit is unavailable during a running maintenance operation so a
+  normal app exit cannot interrupt a backup or credential recovery.
 
 ## 0.8.0 highlights
 

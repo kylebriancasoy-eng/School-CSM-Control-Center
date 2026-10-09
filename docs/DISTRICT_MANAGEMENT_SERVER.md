@@ -264,6 +264,40 @@ creates fresh application and login-session state on every service start.
 
 ## Security checklist
 
+### Replace an exposed Cloudflare API token
+
+Create an encrypted district recovery backup first. In Cloudflare, create a
+replacement account API token restricted to the configured district account,
+with only **Cloudflare Tunnel: Edit**, **Connectivity Directory: Admin**, and
+**Workers Scripts: Edit** (equivalent Write labels are acceptable). Do not grant
+API-token management, billing, or unrelated permissions. Keep the exposed token
+active until the replacement is confirmed; rolling or deleting it first can
+interrupt school provisioning.
+
+In the district status window choose **Replace Cloudflare API Token**, paste
+the replacement into the masked native field, confirm the backup and permission
+review, and choose **Check and Save Replacement**. Never paste a token in chat.
+The application checks active status and read access to the existing district
+tunnel, VPC service, and Worker before saving only the API token in Windows
+Credential Manager. These checks do not certify write permissions or policy
+scope; the account owner must review those in Cloudflare.
+
+The service restarts with fresh settings. If persistence or restart fails, the
+application attempts to restore the previous saved API token and restart it;
+if recovery fails it explicitly asks you not to revoke either token. This action
+does not change the district login token, signing keys, school database,
+connectors, or Cloudflare resources. Refresh the district portal, confirm the
+gateway and intended provisioning permissions, then revoke the exposed token
+in Cloudflare and create a fresh encrypted recovery backup. This application
+does not revoke tokens automatically.
+
+### Motiong district branding
+
+The district native app and management portal display the supplied district
+seal unchanged. The cyan/ivory theme uses dark teal for readable controls,
+green for healthy status, and restrained gold accents. School Control Center
+branding and each school's Survey/Scanner identity remain independent.
+
 - Keep the Windows host patched, encrypted, and limited to authorized district
   administrators.
 - Require HTTPS; never expose the local Uvicorn port directly to the internet.

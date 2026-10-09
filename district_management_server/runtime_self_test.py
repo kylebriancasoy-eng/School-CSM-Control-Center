@@ -101,6 +101,9 @@ def run_runtime_self_test(install_root: str | Path) -> None:
             _wait_for_response(
                 port, "/assets/district.js", expected_marker=b"district"
             )
+            _wait_for_response(
+                port, "/assets/district-seal.png", expected_marker=b"\x89PNG\r\n\x1a\n"
+            )
             if not (temporary_root / "registration.sqlite3").is_file():
                 raise RuntimeSelfTestError("The bundled registration database could not start.")
         finally:

@@ -8,7 +8,7 @@ from threading import Thread
 import webbrowser
 
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -23,14 +23,18 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
+from .branding import DISTRICT_STYLESHEET, district_header, district_icon
 from .paths import DistrictRuntimePaths
 from .recovery import create_recovery_backup, restore_recovery_backup
 from .credentials import DistrictCredentialStore
+from .configuration import load_server_config
+from .token_rotation import replace_cloudflare_api_token
 from .server_controller import DistrictServerController
 from .setup import DistrictSetupResult, configure_district_server
 from .windows_startup import is_enabled, set_enabled
@@ -125,9 +129,15 @@ class SetupDialog(QDialog):
         self.signals.failed.connect(self._failed)
         self.setWindowTitle("Set Up District Management Server")
         self.setMinimumWidth(650)
+        self.setWindowIcon(district_icon(install_root))
+        self.setStyleSheet(_STYLE)
 
-        title = QLabel("Set Up the Motiong District Gateway")
-        title.setObjectName("title")
+        header = district_header(
+            install_root,
+            "Set Up the Motiong District Gateway",
+            "Secure district management, separate from school survey responses.",
+            self,
+        )
         note = QLabel(
             "This creates the district management address and stores the scoped "
             "Cloudflare credentials in Windows Credential Manager. It does not "
@@ -154,13 +164,16 @@ class SetupDialog(QDialog):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         self.create_button = QPushButton("Create District Server")
+        self.create_button.setObjectName("primaryAction")
         self.cancel_button = QPushButton("Cancel")
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.create_button)
         layout = QVBoxLayout(self)
-        layout.addWidget(title)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(14)
+        layout.addWidget(header)
         layout.addWidget(note)
         layout.addLayout(form)
         layout.addWidget(self.status)
@@ -239,6 +252,7 @@ class SetupDialog(QDialog):
         )
         saved = QCheckBox("I saved this token in the approved password manager")
         finish = QPushButton("Finish")
+        finish.setObjectName("primaryAction")
         finish.setEnabled(False)
         saved.toggled.connect(finish.setEnabled)
         finish.clicked.connect(lambda: self._finish(result))
@@ -248,8 +262,12 @@ class SetupDialog(QDialog):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-        heading = QLabel("District server created")
-        heading.setObjectName("title")
+        heading = district_header(
+            self.install_root,
+            "District server created",
+            "Keep your one-time administrator token in a secure place.",
+            self,
+        )
         explanation = QLabel(
             "Save this district administrator token now. It is not stored and "
             "cannot be shown again. The school deployment profile was also created at:\n"
@@ -319,55 +337,67 @@ class DistrictManagementWindow(QMainWindow):
         self.controller = DistrictServerController(paths, install_root)
         self.setWindowTitle("School CSM District Management Server")
         self.setMinimumSize(700, 430)
-        icon_path = install_root / "School CSM Control Center Icon.ico"
-        self.setWindowIcon(QIcon(str(icon_path)) if icon_path.is_file() else QIcon())
+        self.setWindowIcon(district_icon(install_root))
 
-        title = QLabel("School CSM District Management Server")
-        title.setObjectName("title")
-        subtitle = QLabel(
-            "Motiong district roster, activation, gateway provisioning, and safe infrastructure status"
+        header = district_header(
+            install_root,
+            "School CSM District Management Server",
+            "Motiong district roster, activation, gateway provisioning, and safe infrastructure status",
         )
-        subtitle.setWordWrap(True)
         self.state = QLabel("Stopped")
         self.state.setObjectName("state")
         self.detail = QLabel("Starting…")
         self.detail.setWordWrap(True)
         self.open_button = QPushButton("Open District Portal")
+        self.open_button.setObjectName("primaryAction")
         self.restart_button = QPushButton("Start / Restart")
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setObjectName("stopAction")
         self.setup_button = QPushButton("Set Up District Server")
+        self.setup_button.setObjectName("primaryAction")
         self.backup_button = QPushButton("Create Encrypted Recovery Backup")
         self.restore_button = QPushButton("Restore Encrypted Recovery Backup")
         self.reset_token_button = QPushButton("Reset District Administrator Token")
+        self.replace_api_token_button = QPushButton("Replace Cloudflare API Token")
         self.startup = QCheckBox("Start in the background when this operator signs in")
         self.startup.setChecked(is_enabled())
         self.provider_note = QLabel(
             f"School deployment profile: {paths.provider_export_file}"
         )
         self.provider_note.setWordWrap(True)
+        self.provider_note.setObjectName("providerNote")
 
         row = QHBoxLayout()
         row.addWidget(self.open_button)
         row.addWidget(self.restart_button)
         row.addWidget(self.stop_button)
+        state_card = QWidget()
+        state_card.setObjectName("serviceStateCard")
+        state_layout = QVBoxLayout(state_card)
+        state_layout.setContentsMargins(18, 12, 18, 12)
+        state_layout.setSpacing(4)
+        state_layout.addWidget(self.state)
+        state_layout.addWidget(self.detail)
         layout = QVBoxLayout()
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addSpacing(18)
-        layout.addWidget(self.state)
-        layout.addWidget(self.detail)
-        layout.addSpacing(18)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(12)
+        layout.addWidget(header)
+        layout.addWidget(state_card)
         layout.addLayout(row)
         layout.addWidget(self.setup_button)
         layout.addWidget(self.backup_button)
         layout.addWidget(self.restore_button)
         layout.addWidget(self.reset_token_button)
+        layout.addWidget(self.replace_api_token_button)
         layout.addWidget(self.startup)
         layout.addWidget(self.provider_note)
         layout.addStretch(1)
         holder = QWidget()
         holder.setLayout(layout)
-        self.setCentralWidget(holder)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(holder)
+        self.setCentralWidget(scroll)
         self.setStyleSheet(_STYLE)
 
         self.tray = QSystemTrayIcon(self.windowIcon(), self)
@@ -376,14 +406,14 @@ class DistrictManagementWindow(QMainWindow):
         portal_action = QAction("Open District Portal", self)
         restart_action = QAction("Start / Restart", self)
         stop_action = QAction("Stop", self)
-        exit_action = QAction("Exit", self)
+        self.exit_action = QAction("Exit", self)
         menu.addAction(show_action)
         menu.addAction(portal_action)
         menu.addSeparator()
         menu.addAction(restart_action)
         menu.addAction(stop_action)
         menu.addSeparator()
-        menu.addAction(exit_action)
+        menu.addAction(self.exit_action)
         self.tray.setContextMenu(menu)
         self.tray.setToolTip("School CSM District Management Server")
         self.tray.show()
@@ -392,7 +422,7 @@ class DistrictManagementWindow(QMainWindow):
         portal_action.triggered.connect(self._open_portal)
         restart_action.triggered.connect(self._restart)
         stop_action.triggered.connect(self._stop)
-        exit_action.triggered.connect(self.exit_application)
+        self.exit_action.triggered.connect(self.exit_application)
         self.tray.activated.connect(
             lambda reason: self._show()
             if reason in (
@@ -408,6 +438,7 @@ class DistrictManagementWindow(QMainWindow):
         self.backup_button.clicked.connect(self._create_backup)
         self.restore_button.clicked.connect(self._restore_backup)
         self.reset_token_button.clicked.connect(self._reset_administrator_token)
+        self.replace_api_token_button.clicked.connect(self._replace_cloudflare_token)
         self.startup.toggled.connect(self._toggle_startup)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh)
@@ -446,6 +477,9 @@ class DistrictManagementWindow(QMainWindow):
         self.restore_button.setEnabled(not self._working)
         self.reset_token_button.setVisible(configured)
         self.reset_token_button.setEnabled(not self._working)
+        self.replace_api_token_button.setVisible(configured)
+        self.replace_api_token_button.setEnabled(not self._working)
+        self.exit_action.setEnabled(not self._working)
 
     def _run(
         self,
@@ -610,6 +644,67 @@ class DistrictManagementWindow(QMainWindow):
             result_handler=show_token,
         )
 
+    def _replace_cloudflare_token(self) -> None:
+        try:
+            config = load_server_config(self.paths.configuration_file)
+        except Exception:
+            QMessageBox.warning(self, "Cloudflare token", "The district configuration could not be loaded.")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Replace Cloudflare API Token")
+        dialog.setMinimumWidth(680)
+        note = QLabel(
+            f"Configured Cloudflare account: {config.cloudflare_account_id}\n\n"
+            "Create a replacement token in Cloudflare for this account only, with "
+            "Cloudflare Tunnel: Edit, Connectivity Directory: Admin, and Workers "
+            "Scripts: Edit. Do not add API-token management or unrelated permissions.\n\n"
+            "Keep your encrypted recovery backup. Do not revoke the previous "
+            "token yet. This checks active status and access to existing resources; "
+            "it cannot prove the token's write permissions or account scope policy. "
+            "Review those in Cloudflare yourself. The district service restarts "
+            "briefly after a verified replacement is saved."
+        )
+        note.setWordWrap(True)
+        token_input = QLineEdit()
+        token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        token_input.setMaxLength(2048)
+        token_input.setPlaceholderText("Paste the replacement Cloudflare API token here, not in chat")
+        label = QLabel("Replacement API token")
+        label.setBuddy(token_input)
+        confirmed = QCheckBox("I have a recovery backup and reviewed the account and permissions")
+        save = QPushButton("Check and Save Replacement")
+        save.setObjectName("primaryAction")
+        save.setEnabled(False)
+        confirmed.toggled.connect(save.setEnabled)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        save.clicked.connect(dialog.accept)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(note)
+        layout.addWidget(label)
+        layout.addWidget(token_input)
+        layout.addWidget(confirmed)
+        layout.addLayout(buttons)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        candidate = token_input.text() if accepted else ""
+        token_input.clear()
+        dialog.deleteLater()
+        if not accepted:
+            return
+        self._run(
+            lambda: replace_cloudflare_api_token(config, candidate, self.controller),
+            "Cloudflare API token was not replaced",
+            "The replacement was verified and saved in Windows Credential Manager. "
+            "The district service restarted. Refresh the portal and confirm it "
+            "works before revoking the old token in Cloudflare. Then create a new "
+            "encrypted recovery backup. The district login token and school routes "
+            "were not changed.",
+        )
+
     def _toggle_startup(self, enabled: bool) -> None:
         try:
             actual = set_enabled(bool(enabled))
@@ -637,19 +732,18 @@ class DistrictManagementWindow(QMainWindow):
             )
 
     def exit_application(self) -> None:
+        if self._working:
+            QMessageBox.information(
+                self,
+                "District operation in progress",
+                "Wait for the current district operation to finish before exiting. "
+                "This keeps credential replacement and recovery from being interrupted.",
+            )
+            return
         self._exiting = True
         self.controller.stop()
         self.tray.hide()
         QApplication.instance().quit()
 
 
-_STYLE = """
-QWidget { background: #061625; color: #dcefff; font-family: 'Segoe UI'; font-size: 14px; }
-QLabel#title { color: white; font-size: 24px; font-weight: 800; }
-QLabel#state { color: #41e0ca; font-size: 28px; font-weight: 800; }
-QPushButton { background: #123049; border: 1px solid #238ba0; border-radius: 8px; padding: 10px 15px; font-weight: 700; }
-QPushButton:hover { background: #17405f; }
-QPushButton:disabled { color: #668094; border-color: #29475b; }
-QLineEdit { background: #071f31; border: 1px solid #28768a; border-radius: 6px; padding: 8px; }
-QCheckBox { spacing: 8px; padding: 6px 0; }
-"""
+_STYLE = DISTRICT_STYLESHEET

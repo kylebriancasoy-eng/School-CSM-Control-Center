@@ -32,6 +32,7 @@ REQUIRED_RUNTIME_ASSETS = (
     PurePosixPath("registration_service/static/district.html"),
     PurePosixPath("registration_service/static/district.js"),
     PurePosixPath("registration_service/static/district.css"),
+    PurePosixPath("registration_service/static/district-seal.png"),
 )
 FORBIDDEN_TOP_LEVEL_DIRECTORIES = {
     "configuration",

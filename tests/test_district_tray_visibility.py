@@ -150,6 +150,29 @@ class DistrictTrayVisibilityTests(unittest.TestCase):
         self.assertTrue(self.window.isVisible())
         self.assertFalse(self.window.isMinimized())
 
+    def test_exit_is_blocked_until_current_host_operation_finishes(self) -> None:
+        self.assertTrue(self.window.exit_action.isEnabled())
+        self.window._working = True
+        self.window._refresh()
+        self.assertFalse(self.window.exit_action.isEnabled())
+
+        isolated_application = Mock()
+        with patch(
+            "district_management_server.tray.QApplication.instance",
+            return_value=isolated_application,
+        ), patch("district_management_server.tray.QMessageBox.information") as notice:
+            # Cover direct invocation as well as the disabled tray menu item:
+            # neither path may race a daemon operation's credential recovery.
+            self.window.exit_application()
+        notice.assert_called_once()
+        isolated_application.quit.assert_not_called()
+        self.controller.stop.assert_not_called()
+        self.assertFalse(self.window._exiting)
+
+        self.window._finished()
+        self.assertFalse(self.window._working)
+        self.assertTrue(self.window.exit_action.isEnabled())
+
 
 if __name__ == "__main__":
     unittest.main()

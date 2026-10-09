@@ -437,10 +437,20 @@ class DistrictPortalAppTests(unittest.TestCase):
         self.assertNotIn("unsafe-inline", page.headers["content-security-policy"])
 
         stylesheet = self.client.get("/assets/district.css")
+        seal = self.client.get("/assets/district-seal.png")
         script = self.client.get("/assets/district.js")
         manage_page = self.client.get("/manage")
         manage_stylesheet = self.client.get("/assets/manage.css")
         self.assertEqual(stylesheet.status_code, 200, stylesheet.text)
+        self.assertEqual(seal.status_code, 200)
+        self.assertIn("image/png", seal.headers["content-type"])
+        self.assertEqual(seal.headers["cache-control"], "no-store")
+        self.assertTrue(seal.content.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(
+            hashlib.sha256(seal.content).hexdigest(),
+            "0f208b430acab5b8f17b7e4d91781b79069152e76128689b9234be30c94f5e82",
+        )
+        self.assertIn('/assets/district-seal.png', page.text)
         self.assertEqual(script.status_code, 200, script.text)
         self.assertEqual(manage_page.status_code, 200, manage_page.text)
         self.assertEqual(manage_stylesheet.status_code, 200, manage_stylesheet.text)
