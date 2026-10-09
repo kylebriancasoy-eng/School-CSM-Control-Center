@@ -421,7 +421,12 @@ class DistrictManagementWindow(QMainWindow):
             QTimer.singleShot(200, self._restart)
 
     def _show(self) -> None:
-        self.show()
+        # A hidden Windows launcher can suppress the first native show while
+        # Qt already considers the window visible. Remap it explicitly, and
+        # restore a minimized window when opened from the notification area.
+        self.showNormal()
+        self.hide()
+        self.showNormal()
         self.raise_()
         self.activateWindow()
 

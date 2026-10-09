@@ -239,6 +239,29 @@ A district backup is not a school `.mossbak` file. Restoring the district server
 does not restore a school's responses; each school remains responsible for its
 own encrypted Control Center backups.
 
+## District portal token reset
+
+The district portal login token and the Cloudflare API token are different
+credentials. Keep the portal token in the approved password manager under a
+distinct label such as **CSM District Portal Login**; never send it in a support
+message or screenshot.
+
+To replace a lost portal token, open the district app's status window and choose
+**Reset District Administrator Token**. Save the replacement before ticking the
+saved confirmation and choosing **Finish**. Finish clears the clipboard, so
+retrieve the saved value from the password manager when signing in. Wait for
+the service to show **Running**, refresh the portal, and sign in with the latest
+token. Older tokens and browser sessions must no longer work. Create a new
+encrypted recovery backup after confirming the replacement.
+
+The original v0.8.0 district build reused its first application instance during
+an in-app restart. After resetting a token on that build, fully **Exit** the
+district app from its notification-area menu and reopen its EXE once to load the
+replacement. Closing the status window only hides it and **Start / Restart** is
+not enough. Do not repeatedly reset the token, restore an old backup, or remove
+Credential Manager entries to work around this problem. The corrected source
+creates fresh application and login-session state on every service start.
+
 ## Security checklist
 
 - Keep the Windows host patched, encrypted, and limited to authorized district

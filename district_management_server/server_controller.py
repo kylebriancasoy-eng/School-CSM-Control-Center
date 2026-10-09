@@ -167,10 +167,11 @@ class DistrictServerController:
 
     @staticmethod
     def _load_application() -> Any:
-        # Environment is installed before this first import. The module-level
-        # application therefore receives the protected production settings.
+        # The module is cached after the first import, but protected settings
+        # can change during a token reset or recovery. Create fresh application
+        # state on every start so the new digest is used and old sessions end.
         module = importlib.import_module("registration_service.app")
-        return module.app
+        return module.create_app()
 
     @staticmethod
     def _create_uvicorn_server(app: Any, config: DistrictServerConfig) -> Any:
