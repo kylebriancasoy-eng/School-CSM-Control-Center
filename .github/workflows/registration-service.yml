@@ -8,6 +8,7 @@ on:
       - "district_management_server/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
+      - "tests/test_school_registration_requests.py"
       - "tests/test_district_portal.py"
       - "tests/test_district_management_server.py"
       - "tests/test_district_release_packaging.py"
@@ -19,6 +20,7 @@ on:
       - "district_management_server/**"
       - "school_csm_control_center/internet_gateway/**"
       - "tests/test_registration_service_*.py"
+      - "tests/test_school_registration_requests.py"
       - "tests/test_district_portal.py"
       - "tests/test_district_management_server.py"
       - "tests/test_district_release_packaging.py"
@@ -57,6 +59,7 @@ jobs:
           python -m unittest
           tests.test_registration_service_core
           tests.test_registration_service_app
+          tests.test_school_registration_requests
           tests.test_district_portal
           tests.test_registration_service_cloudflare
           tests.test_internet_gateway_provider
