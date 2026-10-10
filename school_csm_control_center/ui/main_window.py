@@ -35,6 +35,10 @@ from school_csm_control_center.questionnaire import CC_QUESTIONS, RATING_LABELS,
 from school_csm_control_center.internet_gateway.client import GatewayProviderClient
 from school_csm_control_center.internet_gateway.config import load_gateway_provider_config
 from school_csm_control_center.internet_gateway.controller import InternetGatewayController
+from school_csm_control_center.internet_gateway.directory_registration import (
+    DistrictRegistrationController,
+    DistrictRegistrationQueue,
+)
 from school_csm_control_center.internet_gateway.tunnel import CloudflaredTunnel
 from school_csm_control_center.runtime_paths import storage_root_for
 from school_csm_control_center.school_services import service_display, service_value_from_record
@@ -223,6 +227,11 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             migration_service=gateway_migration,
         )
         self.gateway_credentials = GatewayCredentialStore()
+        self.district_registration = DistrictRegistrationController(
+            DistrictRegistrationQueue(self.data_root, self.gateway_credentials),
+            gateway_client,
+            parent=self,
+        )
         self.gateway_controller = InternetGatewayController(
             self.project_root,
             local_settings_provider=self.server_controller.settings,
@@ -373,6 +382,13 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.gateway_controller.check_authorization_async
         )
         self._authorization_timer.start()
+        self._district_registration_timer = QTimer(self)
+        self._district_registration_timer.setInterval(5 * 60 * 1000)
+        self._district_registration_timer.timeout.connect(self._sync_district_registration)
+        self._district_registration_timer.start()
+        self._district_registration_state_changed(self.district_registration.state())
+        if self._registration_complete:
+            QTimer.singleShot(1800, self._sync_district_registration)
         if self.gateway_controller.configured:
             QTimer.singleShot(1600, self.gateway_controller.check_authorization_async)
         self._report_startup(87, "Applying interface styling…")
@@ -487,10 +503,12 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         )
         self.system_tray.exit_requested.connect(self.exit_application)
         self.school_information.school_information_saved.connect(self._school_information_saved)
+        self.district_registration.state_changed.connect(self._district_registration_state_changed)
         self.school_information.notice_requested.connect(
             lambda message, kind: self.toast.show_message(message, kind=kind, timeout_ms=6500)
         )
         gateway_panel = self.server_board.internet_gateway
+        gateway_panel.directory_sync_requested.connect(self._retry_district_registration)
         gateway_panel.setup_requested.connect(self._open_gateway_setup)
         gateway_panel.connect_requested.connect(self._request_gateway_connection)
         gateway_panel.diagnostics_requested.connect(
@@ -919,6 +937,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.mrs_printing.refresh()
         self._apply_background_lifecycle()
         if self._registration_complete:
+            self._sync_district_registration()
             self.school_workspace_overlay.close_overlay()
             self.show_board("dashboard")
             self.toast.show_message(
@@ -940,6 +959,40 @@ class SchoolCSMControlCenterWindow(QMainWindow):
                 kind="warning",
                 timeout_ms=6500,
             )
+
+    def _sync_district_registration(self, *, resubmit: bool = False, manual: bool = False) -> None:
+        if self._shutdown_started or self.gateway_controller.retired:
+            return
+        settings = self.server_controller.settings_store.load()
+        if not school_registration_complete(settings, data_root=self.data_root):
+            return
+        if self.district_registration.client is None:
+            self.district_registration.prepare(settings, "")
+            return
+        try:
+            installation_id = self.gateway_controller.ensure_installation_id()
+        except Exception:
+            self._district_registration_state_changed({
+                "status": "storage_error", "busy": False,
+                "detail": "Local registration is saved, but the installation identity is unavailable for district review.",
+            })
+            return
+        if self.district_registration.prepare(settings, installation_id, resubmit=resubmit):
+            if manual or self.district_registration.state().get("status") in {"queued", "pending"}:
+                self.district_registration.send_async()
+
+    def _retry_district_registration(self) -> None:
+        self._sync_district_registration(
+            resubmit=self.district_registration.state().get("status") == "rejected",
+            manual=True,
+        )
+
+    def _district_registration_state_changed(self, state: object) -> None:
+        request = dict(state) if isinstance(state, dict) else {}
+        self.server_board.internet_gateway.apply_directory_state(request)
+        self.school_information.district_registration_note.setText(
+            "District directory: " + str(request.get("detail") or "Not submitted.")
+        )
 
     def _open_gateway_setup(self) -> None:
         local = self.server_controller.settings()
@@ -1717,6 +1770,9 @@ class SchoolCSMControlCenterWindow(QMainWindow):
     def _request_gateway_connection(self) -> None:
         """Ensure the private loopback origin exists, then start the tunnel."""
 
+        if not self.gateway_controller.configured:
+            self._open_gateway_setup()
+            return
         self._gateway_auto_reconnect_suppressed = False
         if self.gateway_controller.operation_in_progress:
             return
@@ -1901,6 +1957,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         if self._shutdown_started:
             return
         self._shutdown_started = True
+        self._district_registration_timer.stop()
+        self.district_registration.close()
         self._pending_gateway_migration = None
         self._pending_gateway_package_export = None
         self._pending_gateway_backup_export = None

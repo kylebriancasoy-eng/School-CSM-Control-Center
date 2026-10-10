@@ -93,6 +93,14 @@ class SchoolInformationBoard(QFrame):
             progress.addWidget(label, 1)
         outer.addLayout(progress)
 
+        self.district_registration_note = QLabel(
+            "After registration, only School ID, name, district, and division are queued for district review. All other profile information stays local. Internet Gateway access still requires approval and one-time activation."
+        )
+        self.district_registration_note.setObjectName("school_information_note")
+        self.district_registration_note.setTextFormat(Qt.TextFormat.PlainText)
+        self.district_registration_note.setWordWrap(True)
+        outer.addWidget(self.district_registration_note)
+
         self.section_stack = QStackedWidget()
         self.section_stack.setObjectName("school_registration_stack")
         self.section_stack.addWidget(self._identity_page())

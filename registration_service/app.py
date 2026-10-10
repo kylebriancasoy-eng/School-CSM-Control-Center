@@ -42,6 +42,7 @@ from .core import (
 )
 from .signing import AuthorizationEnvelopeSigner
 from .handoff import CredentialHandoffVault
+from .directory_requests import DirectoryRegistrationRequests
 from .district_auth import (
     CSRF_HEADER,
     SESSION_COOKIE,
@@ -90,6 +91,44 @@ class _EphemeralRateLimiter:
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class DirectoryRequestBodyLimit:
+    """Bound public submissions before JSON parsing without consuming Request.
+
+    Pure ASGI replay avoids mixing Request.stream() with the request cache of
+    the application's security middleware and keeps the input limit effective
+    even when a client lies about Content-Length.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != "/v1/directory/registration-requests" or scope.get("method") != "POST":
+            await self.app(scope, receive, send)
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body.extend(message.get("body", b""))
+            if len(body) > 8192:
+                await JSONResponse(status_code=413, content={"detail": "The registration request is too large."})(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
 
 
 class RegistrationBegin(StrictModel):
@@ -184,6 +223,17 @@ class DistrictSchoolStatus(StrictModel):
     status: str = Field(min_length=1, max_length=20)
 
 
+class DirectoryRegistrationSubmit(DistrictSchoolSave):
+    request_id: str = Field(min_length=36, max_length=36)
+    request_secret: str = Field(pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)
+    installation_id: str = Field(min_length=36, max_length=36)
+
+
+class DirectoryRegistrationReview(StrictModel):
+    decision: str = Field(pattern=r"^(approve|reject)$")
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)
+
+
 class DistrictActivationIssue(StrictModel):
     valid_days: int = Field(default=14, ge=1, le=30)
 
@@ -242,6 +292,7 @@ def create_app(
     app.state.registration_service = service
     app.state.handoff_vault = None
     app.state.rate_limiter = _EphemeralRateLimiter()
+    app.add_middleware(DirectoryRequestBodyLimit)
     app.state.district_admin_sessions = (
         DistrictAdminSessions.from_environment()
         if district_admin_token_sha256 is None
@@ -297,6 +348,10 @@ def create_app(
             status = 404
         elif exc.code == "school_suspended":
             status = 403
+        elif exc.code == "directory_queue_full":
+            status = 429
+        elif exc.code in {"directory_identity_conflict", "directory_request_reviewed", "directory_request_stale"}:
+            status = 409
         return JSONResponse(status_code=status, content={"ok": False, "code": exc.code, "detail": str(exc)})
 
     @app.middleware("http")
@@ -314,7 +369,19 @@ def create_app(
             if declared <= 0 or declared > 1024 * 1024:
                 return _json_error(413, "The request body is too large.")
         path = request.url.path
-        if path == "/v1/admin/session" and request.method == "POST":
+        if path == "/v1/directory/registration-requests":
+            if request.method != "POST":
+                return _json_error(405, "POST is required.")
+            if declared > 8192:
+                return _json_error(413, "The registration request is too large.")
+            client = request.client.host if request.client else "unknown"
+            if not request.app.state.rate_limiter.allow(
+                client, "directory-request-client", limit=30, window=60
+            ) or not request.app.state.rate_limiter.allow(
+                "all", "directory-request-global", limit=120, window=60
+            ):
+                return _json_error(429, "Too many registration requests. Try again later.")
+        elif path == "/v1/admin/session" and request.method == "POST":
             client = request.client.host if request.client else "unknown"
             if not request.app.state.rate_limiter.allow(
                 client, "district-admin-login", limit=10, window=900
@@ -372,6 +439,32 @@ def create_app(
     @app.get("/healthz")
     def healthz():
         return {"ok": True, "service": "school-csm-gateway-registration"}
+
+    @app.post("/v1/directory/registration-requests")
+    def submit_directory_request(
+        body: DirectoryRegistrationSubmit,
+        service: RegistrationService = Depends(current_service),
+    ):
+        return DirectoryRegistrationRequests(service.repository).submit(body.model_dump())
+
+    @app.get("/v1/admin/registration-requests")
+    def list_directory_requests(
+        status: str = "pending",
+        _session: DistrictAdminSession = Depends(current_district_admin),
+        service: RegistrationService = Depends(current_service),
+    ):
+        requests = DirectoryRegistrationRequests(service.repository)
+        return {"requests": requests.list(status), "counts": requests.counts(), "limit": 1000}
+
+    @app.post("/v1/admin/registration-requests/{request_id}/review")
+    def review_directory_request(
+        request_id: str,
+        body: DirectoryRegistrationReview,
+        _session: DistrictAdminSession = Depends(current_district_mutation),
+        service: RegistrationService = Depends(current_service),
+    ):
+        return DirectoryRegistrationRequests(service.repository).review(
+            request_id, body.decision, expected_revision=body.expected_revision)
 
     @app.get("/manage", response_class=FileResponse)
     def manage_page():

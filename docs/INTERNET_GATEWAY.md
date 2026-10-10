@@ -1,9 +1,12 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.8.1 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.8.2 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 saved gateway configuration, the application stays **Local Only**, starts no
-tunnel, and makes no registration-service request.
+tunnel. With a configured district provider, completed School Registration sends
+only a pending identity request for district review, even before gateway setup.
+No provider means no request; no Internet means the request stays queued locally.
+This request is not gateway enrollment or permission to expose a server.
 
 ## Architecture and data ownership
 
@@ -64,11 +67,15 @@ counts, respondent information, survey answers, scanner images, or report text.
 Failure to send a check-in makes the portal status stale but never stops the
 local Survey Server.
 
-For a school's first managed connection, the district operator first confirms
-the official school entry and issues a one-time activation code through the
-portal. The school then follows this non-technical workflow:
+For a school's first managed connection, completing local School Registration
+submits the basic identity to **Schools → Registration requests** in the district
+portal. The district operator verifies and approves it (or manually adds a
+verified official entry), then issues a one-time activation code. The school
+follows this non-technical workflow:
 
 1. Complete **Mandatory School Registration** in the Control Center.
+   Check **District school registration** for Queued locally, Pending approval,
+   or Approved. Local use is available without waiting for district approval.
 2. Open **Survey Server and Respondent Access**.
 3. Go to **Internet Gateway** and select **Connect or reconnect the Internet
    Gateway**.

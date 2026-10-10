@@ -69,6 +69,10 @@ class GatewayProviderClient:
     def lookup_school(self, school_id: str) -> Mapping[str, Any]:
         return self._request("GET", f"/v1/schools/{quote(str(school_id), safe='')}")
 
+    def submit_directory_request(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Submit or check a review receipt; never enroll or provision a gateway."""
+        return self._request("POST", "/v1/directory/registration-requests", payload)
+
     def health_check(self) -> bool:
         """Verify the configured registration-service HTTPS endpoint."""
 

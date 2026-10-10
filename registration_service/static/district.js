@@ -3,6 +3,10 @@
 const state = {
   csrfToken: "",
   schools: [],
+  registrationRequests: [],
+  registrationRequestCounts: null,
+  reviewRequest: null,
+  reviewInProgress: false,
   overview: null,
   activeView: "overview",
   selectedSchoolId: "",
@@ -50,6 +54,9 @@ const eventLabels = {
   administrator_passkeys_recovered: "Administrator passkeys recovered",
   passkey_reset_code_issued: "Passkey recovery issued",
   source_tunnel_revocation_pending: "Old tunnel cleanup pending",
+  school_registration_request_submitted: "School registration submitted for review",
+  school_registration_request_updated: "Pending school identity updated",
+  school_registration_request_reviewed: "School registration reviewed",
 };
 
 const byId = (id) => document.getElementById(id);
@@ -118,15 +125,22 @@ function showLogin(message = "") {
   state.sessionEpoch += 1;
   state.csrfToken = "";
   state.schools = [];
+  state.registrationRequests = [];
+  state.registrationRequestCounts = null;
+  state.reviewRequest = null;
   state.overview = null;
   state.selectedSchoolId = "";
   closeDrawer();
   closeNavigation();
   byId("school-dialog").close();
   byId("activation-dialog").close();
+  byId("request-review-dialog").close();
+  byId("request-review-identity").textContent = "";
+  byId("request-review-district").textContent = "";
+  byId("request-review-device").textContent = "";
   byId("school-form").reset();
   ["drawer-body", "school-roster-body", "recent-schools-body", "audit-body",
-    "health-list", "attention-list", "activation-school", "audit-school"].forEach((id) => {
+    "health-list", "attention-list", "activation-school", "audit-school", "registration-requests-body"].forEach((id) => {
     byId(id).replaceChildren();
   });
   byId("drawer-title").textContent = "School";
@@ -335,15 +349,19 @@ async function refreshDashboard() {
   const refresh = byId("refresh-button");
   setBusy(refresh, true, "Refreshing…");
   try {
-    const [overview, roster] = await Promise.all([
+    const [overview, roster, requests] = await Promise.all([
       api("/v1/admin/overview"),
       api("/v1/admin/schools?status=all&limit=500"),
+      api("/v1/admin/registration-requests?status=all"),
     ]);
     state.overview = overview;
     state.schools = Array.isArray(roster.schools) ? roster.schools : [];
+    state.registrationRequests = Array.isArray(requests.requests) ? requests.requests : [];
+    state.registrationRequestCounts = requests.counts || null;
     clearLoadError();
     renderOverview();
     renderRoster();
+    renderRegistrationRequests();
     renderSchoolChoices();
     byId("last-updated").textContent = `Updated ${relativeTime(overview.generated_at)}`;
     if (state.activeView === "activity") await loadAudit();
@@ -483,6 +501,94 @@ function renderRoster() {
     row.append(identity, gateway, survey, version, seen, action);
     body.append(row);
   });
+}
+
+function validRequestId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value || ""));
+}
+
+function validRequestRevision(value) {
+  return /^[0-9a-f]{64}$/.test(String(value || ""));
+}
+
+function renderRegistrationRequests() {
+  const query = byId("school-search").value.trim().toLowerCase();
+  const filter = byId("request-status").value || "pending";
+  const requests = state.registrationRequests.filter((request) =>
+    (filter === "all" || request.status === filter) && (!query ||
+      String(request.school_id).includes(query) || String(request.school_name).toLowerCase().includes(query))
+  );
+  const body = byId("registration-requests-body");
+  body.replaceChildren();
+  const counts = state.registrationRequestCounts;
+  const pending = counts ? Number(counts.pending || 0) : state.registrationRequests.filter((request) => request.status === "pending").length;
+  const total = counts ? Number(counts.pending || 0) + Number(counts.approved || 0) + Number(counts.rejected || 0) : state.registrationRequests.length;
+  const historyNote = total > state.registrationRequests.length ? " · History limited; all pending requests included" : "";
+  byId("request-count").textContent = `${pending} pending approval · ${requests.length} shown${historyNote}`;
+  byId("requests-empty").hidden = requests.length !== 0;
+  requests.forEach((request) => {
+    const row = element("tr");
+    const identity = element("td");
+    identity.append(schoolCell(request));
+    const district = element("td");
+    district.append(element("div", "", request.school_district), element("small", "", request.school_division));
+    const submitted = element("td", "", relativeTime(request.created_at));
+    submitted.title = formatTime(request.created_at);
+    const label = { pending: "Pending approval", approved: "Approved", rejected: "Not approved" }[request.status] || "Unknown";
+    const review = element("td", "", label);
+    const actions = element("td", "request-actions");
+    if (request.status === "pending" && validRequestId(request.request_id) && validRequestRevision(request.revision)) {
+      actions.append(button("Review & approve", "text-button", () => openRequestReview(request, "approve")),
+        button("Reject", "text-button", () => openRequestReview(request, "reject")));
+    } else {
+      actions.append(element("small", "", "Review completed"));
+    }
+    row.append(identity, district, submitted, review, actions);
+    body.append(row);
+  });
+}
+
+function openRequestReview(request, decision) {
+  if (state.reviewInProgress || request.status !== "pending" || !validRequestId(request.request_id) || !validRequestRevision(request.revision) ||
+      !["approve", "reject"].includes(decision)) return;
+  state.reviewRequest = { ...request, decision };
+  byId("request-review-title").textContent = decision === "approve" ? "Approve school registration?" : "Reject school registration?";
+  byId("request-review-identity").textContent = `${request.school_name} · School ID ${request.school_id}`;
+  byId("request-review-district").textContent = `${request.school_district} · ${request.school_division}`;
+  byId("request-review-device").textContent = `Requesting installation: ${request.installation_id}`;
+  byId("request-review-error").hidden = true;
+  byId("confirm-request-review").textContent = decision === "approve" ? "Approve identity only" : "Reject request";
+  byId("request-review-dialog").showModal();
+}
+
+async function submitRequestReview(event) {
+  event.preventDefault();
+  const request = state.reviewRequest;
+  if (state.reviewInProgress || !request || !validRequestId(request.request_id) || !validRequestRevision(request.revision)) return;
+  state.reviewInProgress = true;
+  const control = byId("confirm-request-review");
+  setBusy(control, true, "Saving review…");
+  byId("cancel-request-review").disabled = true;
+  try {
+    await api(`/v1/admin/registration-requests/${encodeURIComponent(request.request_id)}/review`, {
+      method: "POST", body: { decision: request.decision, expected_revision: request.revision },
+    });
+    byId("request-review-dialog").close();
+    state.reviewRequest = null;
+    showToast(request.decision === "approve"
+      ? "School identity approved. Issue an activation code separately after verifying the school's coordinator."
+      : "Request rejected. No existing school data, server, or gateway was changed.");
+    await refreshDashboard();
+  } catch (error) {
+    if (error.status !== 401) {
+      byId("request-review-error").textContent = error.message;
+      byId("request-review-error").hidden = false;
+    }
+  } finally {
+    state.reviewInProgress = false;
+    setBusy(control, false);
+    byId("cancel-request-review").disabled = false;
+  }
 }
 
 function renderSchoolChoices() {
@@ -845,7 +951,16 @@ function bindEvents() {
   byId("logout-button").addEventListener("click", signOut);
   byId("refresh-button").addEventListener("click", refreshDashboard);
   byId("retry-button").addEventListener("click", refreshDashboard);
-  byId("school-search").addEventListener("input", renderRoster);
+  byId("school-search").addEventListener("input", () => { renderRoster(); renderRegistrationRequests(); });
+  byId("request-status").addEventListener("change", renderRegistrationRequests);
+  byId("request-review-form").addEventListener("submit", submitRequestReview);
+  byId("cancel-request-review").addEventListener("click", () => {
+    if (!state.reviewInProgress) { byId("request-review-dialog").close(); state.reviewRequest = null; }
+  });
+  byId("request-review-dialog").addEventListener("cancel", (event) => {
+    if (state.reviewInProgress) event.preventDefault();
+    else state.reviewRequest = null;
+  });
   byId("school-status").addEventListener("change", renderRoster);
   byId("activation-school").addEventListener("change", updateSelectedSchool);
   byId("activation-form").addEventListener("submit", reviewActivation);

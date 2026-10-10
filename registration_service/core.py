@@ -15,7 +15,7 @@ from typing import Any, Iterator, Mapping, Protocol
 from uuid import UUID, uuid4
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ACTIVE = "active"
 TRANSFERRED = "transferred"
 REVOKED = "revoked"
@@ -344,6 +344,21 @@ class RegistrationRepository:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS school_registration_requests (
+                    request_id TEXT PRIMARY KEY,
+                    request_secret_sha256 TEXT NOT NULL,
+                    installation_id TEXT NOT NULL,
+                    school_id TEXT NOT NULL,
+                    school_name TEXT NOT NULL,
+                    school_district TEXT NOT NULL,
+                    school_division TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    reviewed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS registration_request_queue
+                    ON school_registration_requests(status,created_at);
                 CREATE TABLE IF NOT EXISTS installations (
                     installation_id TEXT PRIMARY KEY,
                     school_id TEXT NOT NULL REFERENCES schools(school_id),

@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.1
+# School CSM Control Center 0.8.2
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,20 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.2 highlights
+
+- Completed School Registration queues a basic identity request for the district
+  directory. Offline registration still works; requests retry after restart and
+  every five minutes while the Control Center is open.
+- The district portal's **Schools → Registration requests** section lets an
+  administrator verify, approve, or reject an untrusted school submission.
+- Approval adds the verified identity to the official directory, but does not
+  issue activation codes, enroll a server, or provision a tunnel. Existing school
+  identities and routes cannot be overwritten by a public registration request.
+- Only School ID, school name, district, and division are synchronized. Personnel,
+  contacts, seals, responses, reports, and scanner images stay local. See
+  [`docs/SCHOOL_REGISTRATION_AND_DIRECTORY.md`](docs/SCHOOL_REGISTRATION_AND_DIRECTORY.md).
 
 ## 0.8.1 highlights
 

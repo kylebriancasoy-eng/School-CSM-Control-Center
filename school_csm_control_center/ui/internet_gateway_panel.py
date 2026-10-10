@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -39,6 +40,7 @@ class InternetGatewayPanel(QFrame):
     prepare_package_requested = Signal()
     prepare_backup_requested = Signal()
     registration_details_requested = Signal()
+    directory_sync_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +52,24 @@ class InternetGatewayPanel(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
+
+        directory_card = self._card("District school registration")
+        directory_layout = directory_card.layout()
+        self.directory_status = QLabel("Complete School Registration first.")
+        self.directory_status.setObjectName("district_registration_status")
+        self.directory_status.setWordWrap(True)
+        self.directory_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.directory_sync_button = QPushButton("Send / check district request")
+        self.directory_sync_button.setObjectName("district_registration_sync")
+        self.directory_sync_button.clicked.connect(self.directory_sync_requested.emit)
+        directory_layout.addWidget(self.directory_status, 1, 0, 1, 4)
+        directory_layout.addWidget(self.directory_sync_button, 2, 0, 1, 4)
+        privacy = QLabel("Only School ID, school name, district, and division are submitted for review. Approval does not activate the gateway. Personnel, contact details, seals, and survey records remain local.")
+        privacy.setObjectName("internet_gateway_note")
+        privacy.setWordWrap(True)
+        directory_layout.addWidget(privacy, 3, 0, 1, 4)
+        layout.addWidget(directory_card)
+        self.apply_directory_state({})
 
         status_card = self._card("Internet Gateway")
         status = status_card.layout()
@@ -246,6 +266,26 @@ class InternetGatewayPanel(QFrame):
         self.apply_state({})
         self._apply_styles()
 
+    def apply_directory_state(self, state: Mapping[str, Any]) -> None:
+        labels = {
+            "incomplete": "Not submitted", "queued": "Queued locally",
+            "pending": "Pending approval", "approved": "Approved",
+            "rejected": "Not approved", "provider_unavailable": "Provider unavailable",
+            "storage_error": "Needs attention",
+        }
+        status = str(state.get("status") or "incomplete")
+        busy = bool(state.get("busy"))
+        self.directory_status.setText(
+            labels.get(status, "Not submitted") + (" · Checking…" if busy else "")
+            + "\n" + str(state.get("detail") or "Complete School Registration first.")
+        )
+        self.directory_sync_button.setText(
+            "Submit corrected request" if status == "rejected" else "Send / check district request"
+        )
+        self.directory_sync_button.setEnabled(
+            status not in {"incomplete", "provider_unavailable"} and not busy
+        )
+
     def apply_state(self, state: Mapping[str, Any]) -> None:
         self._state = dict(state or {})
         registration_state = str(
@@ -330,7 +370,13 @@ class InternetGatewayPanel(QFrame):
             and not busy
             and not retired
         )
-        self.connect_button.setEnabled(configured and privileged and not busy and not retired)
+        enrollment_available = bool(
+            self._state.get("provider_available") and self._state.get("local_school_id")
+        )
+        self.connect_button.setEnabled(
+            ((configured and privileged) or (not configured and enrollment_available))
+            and not busy and not retired
+        )
         self.diagnostics_button.setEnabled(configured and not busy and not retired)
         self.details_button.setEnabled(configured or retired)
         transfer_identity_ready = bool(

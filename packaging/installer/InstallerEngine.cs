@@ -19,6 +19,7 @@ namespace MoSSLab.SchoolCSM.Installer
         internal const string GatewayInstallationSecretTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.InstallationSecret";
         internal const string GatewayDevicePrivateKeyTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.DevicePrivateKey";
         internal const string GatewayDeferredTransferReceiptTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt";
+        internal const string GatewayDirectoryRequestTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.DirectoryRequestReceipt";
 
         private const long MaximumPackageBytes = 2L * 1024 * 1024 * 1024;
         private const long MaximumExtractedBytes = 4L * 1024 * 1024 * 1024;

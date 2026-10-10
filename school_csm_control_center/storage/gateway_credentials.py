@@ -28,11 +28,15 @@ GATEWAY_DEVICE_PRIVATE_KEY_TARGET = (
 GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET = (
     "MoSSLab.SchoolCSMControlCenter.InternetGateway.DeferredTransferReceipt"
 )
+GATEWAY_DIRECTORY_REQUEST_TARGET = (
+    "MoSSLab.SchoolCSMControlCenter.InternetGateway.DirectoryRequestReceipt"
+)
 GATEWAY_CREDENTIAL_TARGETS = (
     GATEWAY_TUNNEL_CREDENTIAL_TARGET,
     GATEWAY_INSTALLATION_SECRET_TARGET,
     GATEWAY_DEVICE_PRIVATE_KEY_TARGET,
     GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET,
+    GATEWAY_DIRECTORY_REQUEST_TARGET,
 )
 
 
@@ -43,6 +47,7 @@ class GatewayCredentialStore:
     installation_secret_target = GATEWAY_INSTALLATION_SECRET_TARGET
     device_private_key_target = GATEWAY_DEVICE_PRIVATE_KEY_TARGET
     deferred_transfer_receipt_target = GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET
+    directory_request_target = GATEWAY_DIRECTORY_REQUEST_TARGET
 
     def __init__(self, manager: Any | None = None) -> None:
         self._manager = manager
@@ -121,6 +126,50 @@ class GatewayCredentialStore:
     def delete_deferred_transfer_receipt(self) -> bool:
         return bool(self._backend().delete(self.deferred_transfer_receipt_target))
 
+    def save_directory_request_receipt(
+        self, receipt: Mapping[str, Any], *, retain_request_id: str | None = None,
+    ) -> None:
+        """Keep the durable receipt recoverable while a replacement is staged.
+
+        Credential Manager replaces one value atomically. Retaining the receipt
+        selected by the existing JSON file therefore covers a crash between the
+        protected write and the subsequent JSON replacement. Only two receipts
+        are retained, under the existing lifecycle-managed credential target.
+        """
+
+        previous = self.load_directory_request_receipt(retain_request_id)
+        receipts = [dict(receipt)]
+        if previous and previous.get("request_id") != receipt.get("request_id"):
+            receipts.append(previous)
+        serialized = json.dumps(
+            {"schema_version": "1.0", "receipts": receipts},
+            sort_keys=True, ensure_ascii=True, separators=(",", ":"), allow_nan=False,
+        )
+        if len(serialized.encode("utf-16-le")) > 2400:
+            raise ValueError("Directory receipt exceeds the protected storage limit.")
+        self._save(self.directory_request_target, serialized, "Directory request receipt")
+
+    def load_directory_request_receipt(self, request_id: str | None = None) -> dict[str, Any] | None:
+        serialized = self._load(self.directory_request_target)
+        if serialized is None:
+            return None
+        value = json.loads(serialized)
+        if not isinstance(value, dict):
+            raise ValueError("Directory request receipt is invalid.")
+        # Read the single-receipt format from earlier installations unchanged.
+        if "receipts" not in value:
+            receipts = [value]
+        else:
+            receipts = value.get("receipts")
+            if value.get("schema_version") != "1.0" or not isinstance(receipts, list) or not 1 <= len(receipts) <= 2:
+                raise ValueError("Directory request receipt is invalid.")
+        if any(not isinstance(receipt, dict) for receipt in receipts):
+            raise ValueError("Directory request receipt is invalid.")
+        for receipt in receipts:
+            if request_id is None or receipt.get("request_id") == request_id:
+                return dict(receipt)
+        return None
+
     def exists(self) -> dict[str, bool]:
         """Return presence flags without exposing any secret value."""
 
@@ -131,6 +180,7 @@ class GatewayCredentialStore:
             "deferred_transfer_receipt": (
                 self._load(self.deferred_transfer_receipt_target) is not None
             ),
+            "directory_request_receipt": self._load(self.directory_request_target) is not None,
         }
 
     def delete_all(self) -> dict[str, bool]:
@@ -144,6 +194,7 @@ class GatewayCredentialStore:
             "deferred_transfer_receipt": bool(
                 backend.delete(self.deferred_transfer_receipt_target)
             ),
+            "directory_request_receipt": bool(backend.delete(self.directory_request_target)),
         }
 
     def _save(self, target: str, secret: str, label: str) -> None:

@@ -1746,3 +1746,10 @@ dialog::backdrop {
     transition-duration: .01ms !important;
   }
 }
+
+.registration-requests-panel { margin-bottom: 24px; }
+.request-boundary { margin: 16px 24px; color: var(--text-muted, #486873); line-height: 1.6; }
+.request-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 24px; }
+.request-filter select { width: auto; min-width: 180px; }
+.request-actions { min-width: 170px; }
+.request-actions .text-button { display: block; margin-bottom: 8px; }

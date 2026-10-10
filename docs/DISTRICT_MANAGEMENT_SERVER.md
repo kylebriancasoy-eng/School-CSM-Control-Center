@@ -133,8 +133,10 @@ The district operator and school operator have separate duties.
 ### District operator
 
 1. Verify the request through an approved district channel.
-2. Add the official School ID and school name to the district roster. Confirm
-   the district and division values before saving.
+2. Open **Schools → Registration requests**, verify the submitted School ID,
+   name, district, and division, and approve the request. Alternatively, manually
+   add a verified official entry. Pending submissions are not official roster
+   entries and cannot grant gateway authority or overwrite existing identities.
 3. Issue one short-lived activation code. Deliver it to the verified school
    coordinator through the approved channel; do not place it in a public QR code
    or ordinary support log.
@@ -151,6 +153,10 @@ school's local data or silently turn off an already authorized local server.
    active server.
 2. Complete every section of **Mandatory School Registration** using the same
    official School ID recorded by the district.
+   This queues only the basic school identity for district review. It retries
+   when Internet returns while the app is open and after restart. Personnel,
+   contacts, seals, and response records are not uploaded. The local application
+   remains usable without district approval.
 3. Open **Survey Server and Respondent Access** and go to **Internet Gateway**.
 4. Select **Connect or reconnect the Internet Gateway**.
 5. Enter the district-issued activation code when the HTTPS registration page
@@ -159,6 +165,14 @@ school's local data or silently turn off an already authorized local server.
 6. Return to the Control Center and wait for the signed authorization and
    connector credential to be saved. Confirm **Connected**, then test the
    school's own Survey and Scanner addresses from an external connection.
+
+Update the district server to 0.8.2 before updating school installations. The
+database migration adds a separate review-request table and preserves existing
+directory, server, activation, and authorization records. Create an encrypted
+district recovery backup first. Schema version 3 must not be opened by an older
+district binary; reverting the district server requires the matching pre-update
+backup and a deliberate recovery procedure. Approval does not migrate existing
+single-school pilot Workers, including Calapi's protected pilot route.
 
 After first enrollment, reconnects use the installation authorization protected
 by Windows Credential Manager. A different computer does not become active just

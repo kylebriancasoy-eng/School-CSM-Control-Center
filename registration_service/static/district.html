@@ -59,7 +59,7 @@
       </nav>
       <div class="privacy-card">
         <strong>School data stays local</strong>
-        <p>This portal monitors connectivity and authorization only. It never receives survey answers, reports, scanner images, or OpenAI keys.</p>
+        <p>This portal reviews basic school identity and monitors connectivity and authorization. It never receives personnel, contact details, seals, survey answers, reports, scanner images, or OpenAI keys.</p>
       </div>
       <div class="sidebar-foot">
         <span class="service-dot" id="service-dot" aria-hidden="true"></span>
@@ -152,6 +152,16 @@
             <button class="button button--secondary" id="add-school-button" type="button">Add official school</button>
             <button class="button button--primary" type="button" data-go-view="enrollment">Issue activation</button>
           </div>
+          <section class="panel registration-requests-panel" aria-labelledby="requests-heading">
+            <div class="panel-heading"><div><p class="section-kicker">School submissions · Unverified</p><h2 id="requests-heading">Registration requests</h2></div><p class="panel-meta" id="request-count" aria-live="polite">Loading…</p></div>
+            <p class="request-boundary">Completing School Registration submits only the school's ID, name, district, and division. Verify these details through an approved district channel. Approval adds a school to the official directory; it does not issue an activation code or connect a server.</p>
+            <label class="request-filter" for="request-status">Review status <select id="request-status"><option value="pending">Pending approval</option><option value="all">All requests</option><option value="approved">Approved</option><option value="rejected">Not approved</option></select></label>
+            <div class="table-wrap"><table>
+              <thead><tr><th scope="col">School</th><th scope="col">District / Division</th><th scope="col">Submitted</th><th scope="col">Review</th><th scope="col">Actions</th></tr></thead>
+              <tbody id="registration-requests-body"><tr><td colspan="5">Loading registration requests…</td></tr></tbody>
+            </table></div>
+            <p class="request-boundary" id="requests-empty" hidden>No matching registration requests. Offline schools appear after their queued request reaches this service.</p>
+          </section>
           <section class="panel roster-panel" aria-labelledby="school-directory-heading">
             <div class="panel-heading"><div><p class="section-kicker">Official roster</p><h2 id="school-directory-heading">District schools</h2></div><p id="roster-result-count" class="panel-meta" aria-live="polite">Loading…</p></div>
             <div class="table-wrap">
@@ -169,7 +179,7 @@
             <div>
               <p class="section-kicker">District directory</p>
               <h2 id="add-school-heading">School not listed yet?</h2>
-              <p>Add its official identity before issuing a one-time activation code.</p>
+              <p>Review its pending registration request in Schools, or add its verified official identity before issuing a one-time activation code.</p>
             </div>
             <button class="button button--secondary" type="button" data-open-school-dialog>Add official school</button>
           </section>
@@ -198,10 +208,10 @@
               <p class="section-kicker">What the school does</p>
               <h2 id="enrollment-help-heading">Simple four-step setup</h2>
               <ol class="compact-steps">
-                <li><span>1</span><p>Complete Mandatory School Registration.</p></li>
+                <li><span>1</span><p>Complete Mandatory School Registration. Its basic identity is submitted for district review when Internet is available.</p></li>
                 <li><span>2</span><p>Open the Server Dashboard.</p></li>
                 <li><span>3</span><p>Go to Internet Gateway.</p></li>
-                <li><span>4</span><p>Select <strong>Connect or reconnect the Internet Gateway</strong> and use the one-time approval when prompted.</p></li>
+                <li><span>4</span><p>After district approval and receipt of an activation code, select <strong>Connect or reconnect the Internet Gateway</strong> and use the one-time approval when prompted.</p></li>
               </ol>
               <div class="boundary-card"><strong>The district portal never stores:</strong><ul><li>Survey answers or remarks</li><li>Scanner images</li><li>School reports or backups</li><li>OpenAI API credentials</li></ul></div>
             </aside>
@@ -287,6 +297,20 @@
     </form>
   </dialog>
 
+  <dialog class="confirm-dialog" id="request-review-dialog" aria-labelledby="request-review-title">
+    <form id="request-review-form">
+      <h2 id="request-review-title">Review school registration</h2>
+      <p id="request-review-identity"></p>
+      <p id="request-review-district"></p>
+      <p id="request-review-device"></p>
+      <div class="dialog-warning"><strong>Unverified school submission</strong><p>Confirm the official identity and requester outside this portal before approving. An existing official roster entry will not be overwritten. Personnel, contacts, seals, and survey data are not part of this request.</p></div>
+      <div class="form-error" id="request-review-error" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="button button--secondary" id="cancel-request-review" type="button">Cancel</button>
+        <button class="button button--primary" id="confirm-request-review" type="submit">Confirm review</button>
+      </div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
   <script src="/assets/district.js" defer></script>
 </body>
