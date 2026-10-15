@@ -1,6 +1,6 @@
 # Install and maintain School CSM Control Center
 
-School CSM Control Center 0.8.2 is distributed as one setup program. Operators
+School CSM Control Center 0.8.3 is distributed as one setup program. Operators
 run only the compiled Setup EXE and application EXE. Python does not need to be
 installed, and operators do not run command files or source files.
 

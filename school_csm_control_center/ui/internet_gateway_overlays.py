@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QRadioButton,
     QScrollArea,
     QVBoxLayout,
@@ -231,6 +232,7 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self._school_id = ""
         self._school_name = ""
         self._provider_available = False
+        self._guided = False
         self._provider_detail = ""
         self._current_direct_public_host = ""
         self._current_direct_tunnel_id = ""
@@ -261,9 +263,9 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.school_id_requirement.setWordWrap(True)
         self.body_layout.addWidget(self.school_id_requirement)
 
-        route_heading = QLabel("Setup route")
-        route_heading.setObjectName("gateway_overlay_section")
-        self.body_layout.addWidget(route_heading)
+        self.route_heading = QLabel("Setup route (advanced)")
+        self.route_heading.setObjectName("gateway_overlay_section")
+        self.body_layout.addWidget(self.route_heading)
         route_row = QHBoxLayout()
         self.managed_mode = QRadioButton("Managed multi-school provider")
         self.direct_mode = QRadioButton("Single-school Cloudflare pilot")
@@ -275,11 +277,11 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         route_row.addStretch(1)
         self.body_layout.addLayout(route_row)
 
-        self.browser_heading = QLabel("Authorize in your secure browser")
+        self.browser_heading = QLabel("1. Enter your activation code in the secure browser")
         self.browser_heading.setObjectName("gateway_overlay_section")
         self.body_layout.addWidget(self.browser_heading)
         self.browser_copy = QLabel(
-            "The managed registration page opens in your browser. Enter the School Activation Code and create the administrator passkey there. The Control Center never collects, stores, or sees either value."
+            "Have the one-time School Activation Code issued by your district administrator ready. Choose Open secure activation page, enter that code on the browser page, and follow the Windows Hello or security-key instructions to create a passkey. School identity is filled in automatically. Do not enter a Cloudflare API token."
         )
         self.browser_copy.setObjectName("gateway_overlay_note")
         self.browser_copy.setWordWrap(True)
@@ -290,18 +292,17 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.school_information_button = TooltipIconButton(
             "school", "Open School Information", role="subtle"
         )
-        self.register_button = TooltipIconButton(
-            "open", "Open the secure Internet Gateway authorization page", role="primary"
-        )
+        self.register_button = QPushButton("Open secure activation page")
+        self.register_button.setMinimumHeight(40)
         actions.addWidget(self.school_information_button)
         actions.addWidget(self.register_button)
         self.body_layout.addLayout(actions)
 
-        self.completion_heading = QLabel("Finish in the Control Center")
+        self.completion_heading = QLabel("2. Return here to finish activation")
         self.completion_heading.setObjectName("gateway_overlay_section")
         self.body_layout.addWidget(self.completion_heading)
         self.completion_copy = QLabel(
-            "After the browser confirms authorization, copy its completion code here. It expires in 10 minutes and authorizes only this installation. If secure delivery is interrupted, enter the same unexpired code again."
+            "After the browser confirms registration, copy its COMPLETION CODE into the box below. This is a different code from the district-issued activation code. It expires in 10 minutes. If delivery is interrupted, use the same unexpired completion code again."
         )
         self.completion_copy.setObjectName("gateway_overlay_note")
         self.completion_copy.setWordWrap(True)
@@ -310,11 +311,12 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         completion_row = QHBoxLayout(self.completion_row)
         completion_row.setContentsMargins(0, 0, 0, 0)
         self.completion_code = QLineEdit()
-        self.completion_code.setPlaceholderText("One-time completion code")
+        self.completion_code.setPlaceholderText("Paste the browser's completion code — not the activation code")
+        self.completion_code.setEchoMode(QLineEdit.EchoMode.Password)
+        self.completion_code.setMaxLength(512)
         self.completion_code.setAccessibleName("Internet Gateway completion code")
-        self.redeem_button = TooltipIconButton(
-            "check", "Redeem the one-time completion code", role="success"
-        )
+        self.redeem_button = QPushButton("Finish activation")
+        self.redeem_button.setMinimumHeight(40)
         completion_row.addWidget(self.completion_code, 1)
         completion_row.addWidget(self.redeem_button)
         self.body_layout.addWidget(self.completion_row)
@@ -403,10 +405,12 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         deployment_mode: str = "",
         public_host: str = "",
         tunnel_id: str = "",
+        guided: bool = False,
     ) -> None:
         self._school_id = str(school_id or "").strip()
         self._school_name = " ".join(str(school_name or "").split())
         self._provider_available = bool(provider_available)
+        self._guided = bool(guided)
         self._provider_detail = str(detail or "").strip()
         self.school_id.setText(self._school_id)
         self.school_name.setText(self._school_name)
@@ -416,9 +420,12 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.managed_mode.setEnabled(valid_school_id and self._provider_available)
         self.direct_mode.setEnabled(valid_school_id)
         current_mode = str(deployment_mode or "").strip().casefold()
-        use_direct = current_mode == "direct_worker_vpc" or (
+        use_direct = not guided and (current_mode == "direct_worker_vpc" or (
             valid_school_id and not self._provider_available
-        )
+        ))
+        for widget in (self.route_heading, self.managed_mode, self.direct_mode):
+            widget.setVisible(not guided)
+        self.direct_mode.setEnabled(valid_school_id and not guided)
         self._current_direct_public_host = (
             str(public_host or "").strip().casefold().rstrip(".")
             if current_mode == "direct_worker_vpc"
@@ -474,10 +481,12 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         )
         self.direct_mode.setEnabled(
             not busy
+            and not self._guided
             and self._school_id.isdigit()
             and 4 <= len(self._school_id) <= 12
         )
         self._update_direct_enabled()
+        self._update_managed_enabled()
         self._refresh_scroll_body_minimum()
 
     def close_overlay(self) -> None:
@@ -486,9 +495,13 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         super().close_overlay()
 
     def _submit(self) -> None:
+        if self.operation_locked or not self.register_button.isEnabled():
+            return
         self.browser_authorization_requested.emit("registration")
 
     def _redeem(self) -> None:
+        if self.operation_locked or not self.redeem_button.isEnabled():
+            return
         code = self.completion_code.text().strip()
         if not code:
             self.set_status("Enter the one-time completion code shown in the browser.")
@@ -529,6 +542,8 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
             )
         elif not direct and not self._provider_available:
             requirement = self._provider_detail or (
+                "District connection settings are unavailable. Ask the district administrator for the configured school installer, or continue using local surveys."
+                if self._guided else
                 "Managed Internet Gateway provider configuration is unavailable. "
                 "Choose the single-school Cloudflare pilot or continue Local-Only."
             )
@@ -537,7 +552,16 @@ class InternetGatewaySetupOverlay(_GatewayOverlay):
         self.school_id_requirement.setText(requirement)
         self.school_id_requirement.setVisible(bool(requirement))
         self._update_direct_enabled()
+        self._update_managed_enabled()
         self._refresh_scroll_body_minimum()
+
+    def _update_managed_enabled(self) -> None:
+        ready = bool(not self.operation_locked and self._provider_available
+                     and self._school_id.isascii() and self._school_id.isdigit()
+                     and 4 <= len(self._school_id) <= 12 and self.managed_mode.isChecked())
+        self.register_button.setEnabled(ready)
+        self.completion_code.setEnabled(ready)
+        self.redeem_button.setEnabled(ready)
 
     def _update_direct_enabled(self, _value: object = None) -> None:
         valid_school_id = bool(

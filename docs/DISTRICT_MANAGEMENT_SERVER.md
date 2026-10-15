@@ -157,14 +157,22 @@ school's local data or silently turn off an already authorized local server.
    when Internet returns while the app is open and after restart. Personnel,
    contacts, seals, and response records are not uploaded. The local application
    remains usable without district approval.
-3. Open **Survey Server and Respondent Access** and go to **Internet Gateway**.
-4. Select **Connect or reconnect the Internet Gateway**.
+3. Open **School Information → Internet activation (optional)** and check the
+   district approval stage. **Use local surveys for now** remains available.
+4. After approval, select **Activate Internet Gateway → Open secure activation
+   page**.
 5. Enter the district-issued activation code when the HTTPS registration page
    requests it, verify the school identity shown, and create the school's
    administrator passkey.
-6. Return to the Control Center and wait for the signed authorization and
+6. Return to the Control Center, paste the browser's separate completion code,
+   select **Finish activation**, and wait for the signed authorization and
    connector credential to be saved. Confirm **Connected**, then test the
    school's own Survey and Scanner addresses from an external connection.
+
+In Control Center 0.8.3, Server Dashboard connection controls are for normal
+reconnects, diagnostics, and transfer. Initial setup redirects to the optional
+School Information guide. Existing district servers on 0.8.2 already support
+this guide; no further database upgrade is needed for the navigation change.
 
 Update the district server to 0.8.2 before updating school installations. The
 database migration adds a separate review-request table and preserves existing

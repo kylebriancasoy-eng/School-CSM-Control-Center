@@ -38,9 +38,9 @@ The bootstrapper intentionally performs anonymous HTTPS downloads and stores no 
 `school_csm_control_center/version.py` is the single source of truth for this
 release:
 
-- application semantic version: `0.8.2`;
-- Windows executable version: `0.8.2.0`;
-- release tag: `v0.8.2`.
+- application semantic version: `0.8.3`;
+- Windows executable version: `0.8.3.0`;
+- release tag: `v0.8.3`.
 
 After changing the version, regenerate and check the PyInstaller version resource:
 
@@ -157,7 +157,7 @@ Each manifest points its application package at an immutable tagged-release URL.
 ## GitHub release process
 
 1. Merge a tested version change into `main`.
-2. Create and push the matching tag, for example `git tag -a v0.8.2 -m "School CSM Control Center 0.8.2"` followed by `git push origin v0.8.2`.
+2. Create and push the matching tag, for example `git tag -a v0.8.3 -m "School CSM Control Center 0.8.3"` followed by `git push origin v0.8.3`.
 3. The release workflow runs the test suite, builds the compiled school app,
    maintenance setup, and separate district host, verifies their release
    assets, and publishes them to the tag.

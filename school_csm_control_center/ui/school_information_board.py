@@ -32,6 +32,7 @@ from school_csm_control_center.storage.control_center_settings import (
     clean_registration_text,
     first_incomplete_registration_section,
     school_registration_errors,
+    school_registration_complete,
     school_registration_section_errors,
     validate_school_id,
 )
@@ -45,6 +46,10 @@ class SchoolInformationBoard(QFrame):
 
     school_information_saved = Signal(object)
     notice_requested = Signal(str, str)
+    activation_requested = Signal()
+    directory_sync_requested = Signal()
+    server_dashboard_requested = Signal()
+    local_usage_requested = Signal()
 
     def __init__(self, project_root: str | Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -59,6 +64,10 @@ class SchoolInformationBoard(QFrame):
         self._registered_school_id = ""
         self._registration_required = False
         self._step = 0
+        self._profile_complete = False
+        self._directory_state: dict[str, Any] = {}
+        self._gateway_state: dict[str, Any] = {}
+        self._saved_identity: dict[str, str] = {}
         self._build_ui()
         self.load_settings()
         self._apply_styles()
@@ -81,6 +90,24 @@ class SchoolInformationBoard(QFrame):
         heading_copy.addWidget(self.subtitle)
         outer.addLayout(heading_copy)
 
+        navigation = QHBoxLayout()
+        self.profile_button = QPushButton("School information")
+        self.internet_button = QPushButton("Internet activation (optional)")
+        for button in (self.profile_button, self.internet_button):
+            button.setObjectName("school_registration_back")
+            button.setCheckable(True)
+            button.setAutoExclusive(True)
+            navigation.addWidget(button)
+        navigation.addStretch(1)
+        outer.addLayout(navigation)
+        self.workspace_stack = QStackedWidget()
+        self.workspace_stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        outer.addWidget(self.workspace_stack, 1)
+        profile_page = QWidget()
+        self.workspace_stack.addWidget(profile_page)
+        outer = QVBoxLayout(profile_page)
+        outer.setContentsMargins(0, 0, 0, 0)
+
         progress = QHBoxLayout()
         progress.setSpacing(8)
         self.step_labels: list[QLabel] = []
@@ -88,6 +115,8 @@ class SchoolInformationBoard(QFrame):
             label = QLabel(f"{index + 1}  {section_title}")
             label.setObjectName("school_information_step")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setWordWrap(True)
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             label.setProperty("activeStep", index == 0)
             self.step_labels.append(label)
             progress.addWidget(label, 1)
@@ -132,6 +161,109 @@ class SchoolInformationBoard(QFrame):
 
         self.back_button.clicked.connect(self._back_requested)
         self.continue_button.clicked.connect(self._continue_requested)
+        self.workspace_stack.addWidget(self._internet_page())
+        self.workspace_stack.currentChanged.connect(self._update_workspace_navigation)
+        self._update_workspace_navigation(0)
+        self.profile_button.clicked.connect(lambda: self.workspace_stack.setCurrentIndex(0))
+        self.internet_button.clicked.connect(self.show_internet_activation)
+
+    def _update_workspace_navigation(self, index: int) -> None:
+        self.profile_button.setChecked(index == 0)
+        self.internet_button.setChecked(index == 1)
+
+    def _internet_page(self) -> QWidget:
+        page, layout = self._page("Internet activation", "Optional: let respondents use mobile data or another Wi-Fi network. Local surveys work without Internet activation.")
+        self.activation_identity = QLabel()
+        self.activation_identity.setWordWrap(True)
+        self.activation_identity.setTextFormat(Qt.TextFormat.PlainText)
+        self.activation_identity.setObjectName("school_information_card_title")
+        layout.addWidget(self.activation_identity)
+        self.activation_steps: list[QLabel] = []
+        for title in ("1. Save school information", "2. District approval", "3. Activate Internet access"):
+            card = self._card(title)
+            label = QLabel()
+            label.setObjectName("school_information_note")
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+            card.layout().addWidget(label, 1, 0, 1, 2)
+            self.activation_steps.append(label)
+            layout.addWidget(card)
+        self.activation_check_button = QPushButton("Check district approval")
+        self.activation_button = QPushButton("Activate Internet Gateway")
+        self.activation_server_button = QPushButton("Open Server Dashboard")
+        self.activation_local_button = QPushButton("Use local surveys for now")
+        for button in (self.activation_check_button, self.activation_button,
+                       self.activation_server_button, self.activation_local_button):
+            button.setObjectName("school_registration_continue")
+            if button in (self.activation_check_button, self.activation_server_button):
+                layout.addWidget(button)
+        footer = QHBoxLayout()
+        footer.addWidget(self.activation_local_button)
+        footer.addWidget(self.activation_button)
+        page.layout().addLayout(footer)
+        self.activation_button.setProperty("primaryAction", True)
+        self.activation_check_button.clicked.connect(self.directory_sync_requested.emit)
+        self.activation_button.clicked.connect(self.activation_requested.emit)
+        self.activation_server_button.clicked.connect(self.server_dashboard_requested.emit)
+        self.activation_local_button.clicked.connect(self.local_usage_requested.emit)
+        privacy = QLabel("Only School ID, school name, district, and division are shared for review. Personnel, contact details, the school seal, and survey records stay on this computer. Never enter a Cloudflare API token here.")
+        privacy.setWordWrap(True)
+        privacy.setObjectName("school_information_note")
+        layout.addWidget(privacy)
+        layout.addStretch(1)
+        return page
+
+    def show_internet_activation(self) -> None:
+        if not self._profile_complete:
+            self.workspace_stack.setCurrentIndex(0)
+            self.notice_requested.emit("Complete and save all three school information sections first.", "info")
+            return
+        self.workspace_stack.setCurrentIndex(1)
+        self.activation_button.setFocus()
+
+    def apply_activation_state(self, *, directory: dict[str, Any] | None = None,
+                               gateway: dict[str, Any] | None = None) -> None:
+        if directory is not None:
+            self._directory_state = dict(directory)
+        if gateway is not None:
+            self._gateway_state = dict(gateway)
+        request, connection = self._directory_state, self._gateway_state
+        registered = connection.get("registration_state") == "registered"
+        existing = registered or bool(connection.get("school_id") and connection.get("public_host"))
+        retired = bool(connection.get("retired") or connection.get("retirement") or connection.get("authorization_state") in {"transferred", "revoked"})
+        status = str(request.get("status") or "incomplete")
+        busy = bool(request.get("busy") or connection.get("operation") or connection.get("gateway_state") == "connecting")
+        self.internet_button.setEnabled(self._profile_complete)
+        self.activation_identity.setText(f"{self._saved_identity.get('school_name', '')} · School ID {self._saved_identity.get('school_id', '')}")
+        self.activation_steps[0].setText("School information saved on this computer." if self._profile_complete else "Complete all three required school information sections first.")
+        labels = {
+            "approved": "Approved. Ask the district administrator for your one-time School Activation Code.",
+            "pending": "Waiting for district approval. You can close the app or continue using local surveys; your request is saved.",
+            "queued": "Saved for sending. The app will retry when the district service and Internet connection are available.",
+            "rejected": "Not approved. Contact the district administrator, correct School Information, then submit the corrected request.",
+            "provider_unavailable": "District connection settings are not installed. Ask the district administrator for the configured school installer; local surveys still work.",
+            "storage_error": "The request needs attention. Your school information is saved locally. Try sending again or contact the district administrator.",
+        }
+        self.activation_steps[1].setText("This server is already registered. No new activation code is needed." if registered else labels.get(status, "Your saved school information will be submitted for district review."))
+        if request.get("detail") and not registered:
+            self.activation_steps[1].setText(self.activation_steps[1].text() + "\n" + str(request["detail"]))
+        if retired:
+            guidance = "This installation is retired or transferred. Use the Server Dashboard for transfer or recovery; do not activate it again."
+        elif existing:
+            guidance = "An Internet setup already exists. Connect, reconnect, or review any authorization problem in the Server Dashboard; do not request a new initial activation code."
+        elif status == "approved":
+            guidance = "Choose Activate Internet Gateway. Enter the district-issued activation code in the secure browser and create a passkey. Then paste the browser's separate completion code back into the app."
+        else:
+            guidance = "Activation becomes available after district approval. No activation code is required for local surveys."
+        self.activation_steps[2].setText(guidance)
+        self.activation_button.setVisible(not existing and not retired)
+        self.activation_button.setEnabled(self._profile_complete and status == "approved" and not busy and not retired and not existing)
+        self.activation_server_button.setVisible(existing or retired)
+        self.activation_check_button.setVisible(not existing and not retired)
+        self.activation_check_button.setEnabled(self._profile_complete and not busy and status != "provider_unavailable" and not retired)
+        self.activation_check_button.setText("Checking…" if busy else "Submit corrected request" if status == "rejected" else "Send / check district approval")
+        self.activation_local_button.setEnabled(self._profile_complete)
+        self.activation_local_button.setText("Continue to Control Center" if existing else "Use local surveys for now")
 
     def _identity_page(self) -> QWidget:
         page, layout = self._page(
@@ -309,6 +441,9 @@ class SchoolInformationBoard(QFrame):
 
     def set_registration_required(self, required: bool) -> None:
         self._registration_required = bool(required)
+        self._profile_complete = not required
+        self.workspace_stack.setCurrentIndex(0)
+        self.apply_activation_state()
         self.title.setText("Register this school" if required else "School Information")
         self.subtitle.setText(
             "Complete all three required sections before the Control Center, Survey Server, and Internet Gateway become available. Your completed sections are saved on this computer."
@@ -360,6 +495,7 @@ class SchoolInformationBoard(QFrame):
 
     def load_settings(self) -> dict[str, Any]:
         settings = self.settings_store.load()
+        self._saved_identity = {key: str(settings.get(key) or "") for key in ("school_name", "school_id")}
         values = {
             self.school_name: settings.get("school_name", ""),
             self.school_id: self._registered_school_id or settings.get("school_id", ""),
@@ -376,6 +512,8 @@ class SchoolInformationBoard(QFrame):
             field.setText(str(value or ""))
         self._refresh_logo_preview(settings)
         self._clear_validation()
+        self._profile_complete = school_registration_complete(settings, data_root=self.data_root)
+        self.apply_activation_state()
         return settings
 
     def save_settings(self) -> dict[str, Any]:
@@ -398,8 +536,11 @@ class SchoolInformationBoard(QFrame):
             self._show_validation_errors(errors)
             raise ValueError(next(iter(errors.values())))
         saved = self._persist_candidate(candidate)
+        self._saved_identity = {key: str(saved.get(key) or "") for key in ("school_name", "school_id")}
         self._refresh_logo_preview(saved)
         self._registration_required = False
+        self._profile_complete = True
+        self.apply_activation_state()
         self.school_information_saved.emit(saved)
         return saved
 
@@ -744,10 +885,20 @@ class SchoolInformationBoard(QFrame):
             QPushButton#school_registration_continue:hover {{
                 border-color: {theme.ACCENT_CYAN};
             }}
+            QPushButton#school_registration_back:checked {{
+                border-color: {theme.ACCENT_TEAL};
+                background: rgba(50, 217, 204, 0.16);
+            }}
             QPushButton#school_registration_continue[primaryAction="true"] {{
                 color: #04212a;
                 background: {theme.ACCENT_TEAL};
                 border-color: {theme.ACCENT_TEAL};
+            }}
+            QPushButton#school_registration_continue:disabled,
+            QPushButton#school_registration_back:disabled {{
+                color: {theme.TEXT_MUTED};
+                background: rgba(16, 35, 51, 0.65);
+                border-color: rgba(112, 139, 164, 0.22);
             }}
             """
         )

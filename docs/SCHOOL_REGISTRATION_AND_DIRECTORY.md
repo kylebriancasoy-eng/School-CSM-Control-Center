@@ -8,14 +8,29 @@
    the School ID, name, district, and division for district review. The request
    also has a device identifier and a private review receipt; neither is gateway
    authorization. Without Internet, local registration is still complete.
-3. In **Server Dashboard → Internet Gateway → District school registration**,
-   see **Queued locally**, **Pending approval**, **Approved**, or **Not approved**.
-   The clearly labeled **Send / check district request** button retries manually.
+3. In **School Information → Internet activation (optional)**, follow the saved
+   school information, district approval, and Internet activation stages. The
+   guide opens after the first completed profile save and is available again
+   from School Information after restart. **Send / check district approval**
+   retries manually; rejected requests offer **Submit corrected request**.
    Automatic retries happen every five minutes while the app is open and on
    restart. Existing complete profiles are queued on their first updated launch.
 4. After approval, obtain the one-time activation code from the district operator
-   and use Internet Gateway setup to enroll the school server and its passkey.
+   and choose **Activate Internet Gateway → Open secure activation page**. Enter
+   the activation code in the browser and create the server administrator passkey.
+   Return to the app, paste the browser's separate completion code, and choose
+   **Finish activation**. No activation code is collected or saved by the app.
    Approval alone does not make a survey or scanner available over the Internet.
+5. **Use local surveys for now** leaves the optional guide without losing school
+   information or the pending request. For existing Internet setups, **Open Server
+   Dashboard** leads to reconnect, diagnostics, and transfer. Reconnect never
+   submits a new initial activation request. A transferred/revoked installation
+   must use the existing transfer/recovery safeguards, not initial activation.
+
+Version 0.8.3 changes only school-side navigation and guidance. The district
+service must be 0.8.2 or newer; a district already on 0.8.2 does not need another
+database upgrade for this guide. Unsaved profile edits never change the identity
+displayed in the activation guide or used by the secure activation link.
 
 If rejected, contact the district administrator and correct the local profile.
 Saving corrected basic identity or clicking **Submit corrected request** creates
@@ -53,7 +68,8 @@ history is truncated; audit records remain available through the activity log.
 
 ## Deployment and safeguards
 
-Update both applications; deploy the district server first. Back up the district
+When upgrading from before 0.8.2, update both applications; deploy the district
+server first. Back up the district
 server before starting its updated binary. Schema 3 adds the request table without
 removing old records. An older district server cannot open schema 3; restore a
 matching pre-update encrypted backup only as a deliberate recovery operation.

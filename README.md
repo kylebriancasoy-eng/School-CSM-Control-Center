@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.2
+# School CSM Control Center 0.8.3
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,19 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.3 highlights
+
+- First-time Internet activation lives in **School Information → Internet
+  activation (optional)**, with saved-profile, district-approval, and activation
+  stages and readable action buttons.
+- New registrations open that optional guide after saving. **Use local surveys
+  for now** stays visible even on smaller windows; approval never blocks local use.
+- The secure browser accepts the district-issued activation code and passkey.
+  The app clearly asks for the browser's separate completion code afterward.
+- Existing setups use the Server Dashboard for reconnect, diagnostics, and
+  transfer—not a new initial activation request. No data or credential migration
+  is needed. The district service must already be version 0.8.2 or newer.
 
 ## 0.8.2 highlights
 

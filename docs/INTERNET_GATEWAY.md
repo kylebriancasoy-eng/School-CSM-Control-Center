@@ -1,6 +1,6 @@
 # Internet Gateway and multi-school deployment
 
-School CSM Control Center 0.8.2 is offline-first. The Internet Gateway is an
+School CSM Control Center 0.8.3 is offline-first. The Internet Gateway is an
 optional deployment feature, not a requirement for survey collection. With no
 saved gateway configuration, the application stays **Local Only**, starts no
 tunnel. With a configured district provider, completed School Registration sends
@@ -76,11 +76,16 @@ follows this non-technical workflow:
 1. Complete **Mandatory School Registration** in the Control Center.
    Check **District school registration** for Queued locally, Pending approval,
    or Approved. Local use is available without waiting for district approval.
-2. Open **Survey Server and Respondent Access**.
-3. Go to **Internet Gateway** and select **Connect or reconnect the Internet
-   Gateway**.
-4. Use the district's one-time approval when the secure registration page asks
-   for it, then create the school's administrator passkey.
+2. Open **School Information → Internet activation (optional)**. The guide
+   appears after first registration and can be resumed later. Local surveys
+   remain available while district approval is pending.
+3. After approval, choose **Activate Internet Gateway**, then **Open secure
+   activation page**. Enter the district-issued School Activation Code in the
+   browser and create the school's administrator passkey.
+4. Paste the browser's separate completion code back into the app and choose
+   **Finish activation**. Then use the Server Dashboard for connection status,
+   reconnecting, diagnostics, and transfers. Existing installations are never
+   asked for a new initial activation code to reconnect.
 
 After that first enrollment, normal reconnects use the device authorization
 already protected by Windows Credential Manager. Suspending a directory entry

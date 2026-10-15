@@ -504,6 +504,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.system_tray.exit_requested.connect(self.exit_application)
         self.school_information.school_information_saved.connect(self._school_information_saved)
         self.district_registration.state_changed.connect(self._district_registration_state_changed)
+        self.school_information.directory_sync_requested.connect(self._retry_district_registration)
+        self.school_information.activation_requested.connect(self._begin_school_internet_activation)
+        self.school_information.server_dashboard_requested.connect(lambda: self.show_board("server"))
+        self.school_information.local_usage_requested.connect(self._continue_with_local_surveys)
         self.school_information.notice_requested.connect(
             lambda message, kind: self.toast.show_message(message, kind=kind, timeout_ms=6500)
         )
@@ -919,6 +923,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self._set_scaled_pixmap(self.footer_mosslab_seal, resolve_mosslab_seal(self.project_root), 40, 40)
 
     def _school_information_saved(self, settings: object) -> None:
+        initial_registration = not self._registration_complete
         saved = dict(settings) if isinstance(settings, dict) else self.server_controller.settings_store.load()
         self._registration_complete = school_registration_complete(
             saved,
@@ -940,6 +945,8 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self._sync_district_registration()
             self.school_workspace_overlay.close_overlay()
             self.show_board("dashboard")
+            if initial_registration and self._deferred_gateway_transfer_request is None:
+                self._show_school_internet_activation()
             self.toast.show_message(
                 "School registration complete. The Control Center and Survey Form are ready.",
                 kind="success",
@@ -993,8 +1000,49 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         self.school_information.district_registration_note.setText(
             "District directory: " + str(request.get("detail") or "Not submitted.")
         )
+        self.school_information.apply_activation_state(directory=request)
 
-    def _open_gateway_setup(self) -> None:
+    def _show_school_internet_activation(self) -> None:
+        self.show_board("school_information")
+        self.school_information.apply_activation_state(
+            directory=self.district_registration.state(), gateway=self.gateway_controller.state())
+        self.school_information.show_internet_activation()
+
+    def _continue_with_local_surveys(self) -> None:
+        if not self._registration_complete:
+            return
+        self.school_workspace_overlay.close_overlay()
+        self.show_board("dashboard")
+
+    def _begin_school_internet_activation(self) -> None:
+        settings = self.server_controller.settings_store.load()
+        gateway = self.gateway_controller.state()
+        if not school_registration_complete(settings, data_root=self.data_root):
+            self.show_board("school_information")
+            return
+        if self.gateway_controller.retired or (gateway.get("school_id") and gateway.get("public_host")):
+            self.show_board("server")
+            return
+        if (self.district_registration.state().get("status") != "approved"
+                or self.district_registration.state().get("busy")
+                or not self.gateway_controller.provider_available
+                or self.gateway_controller.operation_in_progress):
+            self._show_school_internet_activation()
+            self.toast.show_message("Check district approval before activating Internet access. Local surveys remain available.", kind="info", timeout_ms=6500)
+            return
+        self._open_gateway_setup(guided=True)
+
+    def _open_gateway_setup(self, *, guided: bool = False) -> None:
+        existing = self.gateway_controller.state()
+        if (not guided and existing.get("school_id") and existing.get("public_host")
+                and existing.get("deployment_mode") != "direct_worker_vpc"):
+            self.show_board("server")
+            self.toast.show_message("Internet setup already exists. Use Connect or reconnect here, or Server Transfer when changing computers. No new initial activation code is needed.", kind="info", timeout_ms=7500)
+            return
+        if (not guided and not self.gateway_controller.configured and not self.gateway_controller.retired
+                and not (existing.get("school_id") and existing.get("public_host"))):
+            self._show_school_internet_activation()
+            return
         local = self.server_controller.settings()
         state = self.gateway_controller.state()
         detail = self._gateway_provider_error or str(
@@ -1008,9 +1056,10 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             deployment_mode=str(state.get("deployment_mode") or ""),
             public_host=str(state.get("public_host") or ""),
             tunnel_id=str(state.get("tunnel_id") or ""),
+            guided=guided,
         )
         self.gateway_setup_overlay.open_overlay(
-            self.server_board.internet_gateway.setup_button
+            self.school_information.activation_button if guided else self.server_board.internet_gateway.setup_button
         )
 
     def _open_gateway_authorization_page(self, mode: str = "registration") -> None:
@@ -1319,6 +1368,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         )
         if hasattr(self, "school_information"):
             self.school_information.set_registered_school_id(registered_school_id)
+            self.school_information.apply_activation_state(gateway=gateway)
         if hasattr(self, "system_tray"):
             self.system_tray.set_gateway_state(
                 str(gateway.get("gateway_state") or "not_configured"),
@@ -1771,7 +1821,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         """Ensure the private loopback origin exists, then start the tunnel."""
 
         if not self.gateway_controller.configured:
-            self._open_gateway_setup()
+            self._show_school_internet_activation()
             return
         self._gateway_auto_reconnect_suppressed = False
         if self.gateway_controller.operation_in_progress:

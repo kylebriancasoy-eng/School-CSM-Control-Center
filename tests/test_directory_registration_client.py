@@ -362,6 +362,8 @@ class DirectoryRegistrationClientTests(unittest.TestCase):
              patch("school_csm_control_center.ui.mrs_printing_board.discover_physical_printers", return_value=[]):
             window = SchoolCSMControlCenterWindow(self.root)
             try:
+                window.show()
+                app.processEvents()
                 with patch.object(window.district_registration, "send_async", return_value=True) as send:
                     window._school_information_saved(complete)
                 self.assertTrue(send.called)
@@ -373,9 +375,32 @@ class DirectoryRegistrationClientTests(unittest.TestCase):
                 self.assertEqual(window.gateway_controller.state()["registration_state"], "not_configured")
                 self.assertIsNone(self.credentials.load_tunnel_credential())
                 self.assertIsNone(self.credentials.load_installation_secret())
-                with patch.object(window, "_open_gateway_setup") as setup:
+                with patch.object(window, "_show_school_internet_activation") as setup:
                     window._request_gateway_connection()
                     setup.assert_called_once()
+                # Initial profile completion opens the optional guide; local
+                # use is available without approval or any activation secret.
+                window._registration_complete = False
+                with patch.object(window.district_registration, "send_async", return_value=True):
+                    window._school_information_saved(complete)
+                self.assertEqual(window.school_information.workspace_stack.currentIndex(), 1)
+                self.assertTrue(window.school_workspace_overlay.dismissible)
+                with patch.object(window, "_open_gateway_setup") as setup:
+                    with patch.object(window.district_registration, "state", return_value={"status": "pending"}):
+                        window._begin_school_internet_activation()
+                        setup.assert_not_called()
+                    with patch.object(window.district_registration, "state", return_value={"status": "approved"}):
+                        window._begin_school_internet_activation()
+                        setup.assert_called_once_with(guided=True)
+                with patch.object(window.gateway_controller, "state", return_value={
+                        "school_id": "123627", "public_host": "school.example.test", "registration_state": "registered"}), \
+                     patch.object(window, "show_board") as navigate, \
+                     patch.object(window, "_open_gateway_setup") as setup:
+                    window._begin_school_internet_activation()
+                    navigate.assert_called_once_with("server")
+                    setup.assert_not_called()
+                window.school_information.activation_local_button.click()
+                self.assertTrue(window.school_workspace_overlay.isHidden())
             finally:
                 window.prepare_for_application_quit()
                 window.close()
