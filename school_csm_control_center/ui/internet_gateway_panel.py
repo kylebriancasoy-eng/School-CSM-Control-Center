@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
+    QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -27,7 +28,7 @@ from school_csm_control_center.internet_gateway.controller import (
     REGISTRATION_LABELS,
 )
 from school_csm_control_center.ui import theme
-from school_csm_control_center.ui.widgets import TooltipIconButton
+from school_csm_control_center.ui.action_buttons import ActionButton
 
 
 class InternetGatewayPanel(QFrame):
@@ -59,11 +60,11 @@ class InternetGatewayPanel(QFrame):
         self.directory_status.setObjectName("district_registration_status")
         self.directory_status.setWordWrap(True)
         self.directory_status.setTextFormat(Qt.TextFormat.PlainText)
-        self.directory_sync_button = QPushButton("Send / check district request")
+        self.directory_sync_button = ActionButton("reset", "Send / check district request")
         self.directory_sync_button.setObjectName("district_registration_sync")
         self.directory_sync_button.clicked.connect(self.directory_sync_requested.emit)
         directory_layout.addWidget(self.directory_status, 1, 0, 1, 4)
-        directory_layout.addWidget(self.directory_sync_button, 2, 0, 1, 4)
+        directory_layout.addWidget(self.directory_sync_button, 2, 0, 1, 4, Qt.AlignmentFlag.AlignLeft)
         privacy = QLabel("Only School ID, school name, district, and division are submitted for review. Approval does not activate the gateway. Personnel, contact details, seals, and survey records remain local.")
         privacy.setObjectName("internet_gateway_note")
         privacy.setWordWrap(True)
@@ -84,85 +85,42 @@ class InternetGatewayPanel(QFrame):
         metrics = (
             self.registration_metric,
             self.school_id_metric,
-            self.public_host_metric,
             self.gateway_metric,
             self.authorized_metric,
             self.internet_survey_metric,
             self.internet_scanner_metric,
         )
         for index, metric in enumerate(metrics):
-            status.addWidget(metric[0], 1 + (index // 4), index % 4)
+            status.addWidget(metric[0], 1 + (index // 3), index % 3)
+        status.addWidget(self.public_host_metric[0], 3, 0, 1, 4)
 
-        self.setup_button = TooltipIconButton(
-            "settings",
-            "Set up or update the optional Internet Gateway",
-            button_size=36,
-            icon_size=19,
-        )
-        self.connect_button = TooltipIconButton(
-            "reset", "Connect or reconnect the Internet Gateway", button_size=36, icon_size=19
-        )
-        self.diagnostics_button = TooltipIconButton(
-            "check", "Run Internet Gateway diagnostics", button_size=36, icon_size=19
-        )
-        self.details_button = TooltipIconButton(
-            "info", "View Internet Gateway registration details", button_size=36, icon_size=19
-        )
-        self.transfer_button = TooltipIconButton(
-            "next",
-            "Transfer this school's Internet Server to another authorized device",
-            button_size=36,
-            icon_size=19,
-            icon_color=theme.WARNING,
-        )
-        self.prepare_package_button = TooltipIconButton(
-            "export",
-            "Prepare an encrypted Server and Data package for a replacement computer",
-            button_size=36,
-            icon_size=19,
-            icon_color=theme.SUCCESS,
-        )
-        self.prepare_backup_button = TooltipIconButton(
-            "save",
-            "Create an encrypted portable recovery backup",
-            button_size=36,
-            icon_size=19,
-            icon_color=theme.ACCENT_CYAN,
-        )
+        self.setup_button = ActionButton("settings", "Setup", "Set up or update the optional Internet Gateway")
+        self.connect_button = ActionButton("reset", "Connect / reconnect", "Connect or reconnect the Internet Gateway", role="primary")
+        self.diagnostics_button = ActionButton("check", "Check connection", "Run Internet Gateway diagnostics")
+        self.details_button = ActionButton("info", "Details", "View Internet Gateway registration details")
+        self.transfer_button = ActionButton("next", "Transfer server", "Transfer this school's Internet Server to another authorized device")
+        self.prepare_package_button = ActionButton("export", "Export transfer package", "Prepare an encrypted Server and Data package for a replacement computer")
+        self.prepare_backup_button = ActionButton("save", "Create backup", "Create an encrypted portable recovery backup")
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        action_label = QLabel("Actions")
-        action_label.setObjectName("internet_gateway_action_label")
-        action_row.addWidget(action_label)
-        action_row.addStretch(1)
         for button in (
-            self.setup_button,
             self.connect_button,
             self.diagnostics_button,
+            self.setup_button,
             self.details_button,
         ):
             action_row.addWidget(button)
-        status.addLayout(action_row, 3, 0, 1, 4)
+        action_row.addStretch(1)
+        status.addLayout(action_row, 4, 0, 1, 4)
 
         continuity_row = QHBoxLayout()
         continuity_row.setSpacing(8)
-        continuity_heading = QLabel("Data continuity")
-        continuity_heading.setObjectName("internet_gateway_action_label")
-        continuity_row.addWidget(continuity_heading)
-        continuity_row.addStretch(1)
-        prepare_label = QLabel("Prepare Server + Data Package")
-        prepare_label.setObjectName("internet_gateway_action_label")
-        continuity_row.addWidget(prepare_label)
-        continuity_row.addWidget(self.prepare_package_button)
-        backup_label = QLabel("Recovery Backup")
-        backup_label.setObjectName("internet_gateway_action_label")
-        continuity_row.addWidget(backup_label)
         continuity_row.addWidget(self.prepare_backup_button)
-        transfer_label = QLabel("Transfer Server")
-        transfer_label.setObjectName("internet_gateway_action_label")
-        continuity_row.addWidget(transfer_label)
+        continuity_row.addWidget(self.prepare_package_button)
         continuity_row.addWidget(self.transfer_button)
-        status.addLayout(continuity_row, 4, 0, 1, 4)
+        continuity_row.addStretch(1)
+        recovery_card = self._card("Backup & server transfer")
+        recovery_card.layout().addLayout(continuity_row, 1, 0, 1, 4)
 
         self.detail_label = QLabel(
             "Internet Gateway is optional. The Control Center continues operating locally when it is not configured or the Internet is unavailable."
@@ -187,24 +145,12 @@ class InternetGatewayPanel(QFrame):
         self.survey_address = self._readonly_line()
         self.scanner_address = self._readonly_line()
 
-        self.copy_survey = TooltipIconButton(
-            "copy", "Copy Internet Survey link", button_size=36, icon_size=19
-        )
-        self.open_survey = TooltipIconButton(
-            "open", "Open Internet Survey", button_size=36, icon_size=19
-        )
-        self.save_survey_qr = TooltipIconButton(
-            "save", "Save Internet Survey QR as PNG", button_size=36, icon_size=19
-        )
-        self.copy_scanner = TooltipIconButton(
-            "copy", "Copy Internet Scanner Remote link", button_size=36, icon_size=19
-        )
-        self.open_scanner = TooltipIconButton(
-            "open", "Open Internet Scanner Remote", button_size=36, icon_size=19
-        )
-        self.save_scanner_qr = TooltipIconButton(
-            "save", "Save Internet Scanner Remote QR as PNG", button_size=36, icon_size=19
-        )
+        self.copy_survey = ActionButton("copy", "Copy", "Copy Internet Survey link")
+        self.open_survey = ActionButton("open", "Open", "Open Internet Survey")
+        self.save_survey_qr = ActionButton("save", "Save QR", "Save Internet Survey QR as PNG")
+        self.copy_scanner = ActionButton("copy", "Copy", "Copy Internet Scanner Remote link")
+        self.open_scanner = ActionButton("open", "Open", "Open Internet Scanner Remote")
+        self.save_scanner_qr = ActionButton("save", "Save QR", "Save Internet Scanner Remote QR as PNG")
 
         survey_actions = self._action_row(
             self.copy_survey, self.open_survey, self.save_survey_qr
@@ -237,6 +183,21 @@ class InternetGatewayPanel(QFrame):
         access.setColumnStretch(0, 1)
         access.setColumnStretch(1, 1)
         layout.addWidget(access_card)
+        self.sections = QTabWidget()
+        self.sections.setObjectName("gateway_sections")
+        for name, cards in (("Connection", (status_card,)),
+                            ("Public QR links", (access_card,)),
+                            ("Registration and backup", (directory_card, recovery_card))):
+            page = QWidget()
+            page_layout = QVBoxLayout(page)
+            page_layout.setContentsMargins(0, 10, 0, 0)
+            page_layout.setSpacing(10)
+            for card in cards:
+                layout.removeWidget(card)
+                page_layout.addWidget(card)
+            page_layout.addStretch(1)
+            self.sections.addTab(page, name)
+        layout.addWidget(self.sections)
 
         self.setup_button.clicked.connect(self.setup_requested.emit)
         self.connect_button.clicked.connect(self.connect_requested.emit)
@@ -476,7 +437,7 @@ class InternetGatewayPanel(QFrame):
         card = QFrame()
         card.setObjectName("internet_gateway_card")
         grid = QGridLayout(card)
-        grid.setContentsMargins(18, 16, 18, 18)
+        grid.setContentsMargins(14, 12, 14, 12)
         grid.setHorizontalSpacing(14)
         grid.setVerticalSpacing(10)
         heading = QLabel(title)
@@ -488,6 +449,7 @@ class InternetGatewayPanel(QFrame):
     def _metric(title: str, value: str) -> tuple[QWidget, QLabel]:
         box = QWidget()
         box.setObjectName("internet_gateway_metric_box")
+        box.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(box)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
@@ -518,7 +480,7 @@ class InternetGatewayPanel(QFrame):
         return label
 
     @staticmethod
-    def _action_row(*buttons: TooltipIconButton) -> QHBoxLayout:
+    def _action_row(*buttons: ActionButton) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(7)
         row.addStretch(1)
@@ -565,7 +527,7 @@ class InternetGatewayPanel(QFrame):
             }}
             QLabel#internet_gateway_card_title {{
                 color: {theme.TEXT_PRIMARY}; background: transparent;
-                font-size: 15px; font-weight: 800;
+                font-size: 14px; font-weight: 750;
             }}
             QWidget#internet_gateway_metric_box {{ background: transparent; }}
             QLabel#internet_gateway_metric_title {{
@@ -606,5 +568,10 @@ class InternetGatewayPanel(QFrame):
                 border: 1px solid rgba(87, 214, 220, 0.34);
                 border-radius: 10px; padding: 5px;
             }}
+            QTabWidget#gateway_sections::pane {{ border: none; background: transparent; }}
+            QTabBar::tab {{ color: {theme.TEXT_SECONDARY}; background: {theme.CARD_BG};
+                border: 1px solid {theme.CARD_BORDER}; border-radius: 7px;
+                padding: 8px 12px; margin-right: 5px; font-size: 12px; font-weight: 650; }}
+            QTabBar::tab:selected {{ color: {theme.ACCENT_CYAN}; border-color: {theme.ACCENT_TEAL}; background: rgba(50,217,204,0.12); }}
             """
         )

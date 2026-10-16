@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.3
+# School CSM Control Center 0.8.4
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,17 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.4 highlights
+
+- Compact Server Dashboard: status and **Start server**, **Stop server**, and
+  **Save settings** remain visible while settings scroll independently.
+- Separate **Survey settings**, **Internet Gateway**, **Wi-Fi and QR**, and
+  **Scanner accounts** sections replace the long combined form.
+- Gateway connection, public QR links, and registration/backup each have a clear
+  place. All dashboard actions use consistent, readable icon-and-text buttons.
+- Background startup is a compact switch row. QR layouts adapt to narrower
+  windows. This redesign does not change settings, authorization, or stored data.
 
 ## 0.8.3 highlights
 

@@ -7,8 +7,8 @@ import school_csm_control_center
 
 
 class ReleaseContractTests(unittest.TestCase):
-    def test_package_version_is_v083(self) -> None:
-        self.assertEqual(school_csm_control_center.__version__, "0.8.3")
+    def test_package_version_is_v084(self) -> None:
+        self.assertEqual(school_csm_control_center.__version__, "0.8.4")
 
     def test_manual_corner_editor_starts_without_marker_center_prefill(self) -> None:
         root = Path(__file__).parents[1]

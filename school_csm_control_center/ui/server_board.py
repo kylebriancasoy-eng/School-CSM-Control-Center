@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QScrollArea,
     QSlider,
+    QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +28,7 @@ from school_csm_control_center.ui import theme
 from school_csm_control_center.ui.controls import NoWheelComboBox, NoWheelDateEdit, NoWheelSpinBox
 from school_csm_control_center.ui.overlays import OverlayPrompt
 from school_csm_control_center.ui.internet_gateway_panel import InternetGatewayPanel
-from school_csm_control_center.ui.widgets import TooltipIconButton
+from school_csm_control_center.ui.action_buttons import ActionButton
 from school_csm_control_center.storage.control_center_settings import (
     school_registration_complete,
 )
@@ -73,14 +75,15 @@ class SurveyServerBoard(QWidget):
         )
         subtitle.setWordWrap(True)
         subtitle.setObjectName("server_subtitle")
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        title.hide()
+        subtitle.hide()
 
         status_card = self._card("Current operation")
         status_layout = status_card.layout()
         self.server_status = self._metric("Local server", "Stopped")
         self.form_status = self._metric("Survey Form", "Offline")
-        self.response_count = self._metric("Responses this session", "0")
+        self.response_count = self._metric("Responses", "0")
+        self.response_count[0].setToolTip("Responses received since the local survey server was started")
         self.active_sessions = self._metric("Active sessions", "0")
         self.portal_status = self._metric("Captive Portal", "Stopped")
         self.scanner_status = self._metric("Scanner Remote", "Available")
@@ -94,6 +97,8 @@ class SurveyServerBoard(QWidget):
 
         settings_card = self._card("Survey Form settings")
         grid = settings_card.layout()
+        for column in range(3):
+            grid.setColumnStretch(column, 1)
         self.mode_combo = NoWheelComboBox()
         self.mode_combo.addItem("Onsite questionnaire", "onsite")
         self.date_edit = NoWheelDateEdit()
@@ -133,9 +138,9 @@ class SurveyServerBoard(QWidget):
             grid.addWidget(widget, row + 1, col)
         grid.addWidget(self._field_label("Public status message"), 7, 0)
         grid.addWidget(self.status_message, 8, 0, 1, 3)
-        self.apply_button = TooltipIconButton("check", "Apply Survey Form and server settings", role="subtle")
-        self.stop_button = TooltipIconButton("stop", "Stop the local survey server", icon_color=theme.DANGER, role="danger")
-        self.start_button = TooltipIconButton("play", "Start the local survey server", icon_color=theme.SUCCESS, role="success")
+        self.apply_button = ActionButton("check", "Save settings", "Apply Survey Form and server settings")
+        self.stop_button = ActionButton("stop", "Stop server", "Stop the local survey server", role="danger")
+        self.start_button = ActionButton("play", "Start server", "Start the local survey server", role="primary")
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         buttons.addStretch(1)
@@ -149,9 +154,8 @@ class SurveyServerBoard(QWidget):
         background = background_card.layout()
         background_title = QLabel("Start the app and survey server with Windows")
         background_title.setObjectName("background_startup_title")
-        background_helper = QLabel(
-            "When enabled, the installed app starts hidden in the Windows notification area and starts the local survey server automatically. If this device has an active Internet Gateway registration, it reconnects only after local server health and device authorization are verified. Setup authorizes Private-network access so Windows does not request permission again at sign-in."
-        )
+        background_helper = QLabel("Start minimized to the tray and run the local server at sign-in. Internet reconnects only after server health and device authorization are verified.")
+        background_helper.setToolTip("Setup prepares Private-network access. Background startup never bypasses server health, school registration, or Internet Gateway authorization checks.")
         background_helper.setObjectName("server_note")
         background_helper.setWordWrap(True)
         self.background_startup_switch = QCheckBox("OFF")
@@ -169,9 +173,9 @@ class SurveyServerBoard(QWidget):
         self.background_startup_state = QLabel("Disabled")
         self.background_startup_state.setObjectName("background_startup_state")
         background.addWidget(background_title, 1, 0, 1, 2)
-        background.addWidget(self.background_startup_switch, 1, 2, Qt.AlignmentFlag.AlignRight)
-        background.addWidget(self.background_startup_state, 2, 2, Qt.AlignmentFlag.AlignRight)
-        background.addWidget(background_helper, 2, 0, 1, 2)
+        background.addWidget(self.background_startup_state, 1, 2, Qt.AlignmentFlag.AlignRight)
+        background.addWidget(self.background_startup_switch, 1, 3, Qt.AlignmentFlag.AlignRight)
+        background.addWidget(background_helper, 2, 0, 1, 4)
         layout.addWidget(background_card)
 
         self.internet_gateway = InternetGatewayPanel()
@@ -203,8 +207,8 @@ class SurveyServerBoard(QWidget):
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.setPlaceholderText("Hotspot password")
         self.hidden_network = QCheckBox("Hidden network")
-        self.detect_network = TooltipIconButton("reset", "Refresh laptop network adapters", role="subtle")
-        self.open_hotspot_settings = TooltipIconButton("settings", "Open Windows Mobile Hotspot settings", role="subtle")
+        self.detect_network = ActionButton("reset", "Refresh adapters")
+        self.open_hotspot_settings = ActionButton("settings", "Windows hotspot")
         net.addWidget(self._field_label("Respondent network"), 1, 0)
         net.addWidget(self._field_label("Access method"), 1, 1)
         net.addWidget(self._field_label("Internet access"), 1, 2)
@@ -234,8 +238,8 @@ class SurveyServerBoard(QWidget):
         self.scanner_intake_enabled = QCheckBox("Accept scanner image uploads and finalized MRS responses")
         self.scanner_store_preview = QCheckBox("Archive the corrected scanner preview when included")
         self.scanner_endpoint = self._readonly_line()
-        self.copy_scanner_endpoint = TooltipIconButton("copy", "Copy CSM Sheet Scanner Remote address", button_size=36, icon_size=19)
-        self.open_scanner_remote = TooltipIconButton("open", "Open CSM Sheet Scanner Remote", button_size=36, icon_size=19)
+        self.copy_scanner_endpoint = ActionButton("copy", "Copy link", "Copy CSM Sheet Scanner Remote address")
+        self.open_scanner_remote = ActionButton("open", "Open scanner", "Open CSM Sheet Scanner Remote")
         self.scanner_processing_slider = QSlider(Qt.Orientation.Horizontal)
         self.scanner_processing_slider.setRange(1, 10)
         self.scanner_processing_slider.setSingleStep(1)
@@ -285,9 +289,9 @@ class SurveyServerBoard(QWidget):
         self.operator_password.setPlaceholderText("New password or leave blank to retain")
         self.operator_enabled = QCheckBox("Account enabled")
         self.operator_enabled.setChecked(True)
-        self.new_operator_button = TooltipIconButton("add", "Create a new Scanner Operator", button_size=36, icon_size=19)
-        self.save_operator_button = TooltipIconButton("save", "Save Scanner Operator account", icon_color=theme.SUCCESS, role="success", button_size=36, icon_size=19)
-        self.archive_operator_button = TooltipIconButton("delete", "Disable and archive selected Scanner Operator", icon_color=theme.DANGER, role="danger", button_size=36, icon_size=19)
+        self.new_operator_button = ActionButton("add", "New account", "Create a new Scanner Operator")
+        self.save_operator_button = ActionButton("save", "Save account", "Save Scanner Operator account", role="primary")
+        self.archive_operator_button = ActionButton("delete", "Archive account", "Disable and archive selected Scanner Operator", role="danger")
         operator.addWidget(self._field_label("Registered account"), 1, 0, 1, 2)
         operator.addWidget(self.operator_combo, 2, 0, 1, 2)
         operator.addWidget(self.new_operator_button, 2, 2)
@@ -329,15 +333,15 @@ class SurveyServerBoard(QWidget):
         self.access_url = self._readonly_line()
         self.direct_access_url = self._readonly_line()
 
-        self.copy_access = TooltipIconButton("copy", "Copy verified configured-name address", button_size=36, icon_size=19)
-        self.open_access = TooltipIconButton("open", "Open verified configured-name address", button_size=36, icon_size=19)
-        self.copy_direct_access = TooltipIconButton("copy", "Copy primary direct-IP address", button_size=36, icon_size=19)
-        self.open_direct_access = TooltipIconButton("open", "Open primary direct-IP address", button_size=36, icon_size=19)
-        self.save_wifi = TooltipIconButton("save", "Save laptop-hotspot Wi-Fi QR as PNG", button_size=36, icon_size=19)
-        self.save_survey = TooltipIconButton("save", "Save verified configured-name QR as PNG", button_size=36, icon_size=19)
-        self.save_direct = TooltipIconButton("save", "Save primary direct-IP QR as PNG", button_size=36, icon_size=19)
-        self.save_sheet = TooltipIconButton("qr", "Save the respondent access sheet", button_size=36, icon_size=19)
-        self.regenerate_access = TooltipIconButton("key", "Regenerate the temporary Survey Form access key", button_size=36, icon_size=19)
+        self.copy_access = ActionButton("copy", "Copy", "Copy verified configured-name address")
+        self.open_access = ActionButton("open", "Open", "Open verified configured-name address")
+        self.copy_direct_access = ActionButton("copy", "Copy", "Copy primary direct-IP address")
+        self.open_direct_access = ActionButton("open", "Open", "Open primary direct-IP address")
+        self.save_wifi = ActionButton("save", "Save Wi-Fi QR", "Save laptop-hotspot Wi-Fi QR as PNG")
+        self.save_survey = ActionButton("save", "Save QR", "Save verified configured-name QR as PNG")
+        self.save_direct = ActionButton("save", "Save QR", "Save primary direct-IP QR as PNG")
+        self.save_sheet = ActionButton("qr", "Save access sheet", "Save the respondent access sheet")
+        self.regenerate_access = ActionButton("key", "Renew access key", "Regenerate the temporary Survey Form access key; earlier Survey QR codes will stop working")
 
         header_actions = QHBoxLayout()
         header_actions.setSpacing(8)
@@ -402,6 +406,9 @@ class SurveyServerBoard(QWidget):
         tiles_layout.setColumnStretch(0, 1)
         tiles_layout.setColumnStretch(1, 1)
         tiles_layout.setColumnStretch(2, 1)
+        self._qr_tiles_layout = tiles_layout
+        self._qr_tiles = (wifi_tile, direct_tile, named_tile)
+        self._qr_columns = 3
         access.addWidget(tiles, 2, 0, 1, 4)
 
         access_note = QLabel(
@@ -411,9 +418,50 @@ class SurveyServerBoard(QWidget):
         access_note.setObjectName("server_note")
         access.addWidget(access_note, 3, 0, 1, 4)
         layout.addWidget(access_card, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(1)
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
+        # Keep status and the three frequent actions visible while individual
+        # sections scroll independently. Reparent existing controls so their
+        # signals, values, validation, and authorization gates stay unchanged.
+        layout.removeWidget(status_card)
+        outer.setContentsMargins(16, 12, 16, 12)
+        outer.setSpacing(10)
+        outer.addWidget(status_card)
+        grid.removeItem(buttons)
+        for button in (self.apply_button, self.stop_button, self.start_button):
+            buttons.removeWidget(button)
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+        toolbar.addWidget(self.start_button)
+        toolbar.addWidget(self.stop_button)
+        toolbar.addWidget(self.apply_button)
+        toolbar.addStretch(1)
+        outer.addLayout(toolbar)
+        self.sections = QTabWidget()
+        self.sections.setObjectName("server_sections")
+        for name, cards in (
+            ("Survey settings", (settings_card, background_card)),
+            ("Internet Gateway", (self.internet_gateway,)),
+            ("Wi-Fi and QR", (network_card, access_card)),
+            ("Scanner accounts", (scanner_card, operator_card)),
+        ):
+            section_scroll = QScrollArea()
+            section_scroll.setObjectName("server_scroll")
+            section_scroll.setWidgetResizable(True)
+            section_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            section_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            section_content = QWidget()
+            section_content.setObjectName("server_content")
+            section_layout = QVBoxLayout(section_content)
+            section_layout.setContentsMargins(0, 10, 0, 0)
+            section_layout.setSpacing(10)
+            for card in cards:
+                layout.removeWidget(card)
+                section_layout.addWidget(card)
+            section_layout.addStretch(1)
+            section_scroll.setWidget(section_content)
+            self.sections.addTab(section_scroll, name)
+        outer.addWidget(self.sections, 1)
+        content.deleteLater()
+        scroll.deleteLater()
         self.prompt = OverlayPrompt(self)
 
         self.start_button.clicked.connect(self.start_server)
@@ -857,6 +905,16 @@ class SurveyServerBoard(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
         super().resizeEvent(event)
+        if hasattr(self, "_qr_tiles_layout"):
+            columns = 3 if self.width() >= 1150 else 2 if self.width() >= 850 else 1
+            if columns != self._qr_columns:
+                for tile in self._qr_tiles:
+                    self._qr_tiles_layout.removeWidget(tile)
+                for column in range(3):
+                    self._qr_tiles_layout.setColumnStretch(column, 1 if column < columns else 0)
+                for index, tile in enumerate(self._qr_tiles):
+                    self._qr_tiles_layout.addWidget(tile, index // columns, index % columns)
+                self._qr_columns = columns
         if hasattr(self, "prompt"):
             self.prompt.setGeometry(self.rect())
             if self.prompt.isVisible():
@@ -1037,11 +1095,13 @@ class SurveyServerBoard(QWidget):
     def _metric(label_text: str, value_text: str) -> tuple[QWidget, QLabel]:
         box = QWidget()
         box.setObjectName("server_metric_box")
+        box.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(box)
         layout.setContentsMargins(0, 0, 0, 0)
         label = QLabel(label_text)
         label.setObjectName("server_card_label")
         value = QLabel(value_text)
+        value.setWordWrap(True)
         value.setObjectName("server_metric")
         layout.addWidget(label)
         layout.addWidget(value)
@@ -1052,9 +1112,9 @@ class SurveyServerBoard(QWidget):
         card = QFrame()
         card.setObjectName("server_card")
         layout = QGridLayout(card)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setHorizontalSpacing(16)
-        layout.setVerticalSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(7)
         title = QLabel(heading)
         title.setObjectName("server_section_title")
         layout.addWidget(title, 0, 0, 1, 4)
@@ -1070,13 +1130,18 @@ class SurveyServerBoard(QWidget):
             QLabel#server_title {{ color: {theme.TEXT_PRIMARY}; font-size: 28px; font-weight: 800; }}
             QLabel#server_subtitle {{ color: {theme.TEXT_SECONDARY}; font-size: 14px; }}
             QFrame#server_card {{ background: {theme.PANEL_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 13px; }}
-            QLabel#server_section_title {{ color: {theme.TEXT_PRIMARY}; font-size: 17px; font-weight: 750; padding-bottom: 4px; }}
+            QLabel#server_section_title {{ color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: 750; padding-bottom: 2px; }}
             QLabel#server_card_label {{ color: {theme.TEXT_MUTED}; font-size: 12px; font-weight: 650; }}
-            QLabel#server_metric {{ color: {theme.TEXT_PRIMARY}; font-size: 22px; font-weight: 800; }}
+            QLabel#server_metric {{ color: {theme.TEXT_PRIMARY}; font-size: 17px; font-weight: 750; }}
             QLabel#server_metric[state="online"] {{ color: {theme.SUCCESS}; }}
             QLabel#server_metric[state="offline"] {{ color: {theme.DANGER}; }}
             QLabel#server_metric[state="maintenance"] {{ color: {theme.WARNING}; }}
-            QLabel#server_note {{ color: {theme.TEXT_SECONDARY}; font-size: 13px; }}
+            QLabel#server_note {{ color: {theme.TEXT_SECONDARY}; font-size: 12px; }}
+            QTabWidget#server_sections::pane {{ border: none; background: transparent; }}
+            QTabBar::tab {{ color: {theme.TEXT_SECONDARY}; background: {theme.CARD_BG};
+                border: 1px solid {theme.CARD_BORDER}; border-radius: 7px;
+                padding: 9px 13px; margin-right: 6px; font-size: 12px; font-weight: 650; }}
+            QTabBar::tab:selected {{ color: {theme.ACCENT_CYAN}; border-color: {theme.ACCENT_TEAL}; background: rgba(50,217,204,0.12); }}
             QLabel#background_startup_title {{ color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: 750; }}
             QLabel#background_startup_state {{ color: {theme.TEXT_MUTED}; font-size: 12px; font-weight: 750; }}
             QLabel#background_startup_state[enabledState="true"] {{ color: {theme.SUCCESS}; }}
@@ -1086,7 +1151,7 @@ class SurveyServerBoard(QWidget):
             QCheckBox#background_startup_switch::indicator {{ width: 16px; height: 16px; border: 1px solid {theme.CARD_BORDER}; border-radius: 8px; background: {theme.TEXT_MUTED}; }}
             QCheckBox#background_startup_switch::indicator:checked {{ border-color: #FFFFFF; background: #FFFFFF; }}
             QLabel#server_qr {{ background: white; color: #425466; border: 8px solid white; border-radius: 12px; }}
-            QLineEdit, QComboBox, QDateEdit, QSpinBox {{ min-height: 40px; color: {theme.TEXT_PRIMARY}; background: {theme.CARD_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 8px; padding: 4px 10px; }}
+            QLineEdit, QComboBox, QDateEdit, QSpinBox {{ min-height: 32px; color: {theme.TEXT_PRIMARY}; background: {theme.CARD_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 8px; padding: 3px 8px; }}
             QCheckBox {{ color: {theme.TEXT_PRIMARY}; background: transparent; spacing: 8px; }}
             QFrame#server_qr_tile {{ background: {theme.CARD_BG}; border: 1px solid {theme.CARD_BORDER}; border-radius: 10px; }}
             QLabel#server_qr_title {{ color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: 750; border: none; }}
