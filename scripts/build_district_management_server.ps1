@@ -3,6 +3,7 @@ param(
     [string]$Python = "python",
     [string]$OutputRoot = "",
     [string]$ArtifactRoot = "",
+    [string]$Repository = $env:GITHUB_REPOSITORY,
     [switch]$Clean,
     [string]$SignToolPath = "",
     [string]$CertificateSha1 = "",
@@ -11,6 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($Repository)) { $Repository = 'kylebriancasoy-eng/School-CSM-Control-Center' }
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repoRoot "release\district-build"
 }
@@ -99,6 +101,19 @@ New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 & $Python (Join-Path $repoRoot "scripts\package_district_management_server.py") `
     --app-dir $appDirectory --output $artifactRoot
 if ($LASTEXITCODE -ne 0) { throw "Could not package the district application." }
+
+$installerArguments = @{ Repository = $Repository; Product = 'District'; OutputRoot = (Join-Path $OutputRoot 'installer') }
+if (-not [string]::IsNullOrWhiteSpace($CertificateSha1)) {
+    $installerArguments.CertificateSha1 = $CertificateSha1
+    $installerArguments.SignToolPath = $SignToolPath
+    $installerArguments.TimestampUrl = $TimestampUrl
+}
+$setup = & (Join-Path $repoRoot 'scripts\build_installer.ps1') @installerArguments
+$tag = & $Python -c "import runpy,sys; print(runpy.run_path(sys.argv[1])['RELEASE_TAG'])" (Join-Path $repoRoot 'school_csm_control_center\version.py')
+if ($LASTEXITCODE -ne 0) { throw 'Could not read district release version.' }
+$archive = Join-Path $artifactRoot ('School-CSM-District-Management-Server-' + $tag.Trim() + '-win-x64.zip')
+& $Python (Join-Path $repoRoot 'scripts\create_district_release.py') --app-dir $appDirectory --archive $archive --installer $setup --output $artifactRoot --repository $Repository
+if ($LASTEXITCODE -ne 0) { throw 'District setup manifest verification failed.' }
 
 Write-Output $appDirectory
 Write-Output $artifactRoot

@@ -35,6 +35,9 @@ REQUIRED_RUNTIME_ASSETS = (
     PurePosixPath("registration_service/static/district-seal.png"),
 )
 FORBIDDEN_TOP_LEVEL_DIRECTORIES = {
+    "backups",
+    "school deployment",
+    "maintenance",
     "configuration",
     "data",
     "locks",
@@ -48,6 +51,7 @@ FORBIDDEN_NAMES = {
     "registration.sqlite3-wal",
 }
 FORBIDDEN_SUFFIXES = {
+    ".mossdistrict",
     ".db",
     ".db-shm",
     ".db-wal",

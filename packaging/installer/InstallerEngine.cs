@@ -9,10 +9,10 @@ namespace MoSSLab.SchoolCSM.Installer
 {
     internal sealed class InstallerEngine
     {
-        internal const string ApplicationId = "MoSSLab.SchoolCSMControlCenter";
-        internal const string DisplayName = "School CSM Control Center";
-        internal const string ApplicationExeName = "School CSM Control Center.exe";
-        internal const string SetupExeName = "School-CSM-Control-Center-Setup.exe";
+        internal const string ApplicationId = BuildConfig.ApplicationId;
+        internal const string DisplayName = BuildConfig.DisplayName;
+        internal const string ApplicationExeName = BuildConfig.ApplicationExeName;
+        internal const string SetupExeName = BuildConfig.SetupExeName;
         internal const string ProviderConfigurationFileName = "internet_gateway_provider.json";
         internal const string OpenAiCredentialTarget = "MoSSLab.SchoolCSMControlCenter.OpenAIApiKey";
         internal const string GatewayTunnelCredentialTarget = "MoSSLab.SchoolCSMControlCenter.InternetGateway.TunnelCredential";
@@ -30,7 +30,9 @@ namespace MoSSLab.SchoolCSM.Installer
         internal static readonly string VendorProgramFilesRoot = Path.Combine(ProgramFilesX86(), "MoSSLab");
         internal static readonly string InstallRoot = Path.Combine(VendorProgramFilesRoot, DisplayName);
         internal static readonly string ApplicationExecutable = Path.Combine(InstallRoot, ApplicationExeName);
-        internal static readonly string MaintenanceRoot = Path.Combine(
+        internal static readonly string MaintenanceRoot = BuildConfig.IsDistrict
+            ? Path.Combine(VendorProgramFilesRoot, DisplayName + " Maintenance")
+            : Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "MoSSLab",
             DisplayName,
@@ -51,6 +53,73 @@ namespace MoSSLab.SchoolCSM.Installer
         internal static readonly string PreviousManifestPath = Path.Combine(RollbackRoot, "previous-release.json");
         internal static readonly string PreviousPackagePath = Path.Combine(RollbackRoot, "previous-package.zip");
         internal static readonly string MaintenanceLogPath = Path.Combine(MaintenanceRoot, "maintenance.log");
+        internal static readonly string DistrictDataRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "MoSSLab", DisplayName);
+
+        internal bool DistrictBackupConfirmed;
+
+        internal InstallerEngine()
+        {
+            if (BuildConfig.IsDistrict)
+            {
+                if (!Environment.Is64BitOperatingSystem)
+                    throw new InvalidOperationException("The district server requires 64-bit Windows.");
+                RejectRedirectedAncestors(InstallRoot);
+                RejectRedirectedAncestors(MaintenanceRoot);
+            }
+        }
+
+        internal bool HasDistrictData
+        {
+            get
+            {
+                if (!BuildConfig.IsDistrict) return false;
+                string custom = Environment.GetEnvironmentVariable("SCHOOL_CSM_DISTRICT_DATA_ROOT");
+                return HasDistrictState(DistrictDataRoot) ||
+                    (!String.IsNullOrWhiteSpace(custom) && HasDistrictState(Path.GetFullPath(custom)));
+            }
+        }
+
+        private static bool HasDistrictState(string root)
+        {
+            return File.Exists(Path.Combine(root, "Data", "registration.sqlite3")) ||
+                File.Exists(Path.Combine(root, "Configuration", "server.json"));
+        }
+
+        private void EnsureDistrictBackupConfirmed()
+        {
+            EnsureDistrictRuntimeOutsideDeployment();
+            if (HasDistrictData && !DistrictBackupConfirmed)
+                throw new InvalidOperationException("Create a fresh encrypted district recovery backup in the district app, then confirm it in Setup before installing, updating, or repairing. Do not send your backup password to anyone.");
+        }
+
+        private static void EnsureDistrictRuntimeOutsideDeployment()
+        {
+            if (!BuildConfig.IsDistrict) return;
+            string custom = Environment.GetEnvironmentVariable("SCHOOL_CSM_DISTRICT_DATA_ROOT");
+            if (!String.IsNullOrWhiteSpace(custom))
+            {
+                string root = Path.GetFullPath(custom);
+                if (String.Equals(root.TrimEnd(Path.DirectorySeparatorChar), InstallRoot, StringComparison.OrdinalIgnoreCase) ||
+                    String.Equals(root.TrimEnd(Path.DirectorySeparatorChar), MaintenanceRoot, StringComparison.OrdinalIgnoreCase) ||
+                    IsPathWithin(root, InstallRoot) || IsPathWithin(root, MaintenanceRoot))
+                    throw new InvalidOperationException("District runtime data must remain outside the program and maintenance folders. Preserve or relocate it with the encrypted recovery workflow before using Setup.");
+            }
+            foreach (string name in new string[] { "Data", "Configuration", "Backups", "Logs", "Locks", "School Deployment" })
+                if (Directory.Exists(Path.Combine(InstallRoot, name)))
+                    throw new InvalidOperationException("Unexpected district runtime files were found inside the program folder. Setup will not delete or replace them. Preserve them with the encrypted recovery workflow first.");
+        }
+
+        private static void RejectRedirectedAncestors(string path)
+        {
+            string current = Path.GetFullPath(path);
+            while (!String.IsNullOrEmpty(current))
+            {
+                if (Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidOperationException("Setup refuses a redirected installation or maintenance directory.");
+                current = Path.GetDirectoryName(current);
+            }
+        }
 
         internal event Action<string> StatusChanged;
 
@@ -71,14 +140,14 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal bool IsInstalled
         {
-            get { return File.Exists(ApplicationExecutable); }
+            get { return File.Exists(ApplicationExecutable) || (BuildConfig.IsDistrict && Directory.Exists(InstallRoot) && File.Exists(InstalledManifestPath)); }
         }
 
         internal bool CanRollback
         {
             get
             {
-                return File.Exists(PreviousPackagePath) && File.Exists(PreviousManifestPath);
+                return !BuildConfig.IsDistrict && File.Exists(PreviousPackagePath) && File.Exists(PreviousManifestPath);
             }
         }
 
@@ -87,15 +156,22 @@ namespace MoSSLab.SchoolCSM.Installer
             get
             {
                 string version = WindowsIntegration.ReadInstalledVersion();
+                if (BuildConfig.IsDistrict && File.Exists(ApplicationExecutable))
+                {
+                    Version actual;
+                    if (Version.TryParse(FileVersionInfo.GetVersionInfo(ApplicationExecutable).FileVersion, out actual))
+                        return actual.ToString(3);
+                }
                 return String.IsNullOrWhiteSpace(version) ? "Not installed" : version;
             }
         }
 
         internal void InstallOrUpdate()
         {
+            EnsureDistrictBackupConfirmed();
             EnsureApplicationClosed();
             ReleaseManifest manifest = DownloadLatestManifest();
-            string currentText = WindowsIntegration.ReadInstalledVersion();
+            string currentText = BuildConfig.IsDistrict ? InstalledVersion : WindowsIntegration.ReadInstalledVersion();
             Version current;
             if (Version.TryParse(currentText, out current) && current > manifest.ParsedVersion)
             {
@@ -103,7 +179,7 @@ namespace MoSSLab.SchoolCSM.Installer
                     "The installed version is newer than the latest published release. " +
                     "Use Repair to restore the installed version instead.");
             }
-            if (IsInstalled && current != null && current == manifest.ParsedVersion)
+            if (IsInstalled && File.Exists(ApplicationExecutable) && current != null && current == manifest.ParsedVersion)
             {
                 PersistCurrentSetup();
                 Report("Refreshing private-network firewall access for the installed application...");
@@ -117,6 +193,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal void Repair()
         {
+            EnsureDistrictBackupConfirmed();
             if (!IsInstalled)
             {
                 throw new InvalidOperationException("The application is not installed. Choose Install first.");
@@ -127,6 +204,8 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 manifest = ReleaseManifest.Read(File.ReadAllBytes(InstalledManifestPath));
                 manifest.Validate(BuildConfig.Repository);
+                if (BuildConfig.IsDistrict && !String.Equals(InstalledVersion, manifest.VersionText, StringComparison.Ordinal))
+                    throw new InvalidOperationException("The installed executable and repair metadata have different versions. Choose Update; Setup will not downgrade a district database by repairing older binaries.");
             }
             else
             {
@@ -161,7 +240,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 File.Copy(PreviousPackagePath, archiveCopy, false);
                 VerifyLocalPackage(archiveCopy, previous.Package);
                 ExtractCheckedZip(archiveCopy, sourceCopy);
-                VerifyExtractedEntryPoint(sourceCopy, previous.Package);
+                VerifyExtractedEntryPoint(sourceCopy, previous.Package, previous.WindowsVersion);
                 DeployDirectory(sourceCopy, previous, "Rolling back", true);
                 SaveInstalledPackage(archiveCopy);
             }
@@ -173,6 +252,9 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal void Uninstall(bool removeUserData)
         {
+            if (BuildConfig.IsDistrict && removeUserData)
+                throw new InvalidOperationException("District Setup never removes district records, configuration, backups, or credentials.");
+            EnsureDistrictRuntimeOutsideDeployment();
             EnsureApplicationClosed();
             Report("Preparing to remove the application...");
             PreserveProviderConfiguration(true);
@@ -230,6 +312,15 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 throw new FileNotFoundException("The application executable is not installed.", ApplicationExecutable);
             }
+            if (BuildConfig.IsDistrict)
+            {
+                // Launch via the interactive desktop shell instead of inheriting
+                // Setup's elevated identity. District credentials are per-user.
+                Process.Start(new ProcessStartInfo {
+                    FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+                    Arguments = "\"" + ApplicationExecutable + "\"", UseShellExecute = true });
+                return;
+            }
             Process.Start(new ProcessStartInfo
             {
                 FileName = ApplicationExecutable,
@@ -268,13 +359,13 @@ namespace MoSSLab.SchoolCSM.Installer
                 if (!String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException(
-                        "The requested process is not School CSM Control Center. Setup will not wait for it.");
+                        "The requested process is not " + DisplayName + ". Setup will not wait for it.");
                 }
-                Report("Waiting for the retired School CSM Control Center process to exit...");
+                Report("Waiting for " + DisplayName + " to exit...");
                 if (!process.HasExited && !process.WaitForExit(30000))
                 {
                     throw new InvalidOperationException(
-                        "School CSM Control Center did not exit. Choose Exit in the retirement notice, then try uninstalling again.");
+                        DisplayName + " did not exit. Choose Exit in its notification-area tray, then try again.");
                 }
             }
         }
@@ -290,7 +381,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 DownloadPackage(manifest.Package, archivePath);
                 Report("Extracting the verified package...");
                 ExtractCheckedZip(archivePath, extractedPath);
-                VerifyExtractedEntryPoint(extractedPath, manifest.Package);
+                VerifyExtractedEntryPoint(extractedPath, manifest.Package, manifest.WindowsVersion);
                 DeployDirectory(extractedPath, manifest, operation, rotateRollback);
                 SaveInstalledPackage(archivePath);
             }
@@ -302,6 +393,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
         private void DeployDirectory(string source, ReleaseManifest manifest, string operation, bool rotateRollback)
         {
+            if (BuildConfig.IsDistrict) rotateRollback = false;
             PreserveProviderConfiguration();
             PreserveLegacyMutableData();
             Directory.CreateDirectory(VendorProgramFilesRoot);
@@ -309,8 +401,8 @@ namespace MoSSLab.SchoolCSM.Installer
             PersistCurrentSetup();
 
             string identifier = Guid.NewGuid().ToString("N");
-            string programStage = Path.Combine(VendorProgramFilesRoot, ".School-CSM-Control-Center-stage-" + identifier);
-            string displaced = Path.Combine(VendorProgramFilesRoot, ".School-CSM-Control-Center-old-" + identifier);
+            string programStage = Path.Combine(VendorProgramFilesRoot, "." + ApplicationId + "-stage-" + identifier);
+            string displaced = Path.Combine(VendorProgramFilesRoot, "." + ApplicationId + "-old-" + identifier);
             string currentManifestCandidate = Path.Combine(RollbackRoot, ".candidate-" + identifier + ".json");
             string currentPackageCandidate = Path.Combine(RollbackRoot, ".candidate-" + identifier + ".zip");
             string restoreManifestCandidate = Path.Combine(MaintenanceRoot, ".restore-" + identifier + ".json");
@@ -318,11 +410,12 @@ namespace MoSSLab.SchoolCSM.Installer
             bool hadPreviousInstallation = Directory.Exists(InstallRoot);
             bool displacedCurrent = false;
             bool installedNew = false;
+            bool restoreFailed = false;
             try
             {
                 Report("Staging application files in Program Files...");
                 CopyDirectory(source, programStage);
-                VerifyExtractedEntryPoint(programStage, manifest.Package);
+                VerifyExtractedEntryPoint(programStage, manifest.Package, manifest.WindowsVersion);
 
                 if (Directory.Exists(InstallRoot))
                 {
@@ -358,7 +451,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
                 Directory.Move(programStage, InstallRoot);
                 installedNew = true;
-                VerifyExtractedEntryPoint(InstallRoot, manifest.Package);
+                VerifyExtractedEntryPoint(InstallRoot, manifest.Package, manifest.WindowsVersion);
                 Report("Configuring private-local-subnet firewall access for the verified application...");
                 WindowsIntegration.ConfigureFirewallRule();
                 File.WriteAllBytes(Path.Combine(InstallRoot, ".release.json"), manifest.ToBytes());
@@ -417,6 +510,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 }
                 catch (Exception rollbackError)
                 {
+                    restoreFailed = true;
                     Report("Automatic rollback also encountered an error: " + rollbackError.Message);
                 }
                 throw;
@@ -424,7 +518,8 @@ namespace MoSSLab.SchoolCSM.Installer
             finally
             {
                 DeleteWithin(programStage, VendorProgramFilesRoot);
-                DeleteWithin(displaced, VendorProgramFilesRoot);
+                if (!restoreFailed) DeleteWithin(displaced, VendorProgramFilesRoot);
+                else Report("The previous program folder was retained for recovery: " + displaced);
                 DeleteFileIfPresent(currentManifestCandidate);
                 DeleteFileIfPresent(currentPackageCandidate);
                 DeleteFileIfPresent(restoreManifestCandidate);
@@ -629,7 +724,7 @@ namespace MoSSLab.SchoolCSM.Installer
             return false;
         }
 
-        private static void VerifyExtractedEntryPoint(string root, ReleaseAsset package)
+        private static void VerifyExtractedEntryPoint(string root, ReleaseAsset package, string expectedVersion)
         {
             string executable = Path.Combine(root, package.EntryPoint);
             if (!File.Exists(executable))
@@ -641,10 +736,18 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 throw new InvalidDataException("The extracted application executable failed verification.");
             }
+            if (BuildConfig.IsDistrict)
+            {
+                Version native, expected;
+                if (!Version.TryParse(FileVersionInfo.GetVersionInfo(executable).FileVersion, out native) ||
+                    !Version.TryParse(expectedVersion, out expected) || native != expected)
+                    throw new InvalidDataException("The district executable version does not match the verified release manifest.");
+            }
         }
 
         private void PreserveLegacyMutableData()
         {
+            if (BuildConfig.IsDistrict) return;
             if (!Directory.Exists(InstallRoot))
             {
                 return;
@@ -691,6 +794,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
         private void PreserveProviderConfiguration(bool quarantineInvalid = false)
         {
+            if (BuildConfig.IsDistrict) return;
             string installedPath = Path.Combine(InstallRoot, ProviderConfigurationFileName);
             string source = File.Exists(installedPath)
                 ? installedPath
@@ -865,7 +969,7 @@ namespace MoSSLab.SchoolCSM.Installer
                 if (processes.Any(process => !process.HasExited))
                 {
                     throw new InvalidOperationException(
-                        "School CSM Control Center is running. Exit it completely from the Windows notification-area tray, then try again.");
+                        DisplayName + " is running (possibly from an older ZIP folder). Exit it completely from the Windows notification-area tray, then try again.");
                 }
             }
             finally

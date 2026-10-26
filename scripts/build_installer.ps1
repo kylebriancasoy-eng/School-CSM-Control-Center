@@ -3,6 +3,8 @@ param(
     [string]$Repository = $env:GITHUB_REPOSITORY,
     [string]$OutputRoot = "",
     [string]$InstallerVersion = "1.0.1.0",
+    [ValidateSet("School", "District")]
+    [string]$Product = "School",
     [string]$CSharpCompiler = "",
     [string]$SignToolPath = "",
     [string]$CertificateSha1 = "",
@@ -18,7 +20,7 @@ if ($InstallerVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
     throw "InstallerVersion must contain four numeric components, for example 1.0.0.0."
 }
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $repoRoot "release\build\installer"
+    $OutputRoot = Join-Path $repoRoot $(if ($Product -eq 'District') { 'release\build\district-installer' } else { 'release\build\installer' })
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
@@ -33,15 +35,27 @@ if (-not (Test-Path -LiteralPath $CSharpCompiler -PathType Leaf)) {
 $installerSource = Join-Path $repoRoot "packaging\installer"
 $template = Get-Content -LiteralPath (Join-Path $installerSource "GeneratedConfig.cs.in") -Raw
 $generatedConfig = $template.Replace("@@REPOSITORY@@", $Repository).Replace("@@INSTALLER_VERSION@@", $InstallerVersion)
+$displayName = if ($Product -eq 'District') { 'School CSM District Management Server' } else { 'School CSM Control Center' }
+$applicationId = if ($Product -eq 'District') { 'MoSSLab.SchoolCSMDistrictManagementServer' } else { 'MoSSLab.SchoolCSMControlCenter' }
+$setupName = if ($Product -eq 'District') { 'School-CSM-District-Management-Server-Setup.exe' } else { 'School-CSM-Control-Center-Setup.exe' }
+$manifestName = if ($Product -eq 'District') { 'district-release.json' } else { 'release.json' }
+$generatedConfig = $generatedConfig.Replace('@@APPLICATION_ID@@', $applicationId).Replace('@@DISPLAY_NAME@@', $displayName).Replace('@@APPLICATION_EXE@@', ($displayName + '.exe')).Replace('@@SETUP_EXE@@', $setupName).Replace('@@MANIFEST_NAME@@', $manifestName).Replace('@@IS_DISTRICT@@', $(if ($Product -eq 'District') { 'true' } else { 'false' }))
 $generatedPath = Join-Path $OutputRoot "GeneratedConfig.cs"
 [System.IO.File]::WriteAllText($generatedPath, $generatedConfig, [System.Text.UTF8Encoding]::new($false))
 $assemblyTemplate = Get-Content -LiteralPath (Join-Path $installerSource "AssemblyInfo.cs.in") -Raw
 $generatedAssembly = $assemblyTemplate.Replace("@@INSTALLER_VERSION@@", $InstallerVersion)
+$generatedAssembly = $generatedAssembly.Replace('School CSM Control Center', $displayName)
 $generatedAssemblyPath = Join-Path $OutputRoot "AssemblyInfo.cs"
 [System.IO.File]::WriteAllText($generatedAssemblyPath, $generatedAssembly, [System.Text.UTF8Encoding]::new($false))
 
 $frameworkRoot = Split-Path -Parent $CSharpCompiler
-$outputExe = Join-Path $OutputRoot "School-CSM-Control-Center-Setup.exe"
+$outputExe = Join-Path $OutputRoot $setupName
+$manifestPath = Join-Path $installerSource 'app.manifest'
+if ($Product -eq 'District') {
+    $manifestText = (Get-Content -LiteralPath $manifestPath -Raw).Replace('MoSSLab.SchoolCSMControlCenter.Setup', ($applicationId + '.Setup')).Replace('School CSM Control Center', $displayName)
+    $manifestPath = Join-Path $OutputRoot 'district-app.manifest'
+    [IO.File]::WriteAllText($manifestPath, $manifestText, [Text.UTF8Encoding]::new($false))
+}
 $sourceFiles = @(
     (Join-Path $installerSource "Program.cs"),
     (Join-Path $installerSource "ReleaseManifest.cs"),
@@ -71,7 +85,7 @@ $compilerArgs = @(
     "/utf8output",
     "/nowarn:0649",
     "/warnaserror+",
-    ("/win32manifest:" + (Join-Path $installerSource "app.manifest")),
+    ("/win32manifest:" + $manifestPath),
     ("/win32icon:" + (Join-Path $repoRoot "School CSM Control Center Icon.ico")),
     ("/out:" + $outputExe)
 )

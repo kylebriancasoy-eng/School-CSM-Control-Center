@@ -4,6 +4,11 @@ namespace MoSSLab.SchoolCSM.Installer
     {
         internal const string Repository = "@@REPOSITORY@@";
         internal const string InstallerVersion = "@@INSTALLER_VERSION@@";
-        internal const string ManifestUrl = "https://github.com/@@REPOSITORY@@/releases/latest/download/release.json";
+        internal const string ApplicationId = "@@APPLICATION_ID@@";
+        internal const string DisplayName = "@@DISPLAY_NAME@@";
+        internal const string ApplicationExeName = "@@APPLICATION_EXE@@";
+        internal const string SetupExeName = "@@SETUP_EXE@@";
+        internal static readonly bool IsDistrict = @@IS_DISTRICT@@;
+        internal const string ManifestUrl = "https://github.com/@@REPOSITORY@@/releases/latest/download/@@MANIFEST_NAME@@";
     }
 }

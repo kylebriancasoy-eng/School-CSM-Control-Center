@@ -21,6 +21,7 @@ namespace MoSSLab.SchoolCSM.Installer
         internal MaintenanceCommand Command;
         internal bool RemoveUserData;
         internal bool Quiet;
+        internal bool ConfirmDistrictBackup;
         internal int WaitForProcessId;
 
         internal static CommandLine Parse(string[] arguments)
@@ -49,6 +50,9 @@ namespace MoSSLab.SchoolCSM.Installer
                     case "--remove-user-data":
                         parsed.RemoveUserData = true;
                         break;
+                    case "--confirm-district-backup":
+                        parsed.ConfirmDistrictBackup = true;
+                        break;
                     case "--quiet":
                         parsed.Quiet = true;
                         break;
@@ -64,8 +68,9 @@ namespace MoSSLab.SchoolCSM.Installer
                     case "-h":
                     case "/?":
                         throw new ArgumentException(
-                            "Options: --install, --update, --repair, --rollback, --uninstall, " +
-                            "--remove-user-data (with uninstall), --wait-for-pid <id>, --quiet");
+                            BuildConfig.IsDistrict
+                            ? "Options: --install, --update, --repair, --uninstall, --confirm-district-backup (after creating a fresh encrypted recovery backup), --wait-for-pid <id>, --quiet"
+                            : "Options: --install, --update, --repair, --rollback, --uninstall, --remove-user-data (with uninstall), --wait-for-pid <id>, --quiet");
                     default:
                         throw new ArgumentException("Unknown setup option: " + raw);
                 }
@@ -75,6 +80,8 @@ namespace MoSSLab.SchoolCSM.Installer
                 throw new ArgumentException("Choose only one install, repair, rollback, or uninstall operation.");
             }
             parsed.Command = commands.Count == 0 ? MaintenanceCommand.None : commands[0];
+            if (BuildConfig.IsDistrict && (parsed.RemoveUserData || parsed.Command == MaintenanceCommand.Rollback))
+                throw new ArgumentException("District Setup preserves all district data and credentials. Database-aware recovery must use an encrypted recovery backup, not binary rollback or data removal.");
             if (parsed.RemoveUserData && parsed.Command != MaintenanceCommand.Uninstall)
             {
                 throw new ArgumentException("--remove-user-data is accepted only together with --uninstall.");
@@ -109,7 +116,7 @@ namespace MoSSLab.SchoolCSM.Installer
                     String.Equals(argument, "--quiet", StringComparison.OrdinalIgnoreCase));
                 if (!quietRequested)
                 {
-                    MessageBox.Show(error.Message, "School CSM Control Center Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(error.Message, InstallerEngine.DisplayName + " Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 return 2;
             }
@@ -128,7 +135,10 @@ namespace MoSSLab.SchoolCSM.Installer
             }
 
             bool created;
-            using (Mutex mutex = new Mutex(true, @"Global\MoSSLab.SchoolCSMControlCenter.Maintenance", out created))
+            string mutexName = BuildConfig.IsDistrict
+                ? @"Global\MoSSLab.SchoolCSMDistrictManagementServer.Maintenance"
+                : @"Global\MoSSLab.SchoolCSMControlCenter.Maintenance";
+            using (Mutex mutex = new Mutex(true, mutexName, out created))
             {
                 if (!created)
                 {
@@ -136,14 +146,21 @@ namespace MoSSLab.SchoolCSM.Installer
                     {
                         MessageBox.Show(
                             "Another School CSM setup or maintenance operation is already running.",
-                            "School CSM Control Center Setup",
+                            InstallerEngine.DisplayName + " Setup",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
                     }
                     return 4;
                 }
 
-                InstallerEngine engine = new InstallerEngine();
+                InstallerEngine engine;
+                try { engine = new InstallerEngine(); }
+                catch (Exception error)
+                {
+                    if (!commandLine.Quiet) MessageBox.Show(error.Message, "Setup safety check", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return 3;
+                }
+                engine.DistrictBackupConfirmed = commandLine.ConfirmDistrictBackup;
                 if (commandLine.Command == MaintenanceCommand.None)
                 {
                     Application.Run(new MaintenanceForm(engine));
@@ -161,7 +178,7 @@ namespace MoSSLab.SchoolCSM.Installer
                     {
                         MessageBox.Show(
                             "The requested maintenance operation completed successfully.",
-                            "School CSM Control Center Setup",
+                            InstallerEngine.DisplayName + " Setup",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Information);
                     }

@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.4
+# School CSM Control Center 0.8.5
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,17 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.5 highlights
+
+- Dedicated [District Management Server Setup / updater](https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest/download/School-CSM-District-Management-Server-Setup.exe)
+  installs, updates, repairs, or removes the district program independently of
+  the school program. No Python installation is required.
+- District data and credentials are always retained, including on uninstall.
+  Existing deployments require a fresh encrypted recovery backup and the old
+  district tray application to be exited before updating.
+- See [district installation instructions](docs/DISTRICT_INSTALLATION.md) for
+  moving an existing ZIP deployment safely to the managed installation.
 
 ## 0.8.4 highlights
 

@@ -84,6 +84,20 @@ namespace MoSSLab.SchoolCSM.Installer
                 InstallerEngine.ApplicationExecutable,
                 InstallerEngine.InstallRoot,
                 InstallerEngine.ApplicationExecutable);
+            if (BuildConfig.IsDistrict)
+            {
+                CreateShortcut(Path.Combine(startMenuDirectory, InstallerEngine.DisplayName + " Setup.lnk"),
+                    InstallerEngine.MaintenanceExecutable, InstallerEngine.MaintenanceRoot,
+                    InstallerEngine.MaintenanceExecutable);
+                // Preserve the user's existing choice, but move a previously
+                // enabled startup entry away from an obsolete portable EXE.
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(StartupRunKey, true))
+                {
+                    if (key != null && key.GetValue("MoSSLab.SchoolCSMDistrictManagementServer") != null)
+                        key.SetValue("MoSSLab.SchoolCSMDistrictManagementServer",
+                            Quote(InstallerEngine.ApplicationExecutable) + " --background", RegistryValueKind.String);
+                }
+            }
             CreateShortcut(
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), InstallerEngine.DisplayName + ".lnk"),
                 InstallerEngine.ApplicationExecutable,
@@ -93,6 +107,9 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal static void RemoveShortcuts()
         {
+            if (BuildConfig.IsDistrict)
+                DeleteIfPresent(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
+                    "MoSSLab", InstallerEngine.DisplayName + " Setup.lnk"));
             DeleteIfPresent(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),
                 "MoSSLab",
@@ -104,6 +121,9 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal static void ConfigureFirewallRule()
         {
+            // District hosting is loopback + outbound tunnel only. Never open
+            // an inbound port or modify the school application's firewall rules.
+            if (BuildConfig.IsDistrict) return;
             if (!File.Exists(InstallerEngine.ApplicationExecutable))
             {
                 throw new FileNotFoundException(
@@ -152,6 +172,7 @@ namespace MoSSLab.SchoolCSM.Installer
 
         internal static void RemoveFirewallRules()
         {
+            if (BuildConfig.IsDistrict) return;
             object policy = null;
             object rules = null;
             try
@@ -178,13 +199,15 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 if (key != null)
                 {
-                    key.DeleteValue(StartupValueName, false);
+                    if (BuildConfig.IsDistrict) key.DeleteValue("MoSSLab.SchoolCSMDistrictManagementServer", false);
+                    else key.DeleteValue(StartupValueName, false);
                 }
             }
         }
 
         internal static bool DeleteCurrentUserCredentials()
         {
+            if (BuildConfig.IsDistrict) return false;
             string[] targets =
             {
                 InstallerEngine.OpenAiCredentialTarget,

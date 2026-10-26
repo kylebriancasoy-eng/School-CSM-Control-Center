@@ -359,6 +359,8 @@ class DistrictManagementWindow(QMainWindow):
         self.restore_button = QPushButton("Restore Encrypted Recovery Backup")
         self.reset_token_button = QPushButton("Reset District Administrator Token")
         self.replace_api_token_button = QPushButton("Replace Cloudflare API Token")
+        self.update_button = QPushButton("Download District Setup / updater")
+        self.update_button.setToolTip("Install, update, repair, or uninstall the district app without removing its data. Create an encrypted backup before updating.")
         self.startup = QCheckBox("Start in the background when this operator signs in")
         self.startup.setChecked(is_enabled())
         self.provider_note = QLabel(
@@ -389,6 +391,7 @@ class DistrictManagementWindow(QMainWindow):
         layout.addWidget(self.restore_button)
         layout.addWidget(self.reset_token_button)
         layout.addWidget(self.replace_api_token_button)
+        layout.addWidget(self.update_button)
         layout.addWidget(self.startup)
         layout.addWidget(self.provider_note)
         layout.addStretch(1)
@@ -439,6 +442,8 @@ class DistrictManagementWindow(QMainWindow):
         self.restore_button.clicked.connect(self._restore_backup)
         self.reset_token_button.clicked.connect(self._reset_administrator_token)
         self.replace_api_token_button.clicked.connect(self._replace_cloudflare_token)
+        self.update_button.clicked.connect(lambda: webbrowser.open(
+            "https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest/download/School-CSM-District-Management-Server-Setup.exe"))
         self.startup.toggled.connect(self._toggle_startup)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh)

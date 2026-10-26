@@ -94,6 +94,7 @@ jobs:
           & $districtPython -m pip install -r district_management_server/requirements-lock.txt
 
           $districtArguments = @{
+            Repository = "${{ github.repository }}"
             Python = $districtPython
             OutputRoot = "release/district-build"
             ArtifactRoot = "release/artifacts"

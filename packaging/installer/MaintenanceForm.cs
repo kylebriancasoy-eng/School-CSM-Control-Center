@@ -26,10 +26,11 @@ namespace MoSSLab.SchoolCSM.Installer
         {
             engine = installerEngine;
             engine.StatusChanged += OnStatusChanged;
-            Text = "School CSM Control Center Setup";
+            Text = InstallerEngine.DisplayName + " Setup";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(700, 590);
             Size = new Size(760, 640);
+            if (BuildConfig.IsDistrict) { MinimumSize = new Size(760, 660); Size = new Size(840, 740); }
             Font = new Font("Segoe UI", 9F);
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
@@ -52,7 +53,7 @@ namespace MoSSLab.SchoolCSM.Installer
             Label title = new Label();
             title.AutoSize = true;
             title.Font = new Font(Font.FontFamily, 18F, FontStyle.Bold);
-            title.Text = "School CSM Control Center";
+            title.Text = InstallerEngine.DisplayName;
             title.Margin = new Padding(0, 0, 0, 4);
             page.Controls.Add(title);
 
@@ -60,6 +61,9 @@ namespace MoSSLab.SchoolCSM.Installer
             description.AutoSize = true;
             description.MaximumSize = new Size(680, 0);
             description.Text =
+                BuildConfig.IsDistrict ?
+                "Install, update, repair, or uninstall the district app. The district roster, configuration, backups, and protected credentials are always preserved. Before updating an existing district, create an encrypted recovery backup and exit the district app completely from its tray icon. After installation, use the new desktop shortcut, not an older ZIP copy."
+                :
                 "Install, update, repair, or remove the compiled Windows application. " +
                 "Saved survey records, credentials, and the administrator-installed Internet Gateway " +
                 "provider configuration remain outside Program Files and are preserved by default.";
@@ -82,6 +86,7 @@ namespace MoSSLab.SchoolCSM.Installer
             installButton = MakeButton("Install / Update", InstallClicked);
             repairButton = MakeButton("Repair", RepairClicked);
             rollbackButton = MakeButton("Roll Back", RollbackClicked);
+            rollbackButton.Visible = !BuildConfig.IsDistrict;
             uninstallButton = MakeButton("Uninstall", UninstallClicked);
             launchButton = MakeButton("Open Application", LaunchClicked);
             actions.Controls.Add(installButton);
@@ -93,6 +98,8 @@ namespace MoSSLab.SchoolCSM.Installer
             removeData = new CheckBox();
             removeData.AutoSize = true;
             removeData.Text = "When uninstalling, also remove my saved records and application credentials";
+            if (BuildConfig.IsDistrict)
+                removeData.Text = "I created a fresh encrypted district recovery backup before this update / repair.";
             removeData.Margin = new Padding(0, 0, 0, 12);
             page.Controls.Add(removeData);
 
@@ -129,6 +136,9 @@ namespace MoSSLab.SchoolCSM.Installer
             privacy.ForeColor = SystemColors.GrayText;
             privacy.MaximumSize = new Size(680, 0);
             privacy.Text =
+                BuildConfig.IsDistrict ?
+                "District data and credentials are never removed by Setup, including uninstall. Binary rollback is intentionally unavailable because database versions may differ. Use your usual Windows operator account to retain access to its protected credentials."
+                :
                 "The explicit removal option affects only the current Windows account's standard Documents data folder. " +
                 "It is never selected automatically. Deployment provider configuration is retained in ProgramData.";
             privacy.Margin = new Padding(0, 8, 0, 0);
@@ -173,14 +183,15 @@ namespace MoSSLab.SchoolCSM.Installer
             bool installed = engine.IsInstalled;
             installedVersion.Text = installed
                 ? "Installed version: " + engine.InstalledVersion
-                : "The application is not currently installed.";
+                : (engine.HasDistrictData ? "Existing district data found. Install the managed app to reuse it safely." : "The application is not currently installed.");
             installButton.Text = installed ? "Check for Update" : "Install";
             repairButton.Enabled = installed && !busy;
             rollbackButton.Enabled = installed && engine.CanRollback && !busy;
             uninstallButton.Enabled = installed && !busy;
             launchButton.Enabled = installed && !busy;
             installButton.Enabled = !busy;
-            removeData.Enabled = installed && !busy;
+            removeData.Enabled = (BuildConfig.IsDistrict ? engine.HasDistrictData : installed) && !busy;
+            if (BuildConfig.IsDistrict) removeData.Visible = engine.HasDistrictData;
             releaseLink.Enabled = !busy;
         }
 
@@ -217,19 +228,21 @@ namespace MoSSLab.SchoolCSM.Installer
 
         private void UninstallClicked(object sender, EventArgs e)
         {
-            string dataText = removeData.Checked
+            string dataText = BuildConfig.IsDistrict
+                ? "All district records, configuration, backups, and protected credentials will be preserved. This does not revoke Cloudflare resources."
+                : removeData.Checked
                 ? "Your saved records, optional OpenAI key, and Internet Gateway device credentials for this Windows account will also be permanently removed."
                 : "Your saved records and credentials will be preserved.";
-            dataText += Environment.NewLine + Environment.NewLine +
+            if (!BuildConfig.IsDistrict) dataText += Environment.NewLine + Environment.NewLine +
                 "The administrator-installed Internet Gateway provider configuration in ProgramData will be preserved.";
             DialogResult answer = MessageBox.Show(
-                "Remove School CSM Control Center from Program Files?" + Environment.NewLine + Environment.NewLine + dataText,
+                "Remove " + InstallerEngine.DisplayName + " from Program Files?" + Environment.NewLine + Environment.NewLine + dataText,
                 "Confirm uninstall",
                 MessageBoxButtons.YesNo,
                 removeData.Checked ? MessageBoxIcon.Warning : MessageBoxIcon.Question);
             if (answer == DialogResult.Yes)
             {
-                StartOperation(MaintenanceCommand.Uninstall, removeData.Checked);
+                StartOperation(MaintenanceCommand.Uninstall, !BuildConfig.IsDistrict && removeData.Checked);
             }
         }
 
@@ -252,6 +265,13 @@ namespace MoSSLab.SchoolCSM.Installer
             {
                 return;
             }
+            engine.DistrictBackupConfirmed = BuildConfig.IsDistrict && removeData.Checked;
+            if (BuildConfig.IsDistrict && engine.HasDistrictData &&
+                (command == MaintenanceCommand.InstallOrUpdate || command == MaintenanceCommand.Repair) && !removeData.Checked)
+            {
+                MessageBox.Show("Create a fresh encrypted recovery backup in the district app, then tick the backup confirmation before proceeding. Keep its password private.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             busy = true;
             activity.Clear();
             status.Text = "Working...";
@@ -265,6 +285,7 @@ namespace MoSSLab.SchoolCSM.Installer
             worker.RunWorkerCompleted += delegate(object completedSender, RunWorkerCompletedEventArgs completed)
             {
                 busy = false;
+                if (BuildConfig.IsDistrict) removeData.Checked = false;
                 RefreshState();
                 if (completed.Error != null)
                 {
