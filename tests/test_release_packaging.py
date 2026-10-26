@@ -61,6 +61,7 @@ class ReleasePackagingTests(unittest.TestCase):
         (nested / "brand.png").write_bytes(b"png")
         installer = root / "setup.exe"
         installer.write_bytes(b"MZ\x00setup-test")
+        (app / "School-CSM-Control-Center-Setup.exe").write_bytes(installer.read_bytes())
         output = root / output_name
         environment = dict(os.environ)
         environment["SOURCE_DATE_EPOCH"] = "1767225600"
@@ -108,6 +109,7 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertEqual(manifest["package"]["sha256"], sha256(package))
             with zipfile.ZipFile(package) as archive:
                 self.assertIn("School CSM Control Center.exe", archive.namelist())
+                self.assertIn("School-CSM-Control-Center-Setup.exe", archive.namelist())
                 self.assertIn("vendor/cloudflared/cloudflared.exe", archive.namelist())
                 self.assertFalse(
                     any(
@@ -117,6 +119,18 @@ class ReleasePackagingTests(unittest.TestCase):
                         for name in archive.namelist()
                     )
                 )
+
+    def test_verifier_rejects_a_different_bundled_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = self._build_fake_release(Path(temporary))
+            manifest = json.loads((output / "release.json").read_text())
+            installer = output / manifest["installer"]["fileName"]
+            installer.write_bytes(b"MZ-different-setup")
+            manifest["installer"].update(sha256=sha256(installer), sizeBytes=installer.stat().st_size)
+            refresh_release_checksums(output, manifest)
+            result = subprocess.run([sys.executable, str(VERIFY_RELEASE), str(output)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Bundled setup wizard does not match", result.stderr)
 
     def test_required_opencv_runtime_modules_are_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -131,6 +145,7 @@ class ReleasePackagingTests(unittest.TestCase):
             (app / "cv2" / "config.py").write_text("# runtime config\n", encoding="utf-8")
             installer = root / "setup.exe"
             installer.write_bytes(b"MZ")
+            (app / "School-CSM-Control-Center-Setup.exe").write_bytes(installer.read_bytes())
             output = root / "release"
             subprocess.run(
                 [
@@ -179,6 +194,7 @@ class ReleasePackagingTests(unittest.TestCase):
             (app / "START.cmd").write_text("python app.py", encoding="utf-8")
             installer = root / "setup.exe"
             installer.write_bytes(b"MZ")
+            (app / "School-CSM-Control-Center-Setup.exe").write_bytes(installer.read_bytes())
             result = subprocess.run(
                 [
                     sys.executable,
@@ -292,6 +308,7 @@ class ReleasePackagingTests(unittest.TestCase):
             )
             installer = root / "setup.exe"
             installer.write_bytes(b"MZ")
+            (app / "School-CSM-Control-Center-Setup.exe").write_bytes(installer.read_bytes())
             result = subprocess.run(
                 [
                     sys.executable,

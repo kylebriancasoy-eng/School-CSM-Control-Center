@@ -51,6 +51,7 @@ $installerOutput = Join-Path $buildRoot "installer"
 
 $appDirectory = Join-Path $buildRoot "app\School CSM Control Center"
 $installer = Join-Path $installerOutput "School-CSM-Control-Center-Setup.exe"
+Copy-Item -LiteralPath $installer -Destination (Join-Path $appDirectory "School-CSM-Control-Center-Setup.exe") -Force
 $releaseArguments = @(
     (Join-Path $PSScriptRoot "create_release.py"),
     "--app-dir", $appDirectory,

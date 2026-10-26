@@ -38,9 +38,9 @@ The bootstrapper intentionally performs anonymous HTTPS downloads and stores no 
 `school_csm_control_center/version.py` is the single source of truth for this
 release:
 
-- application semantic version: `0.8.7`;
-- Windows executable version: `0.8.7.0`;
-- release tag: `v0.8.7`.
+- application semantic version: `0.8.8`;
+- Windows executable version: `0.8.8.0`;
+- release tag: `v0.8.8`.
 
 District releases also include a separate product-bound `district-release.json`,
 `District-SHA256SUMS.txt`, and `School-CSM-District-Management-Server-Setup.exe`.

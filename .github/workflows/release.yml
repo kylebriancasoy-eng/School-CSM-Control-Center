@@ -48,7 +48,9 @@ jobs:
           $expected = python -c "import runpy; print(runpy.run_path('school_csm_control_center/version.py')['RELEASE_TAG'])"
           if ($env:RELEASE_TAG -ne $expected.Trim()) { throw "Tag $env:RELEASE_TAG does not match application version $expected" }
           python -m unittest discover -s tests -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test cloudflare_worker/test/proxy.test.mjs district_gateway_worker/test/proxy.test.mjs registration_service/test/district.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Import optional Authenticode certificate
         id: signing

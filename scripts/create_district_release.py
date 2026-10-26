@@ -74,6 +74,9 @@ def create_manifest(app_dir: Path, archive: Path, installer: Path, output: Path,
         raise ValueError("District archive is missing or redirected")
     check_native_metadata(app / ENTRY_POINT, str(VERSION_DATA["WINDOWS_FILE_VERSION_TEXT"]))
     check_native_metadata(installer)
+    bundled = app / INSTALLER_NAME
+    if not bundled.is_file() or bundled.is_symlink() or sha256(bundled) != sha256(installer):
+        raise ValueError("District package must bundle the matching setup wizard")
     verify_archive(archive, app)
     output = output.resolve()
     if output == app or app in output.parents:

@@ -211,6 +211,12 @@ def main() -> int:
     package = require_asset(directory, manifest["package"])
     require_asset(directory, manifest["installer"])
     verify_package(package, manifest["package"])
+    with zipfile.ZipFile(package) as archive:
+        if INSTALLER_NAME not in archive.namelist():
+            raise ValueError("Package is missing its bundled setup wizard")
+        with archive.open(INSTALLER_NAME) as stream:
+            if sha256_stream(stream) != manifest["installer"]["sha256"].upper():
+                raise ValueError("Bundled setup wizard does not match the published installer")
 
     expected_lines = {
         f"{sha256(path)}  {path.name}"

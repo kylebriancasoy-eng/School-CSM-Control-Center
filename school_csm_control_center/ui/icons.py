@@ -55,6 +55,8 @@ ICON_NAMES = frozenset(
         "key",
         "school",
         "upload",
+        "bell",
+        "bell_notice",
     }
 )
 
@@ -125,6 +127,21 @@ def _icon_pixmap(name: str, color_key: str, size: int) -> QPixmap:
 
 
 def _draw_shape(painter: QPainter, name: str) -> None:
+    if name in {"bell", "bell_notice"}:
+        path = QPainterPath()
+        path.moveTo(14, 46)
+        path.lineTo(19, 38)
+        path.lineTo(19, 27)
+        path.cubicTo(19, 9, 45, 9, 45, 27)
+        path.lineTo(45, 38)
+        path.lineTo(50, 46)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.drawArc(QRectF(26, 46, 12, 10), 180 * 16, 180 * 16)
+        if name == "bell_notice":
+            painter.setBrush(QColor(theme.WARNING))
+            painter.drawEllipse(QRectF(44, 8, 13, 13))
+        return
 
     if name == "play":
         path = QPainterPath()

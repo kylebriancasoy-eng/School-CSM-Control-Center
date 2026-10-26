@@ -98,10 +98,6 @@ if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
     }
 }
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-& $Python (Join-Path $repoRoot "scripts\package_district_management_server.py") `
-    --app-dir $appDirectory --output $artifactRoot
-if ($LASTEXITCODE -ne 0) { throw "Could not package the district application." }
-
 $installerArguments = @{ Repository = $Repository; Product = 'District'; OutputRoot = (Join-Path $OutputRoot 'installer') }
 if (-not [string]::IsNullOrWhiteSpace($CertificateSha1)) {
     $installerArguments.CertificateSha1 = $CertificateSha1
@@ -109,6 +105,10 @@ if (-not [string]::IsNullOrWhiteSpace($CertificateSha1)) {
     $installerArguments.TimestampUrl = $TimestampUrl
 }
 $setup = & (Join-Path $repoRoot 'scripts\build_installer.ps1') @installerArguments
+Copy-Item -LiteralPath $setup -Destination (Join-Path $appDirectory 'School-CSM-District-Management-Server-Setup.exe') -Force
+& $Python (Join-Path $repoRoot "scripts\package_district_management_server.py") `
+    --app-dir $appDirectory --output $artifactRoot
+if ($LASTEXITCODE -ne 0) { throw "Could not package the district application." }
 $tag = & $Python -c "import runpy,sys; print(runpy.run_path(sys.argv[1])['RELEASE_TAG'])" (Join-Path $repoRoot 'school_csm_control_center\version.py')
 if ($LASTEXITCODE -ne 0) { throw 'Could not read district release version.' }
 $archive = Join-Path $artifactRoot ('School-CSM-District-Management-Server-' + $tag.Trim() + '-win-x64.zip')

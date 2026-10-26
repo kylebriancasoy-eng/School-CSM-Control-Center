@@ -27,6 +27,7 @@ class DistrictInstallerManifestTests(unittest.TestCase):
         self.app = DistrictReleasePackagingTests._valid_app(self.root)
         self.installer = self.root / manifests.INSTALLER_NAME
         self.installer.write_bytes(b"MZ-district-bootstrap-fixture")
+        (self.app / manifests.INSTALLER_NAME).write_bytes(self.installer.read_bytes())
         self.checksum_patch = patch.object(packages, "CLOUDFLARED_WINDOWS_AMD64_SHA256", TEST_CLOUDFLARED_SHA256)
         self.checksum_patch.start()
         self.addCleanup(self.checksum_patch.stop)

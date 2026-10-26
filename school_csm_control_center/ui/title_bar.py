@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtCore import QPoint, QTimer, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -22,6 +22,7 @@ from school_csm_control_center.ui.widgets import TooltipIconButton
 
 class BrandedTitleBar(QFrame):
     """Recognizable in-app window chrome using the CSM visual language."""
+    updates_requested = Signal()
 
     def __init__(self, host_window: QMainWindow, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -99,6 +100,10 @@ class BrandedTitleBar(QFrame):
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
         )
         layout.addWidget(self.status_label)
+
+        self.update_button = TooltipIconButton("bell", "Software updates", button_size=34, icon_size=19, role="subtle")
+        self.update_button.clicked.connect(self.updates_requested.emit)
+        layout.addWidget(self.update_button)
 
         self.minimize_button = TooltipIconButton(
             "minimize",

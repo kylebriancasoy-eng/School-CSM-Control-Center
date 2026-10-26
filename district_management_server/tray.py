@@ -359,7 +359,7 @@ class DistrictManagementWindow(QMainWindow):
         self.restore_button = QPushButton("Restore Encrypted Recovery Backup")
         self.reset_token_button = QPushButton("Reset District Administrator Token")
         self.replace_api_token_button = QPushButton("Replace Cloudflare API Token")
-        self.update_button = QPushButton("Download District Setup / updater")
+        self.update_button = QPushButton("Open District Setup / updater")
         self.update_button.setToolTip("Install, update, repair, or uninstall the district app without removing its data. Create an encrypted backup before updating.")
         self.startup = QCheckBox("Start in the background when this operator signs in")
         self.startup.setChecked(is_enabled())
@@ -442,8 +442,7 @@ class DistrictManagementWindow(QMainWindow):
         self.restore_button.clicked.connect(self._restore_backup)
         self.reset_token_button.clicked.connect(self._reset_administrator_token)
         self.replace_api_token_button.clicked.connect(self._replace_cloudflare_token)
-        self.update_button.clicked.connect(lambda: webbrowser.open(
-            "https://github.com/kylebriancasoy-eng/School-CSM-Control-Center/releases/latest/download/School-CSM-District-Management-Server-Setup.exe"))
+        self.update_button.clicked.connect(self._open_bundled_setup)
         self.startup.toggled.connect(self._toggle_startup)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh)
@@ -735,6 +734,21 @@ class DistrictManagementWindow(QMainWindow):
                 QSystemTrayIcon.MessageIcon.Information,
                 2500,
             )
+
+    def _open_bundled_setup(self) -> None:
+        if self._working:
+            QMessageBox.information(self, "District operation in progress", "Finish the current operation before opening Setup.")
+            return
+        if QMessageBox.question(self, "Open District Setup?",
+                "Create a fresh encrypted recovery backup first.\n\nOpen the bundled setup wizard and close this district app? The district service will stop until you reopen it. Nothing is installed automatically.") != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from csm_updates.release import launch_setup
+            launch_setup(self.install_root, district=True)
+        except Exception as error:
+            QMessageBox.warning(self, "District Setup could not open", str(error))
+            return
+        self.exit_application()
 
     def exit_application(self) -> None:
         if self._working:

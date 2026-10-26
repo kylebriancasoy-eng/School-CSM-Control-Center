@@ -39,6 +39,7 @@ jobs:
           run_district_management_server.py
           school_csm_control_center
           district_management_server
+          csm_updates
           registration_service
           scripts
 

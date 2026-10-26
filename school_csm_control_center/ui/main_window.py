@@ -5,6 +5,7 @@ from datetime import datetime
 import getpass
 import hmac
 import json
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -148,6 +149,12 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         window_layout.setContentsMargins(1, 1, 1, 1)
         window_layout.setSpacing(0)
         self.title_bar = BrandedTitleBar(self, self.window_frame)
+        from csm_updates.qt import UpdateController
+        from school_csm_control_center.version import __version__
+        self.updates = UpdateController(__version__, self)
+        self._update_dialog = None
+        self.title_bar.updates_requested.connect(self._show_updates)
+        self.updates.changed.connect(self._refresh_update_bell)
         window_layout.addWidget(self.title_bar)
 
         self.shell = QFrame()
@@ -2035,6 +2042,22 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         except Exception:
             pass
         self.server_controller.request_shutdown()
+
+    def _refresh_update_bell(self) -> None:
+        self.title_bar.update_button.set_action("bell_notice" if self.updates.available else "bell",
+            f"Update {self.updates.info.version} available" if self.updates.available else "Software updates")
+
+    def _show_updates(self) -> None:
+        from csm_updates.qt import UpdateDialog
+        if self._update_dialog is None:
+            root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else self.project_root
+            self._update_dialog = UpdateDialog(self.updates, root, self.exit_application, self,
+                can_update=lambda: not self.gateway_controller.operation_in_progress)
+        self._update_dialog.show()
+        self._update_dialog.raise_()
+        self._update_dialog.activateWindow()
+        if self.updates.info is None and not self.updates.busy:
+            self.updates.check()
 
     def exit_application(self) -> None:
         self._explicit_exit_requested = True

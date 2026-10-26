@@ -174,6 +174,9 @@ def main() -> int:
         )
     if not installer_source.is_file() or installer_source.is_symlink():
         raise SystemExit(f"Missing maintenance installer: {installer_source}")
+    bundled_setup = app_dir / INSTALLER_NAME
+    if not bundled_setup.is_file() or bundled_setup.is_symlink() or sha256(bundled_setup) != sha256(installer_source):
+        raise SystemExit("The application must bundle the matching maintenance installer")
 
     output.mkdir(parents=True, exist_ok=True)
     package_name = f"School-CSM-Control-Center-{APP_VERSION}-windows-x64.zip"
