@@ -38,6 +38,8 @@ GATEWAY_CREDENTIAL_TARGETS = (
     GATEWAY_DEFERRED_TRANSFER_RECEIPT_TARGET,
     GATEWAY_DIRECTORY_REQUEST_TARGET,
 )
+GATEWAY_PILOT_MONITOR_TARGET = "MoSSLab.SchoolCSMControlCenter.InternetGateway.PilotMonitoring"
+GATEWAY_CREDENTIAL_TARGETS += (GATEWAY_PILOT_MONITOR_TARGET,)
 
 
 class GatewayCredentialStore:
@@ -57,6 +59,13 @@ class GatewayCredentialStore:
 
     def load_tunnel_credential(self) -> str | None:
         return self._load(self.tunnel_target)
+
+    def save_pilot_monitoring(self, receipt: Mapping[str, Any]) -> None:
+        self._save(GATEWAY_PILOT_MONITOR_TARGET, json.dumps(dict(receipt)), "District pilot monitoring")
+
+    def load_pilot_monitoring(self) -> dict[str, Any] | None:
+        value = self._load(GATEWAY_PILOT_MONITOR_TARGET)
+        return json.loads(value) if value else None
 
     def delete_tunnel_credential(self) -> bool:
         return bool(self._backend().delete(self.tunnel_target))
@@ -181,6 +190,7 @@ class GatewayCredentialStore:
                 self._load(self.deferred_transfer_receipt_target) is not None
             ),
             "directory_request_receipt": self._load(self.directory_request_target) is not None,
+            "pilot_monitoring": self._load(GATEWAY_PILOT_MONITOR_TARGET) is not None,
         }
 
     def delete_all(self) -> dict[str, bool]:
@@ -195,6 +205,7 @@ class GatewayCredentialStore:
                 backend.delete(self.deferred_transfer_receipt_target)
             ),
             "directory_request_receipt": bool(backend.delete(self.directory_request_target)),
+            "pilot_monitoring": bool(backend.delete(GATEWAY_PILOT_MONITOR_TARGET)),
         }
 
     def _save(self, target: str, secret: str, label: str) -> None:

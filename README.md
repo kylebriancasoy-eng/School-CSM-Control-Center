@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.6
+# School CSM Control Center 0.8.7
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,16 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.7 highlights
+
+- Existing direct Cloudflare pilots can link to district monitoring with a
+  district-issued activation code, without replacing their tunnel or address.
+- Separate protected reporting credentials, five-minute check-ins and a clearly
+  labeled monitoring-only district view resolve the older pilot's missing status.
+- Administrator-only monitoring reset does not stop the tunnel. See the
+  [pilot monitoring guide](docs/PILOT_DISTRICT_MONITORING.md); update the district
+  app first, then the school app, and create a fresh district backup before updating.
 
 ## 0.8.6 highlights
 

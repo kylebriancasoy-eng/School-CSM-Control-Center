@@ -153,6 +153,14 @@ class GatewayProviderClient:
             bearer=installation_secret,
         )
 
+    def link_pilot_monitoring(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        return self._request("POST", "/v1/pilot-monitoring/link", payload)
+
+    def pilot_monitoring_heartbeat(self, installation_id: str, secret: str,
+                                   payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        return self._request("POST", f"/v1/pilot-monitoring/{quote(installation_id, safe='')}/heartbeat",
+                             payload, bearer=secret)
+
     def redeem_handoff(
         self, completion_code: str, installation_id: str
     ) -> Mapping[str, Any]:

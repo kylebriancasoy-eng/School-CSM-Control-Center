@@ -42,6 +42,7 @@ class InternetGatewayPanel(QFrame):
     prepare_backup_requested = Signal()
     registration_details_requested = Signal()
     directory_sync_requested = Signal()
+    pilot_monitoring_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -98,6 +99,8 @@ class InternetGatewayPanel(QFrame):
         self.connect_button = ActionButton("reset", "Connect / reconnect", "Connect or reconnect the Internet Gateway", role="primary")
         self.diagnostics_button = ActionButton("check", "Check connection", "Run Internet Gateway diagnostics")
         self.details_button = ActionButton("info", "Details", "View Internet Gateway registration details")
+        self.pilot_monitoring_button = ActionButton("check", "Link district monitoring", "Link this existing pilot without replacing its tunnel")
+        self.pilot_monitoring_button.clicked.connect(self.pilot_monitoring_requested.emit)
         self.transfer_button = ActionButton("next", "Transfer server", "Transfer this school's Internet Server to another authorized device")
         self.prepare_package_button = ActionButton("export", "Export transfer package", "Prepare an encrypted Server and Data package for a replacement computer")
         self.prepare_backup_button = ActionButton("save", "Create backup", "Create an encrypted portable recovery backup")
@@ -108,6 +111,7 @@ class InternetGatewayPanel(QFrame):
             self.diagnostics_button,
             self.setup_button,
             self.details_button,
+            self.pilot_monitoring_button,
         ):
             action_row.addWidget(button)
         action_row.addStretch(1)
@@ -340,6 +344,8 @@ class InternetGatewayPanel(QFrame):
         )
         self.diagnostics_button.setEnabled(configured and not busy and not retired)
         self.details_button.setEnabled(configured or retired)
+        self.pilot_monitoring_button.setVisible(direct_mode)
+        self.pilot_monitoring_button.setEnabled(configured and enrollment_available and not busy and not retired)
         transfer_identity_ready = bool(
             self._state.get("school_id") or self._state.get("local_school_id")
         )

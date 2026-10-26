@@ -215,7 +215,8 @@ namespace MoSSLab.SchoolCSM.Installer
                 InstallerEngine.GatewayInstallationSecretTarget,
                 InstallerEngine.GatewayDevicePrivateKeyTarget,
                 InstallerEngine.GatewayDeferredTransferReceiptTarget,
-                InstallerEngine.GatewayDirectoryRequestTarget
+                InstallerEngine.GatewayDirectoryRequestTarget,
+                "MoSSLab.SchoolCSMControlCenter.InternetGateway.PilotMonitoring"
             };
             bool success = true;
             foreach (string target in targets)

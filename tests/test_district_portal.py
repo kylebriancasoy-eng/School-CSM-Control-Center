@@ -241,7 +241,8 @@ class DistrictPortalCoreTests(unittest.TestCase):
                 sign_count=0,
             )
         self.assertEqual(register_context.exception.code, "school_suspended")
-        self.assertEqual(self.provisioner.revoked, ["tunnel-654321"])
+        # Refuse suspended enrollment before any Cloudflare provisioning.
+        self.assertEqual(self.provisioner.revoked, [])
         self.assertEqual(
             [item["school_id"] for item in self.service.list_district_schools(status="suspended")],
             ["654321"],

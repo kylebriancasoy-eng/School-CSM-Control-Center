@@ -260,6 +260,7 @@ class GatewayCredentialTests(unittest.TestCase):
         self.assertEqual(len(digest), 64)
         self.assertEqual(store.load_deferred_transfer_receipt(), deferred)
         store.save_directory_request_receipt({"request_id": SOURCE_ID, "request_secret": "a" * 64})
+        store.save_pilot_monitoring({"secret": "b" * 64})
         self.assertEqual(
             store.exists(),
             {
@@ -268,6 +269,7 @@ class GatewayCredentialTests(unittest.TestCase):
                 "device_private_key": True,
                 "deferred_transfer_receipt": True,
                 "directory_request_receipt": True,
+                "pilot_monitoring": True,
             },
         )
         self.assertEqual(store.delete_all(), {key: True for key in store.exists()})

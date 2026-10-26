@@ -670,6 +670,9 @@ function renderSchoolDetail(school) {
     detailField("Active server", school.active_installation_id || "Not assigned")
   );
   infrastructure.append(grid);
+  if (school.monitoring_mode === "external_pilot") {
+    infrastructure.append(element("p", "", "Linked existing pilot — monitoring only. Its tunnel remains independently managed. Suspending this directory entry stops status reporting, not the existing tunnel."));
+  }
   body.append(infrastructure);
 
   const installations = element("section", "detail-section");
@@ -717,6 +720,20 @@ function renderSchoolDetail(school) {
   const boundary = element("p", "field-help", "Suspending enrollment blocks new activation codes. It does not stop this school's active server, change its Survey Form status, or affect any other school.");
   body.append(boundary);
   const actions = element("div", "detail-actions");
+  if (school.monitoring_mode === "external_pilot") {
+    actions.append(button("Reset monitoring link", "button button--secondary", async (event) => {
+      if (!window.confirm(`Reset district monitoring for ${school.school_name}?\n\nThis revokes only its reporting credential, not its tunnel. Issue a new activation code afterward to link it again.`)) return;
+      const control = event.currentTarget;
+      setBusy(control, true);
+      try {
+        await api(`/v1/admin/schools/${encodeURIComponent(school.school_id)}/pilot-monitoring`, { method: "DELETE" });
+        showToast("Monitoring link reset. The existing tunnel was not changed.");
+        closeDrawer();
+        await refreshDashboard();
+      } catch (error) { showToast(error.message, true); }
+      finally { setBusy(control, false); }
+    }));
+  }
   if (school.directory_status === "approved" && school.registration_state !== "registered") {
     actions.append(button("Issue activation", "button button--primary", () => {
       closeDrawer();

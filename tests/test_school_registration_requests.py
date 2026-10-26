@@ -129,7 +129,7 @@ class RegistrationRequestCoreTests(unittest.TestCase):
         migrated = RegistrationRepository(self.path)
         with migrated.read() as conn:
             self.assertEqual(conn.execute("SELECT school_name FROM district_schools").fetchone()[0], "Existing School")
-            self.assertEqual(conn.execute("SELECT value FROM service_meta WHERE key='schema_version'").fetchone()[0], "3")
+            self.assertEqual(conn.execute("SELECT value FROM service_meta WHERE key='schema_version'").fetchone()[0], "4")
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM school_registration_requests").fetchone()[0], 0)
 
     def test_changed_identity_cannot_be_approved_from_stale_review_even_in_same_second(self):

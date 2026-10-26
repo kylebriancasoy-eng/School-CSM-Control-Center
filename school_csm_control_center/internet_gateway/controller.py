@@ -13,6 +13,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 import base64
 import binascii
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -1306,6 +1307,42 @@ class InternetGatewayController(QObject):
     def connect_or_reconnect_async(self) -> bool:
         return self._run_async("connect", self.connect_or_reconnect, "Internet Gateway connection")
 
+    def link_pilot_monitoring_async(self, activation_code: str) -> bool:
+        return self._run_async("pilot_monitoring", lambda: self.link_pilot_monitoring(activation_code),
+                               "Link existing gateway to district monitoring")
+
+    def link_pilot_monitoring(self, activation_code: str) -> dict[str, Any]:
+        if not self.direct_mode or not self.configured or self.retired or not self.provider_available:
+            raise ValueError("An existing direct pilot and configured district provider are required.")
+        if not activation_code.strip():
+            raise ValueError("Enter the district-issued activation code, not a Cloudflare token.")
+        service_url = str(self._provider_config.service_url).rstrip("/")
+        saved_receipt = self._credentials.load_pilot_monitoring() or {}
+        identity = {"school_id": str(self._state["school_id"]),
+                    "installation_id": str(self._state["installation_id"]),
+                    "public_host": str(self._state["public_host"]), "service_url": service_url}
+        code_fingerprint = hashlib.sha256(activation_code.strip().upper().encode()).hexdigest()
+        receipt = next((dict(candidate) for candidate in (saved_receipt.get("pending") or {}, saved_receipt)
+                        if candidate.get("activation_fingerprint") == code_fingerprint
+                        and all(candidate.get(key) == value for key, value in identity.items())), None)
+        if receipt is None:
+            receipt = {**identity, "secret": secrets.token_hex(32), "activation_fingerprint": code_fingerprint}
+        receipt.pop("pending", None)
+        # Save before sending. A lost response can be retried with the same code
+        # and device secret without consuming another activation code.
+        self._credentials.save_pilot_monitoring({**saved_receipt, "pending": receipt})
+        result = self._client.link_pilot_monitoring({
+            **{k: identity[k] for k in ("school_id", "installation_id", "public_host")},
+            "activation_code": activation_code.strip(), "monitoring_secret": receipt["secret"],
+        })
+        if (result.get("linked") is not True or result.get("school_id") != identity["school_id"]
+                or result.get("public_host") != identity["public_host"] or result.get("mode") != "monitoring_only"):
+            raise ValueError("The district returned a mismatched monitoring acknowledgement.")
+        self._credentials.save_pilot_monitoring(receipt)
+        self._report_heartbeat()
+        self.notice_requested.emit("Existing gateway linked to district monitoring. Its tunnel and address were not changed.", "success")
+        return self.state()
+
     def run_diagnostics_async(self) -> bool:
         return self._run_async("diagnostics", self.run_diagnostics, "Internet Gateway diagnostics")
 
@@ -1464,6 +1501,7 @@ class InternetGatewayController(QObject):
                     ),
                 )
                 self._emit_state()
+                self._report_heartbeat()
                 return self.state()
             checked_at = _utc_now()
             updater = _callable_attr(self._state_store, "update_status")
@@ -1480,6 +1518,7 @@ class InternetGatewayController(QObject):
                 and not state.get("retirement")
             ):
                 self._authorization_verified_this_session = True
+            self._report_heartbeat()
             return state
         if self._client is None:
             return self.state()
@@ -1571,16 +1610,26 @@ class InternetGatewayController(QObject):
     def _report_heartbeat(self) -> None:
         """Queue bounded status reporting without blocking the desktop or shutdown."""
 
-        if self.direct_mode or self._client is None or self._credentials is None:
+        if self.retired or self._client is None or self._credentials is None:
             return
-        heartbeat = _callable_attr(self._client, "heartbeat")
+        heartbeat = _callable_attr(self._client, "pilot_monitoring_heartbeat" if self.direct_mode else "heartbeat")
         if heartbeat is None:
             return
         installation_id = str(self._state.get("installation_id") or "")
         if not installation_id:
             return
         try:
-            installation_secret = self._credentials.load_installation_secret()
+            if self.direct_mode:
+                receipt = self._credentials.load_pilot_monitoring() or {}
+                expected = {"school_id": str(self._state.get("school_id") or ""),
+                            "installation_id": installation_id,
+                            "public_host": str(self._state.get("public_host") or ""),
+                            "service_url": str(self._provider_config.service_url).rstrip("/")}
+                if any(receipt.get(k) != v for k, v in expected.items()):
+                    return
+                installation_secret = str(receipt.get("secret") or "")
+            else:
+                installation_secret = self._credentials.load_installation_secret()
             if not installation_secret:
                 return
             local = dict(self._local_settings_provider() or {})

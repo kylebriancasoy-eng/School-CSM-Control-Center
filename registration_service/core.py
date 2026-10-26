@@ -15,7 +15,7 @@ from typing import Any, Iterator, Mapping, Protocol
 from uuid import UUID, uuid4
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 ACTIVE = "active"
 TRANSFERRED = "transferred"
 REVOKED = "revoked"
@@ -515,6 +515,8 @@ class RegistrationRepository:
                         "The registration database was created by a newer service version.",
                         code="schema_newer",
                     )
+            from .pilot_monitoring import initialize as initialize_pilot_monitoring
+            initialize_pilot_monitoring(connection)
             connection.execute(
                 """INSERT INTO service_meta(key,value) VALUES('schema_version',?)
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
@@ -1107,6 +1109,8 @@ class RegistrationService:
                 (timestamp(), *parameters),
             ).fetchall()
         documents = [self._district_school_document(row) for row in rows]
+        from .pilot_monitoring import overlay
+        documents = overlay(self, documents)
         if requested_status == "all":
             return documents
         if requested_status in DIRECTORY_STATUSES:
@@ -1184,6 +1188,8 @@ class RegistrationService:
                 ).fetchall()
             ]
         document = dict(self._district_school_document(row))
+        from .pilot_monitoring import overlay
+        document = overlay(self, [document])[0]
         document["installations"] = installations
         document["passkeys"] = passkeys
         return document
@@ -1537,11 +1543,8 @@ class RegistrationService:
             )
         code_hash = hashlib.sha256(str(activation_code).strip().upper().encode("utf-8")).hexdigest()
         public_host = f"{school_id}.{self.managed_domain}"
-        provisioned = self.provisioner.provision(school_id=school_id, public_host=public_host)
-        tunnel_id = str(provisioned.get("tunnel_id") or "")
-        tunnel_token = str(provisioned.get("tunnel_token") or "")
-        if not tunnel_id or not tunnel_token:
-            raise ServiceError("Tunnel provisioning returned an incomplete result.")
+        tunnel_id = ""
+        tunnel_token = ""
         registration_id = str(uuid4())
         installation_secret = secrets.token_urlsafe(48)
         now = utc_now()
@@ -1583,6 +1586,8 @@ class RegistrationService:
                         "The activation code is invalid, expired, or already used.",
                         code="activation_invalid",
                     )
+                if connection.execute("SELECT 1 FROM pilot_monitors WHERE school_id=?", (school_id,)).fetchone():
+                    raise ServiceError("An existing pilot is linked for monitoring. Do not provision a replacement tunnel; contact the district administrator for a planned migration.", code="pilot_already_linked")
                 if connection.execute(
                     "SELECT 1 FROM schools WHERE school_id=?", (school_id,)
                 ).fetchone():
@@ -1590,6 +1595,15 @@ class RegistrationService:
                         "This School ID is already registered. Use Transfer Existing School Server.",
                         code="school_already_registered",
                     )
+                # Keep validation and pilot-link exclusion under the same write
+                # transaction as provisioning, so a concurrent link cannot race
+                # a replacement Worker into existence.
+                provisioned = self.provisioner.provision(school_id=school_id, public_host=public_host)
+                tunnel_id = str(provisioned.get("tunnel_id") or "")
+                tunnel_token = str(provisioned.get("tunnel_token") or "")
+                if not tunnel_id or not tunnel_token:
+                    raise ServiceError("Tunnel provisioning returned an incomplete result.")
+                handoff_payload.update(tunnel_id=tunnel_id, tunnel_token=tunnel_token)
                 connection.execute(
                     """INSERT INTO schools(
                         school_id,school_name,public_host,registration_id,
@@ -1667,7 +1681,8 @@ class RegistrationService:
                     )
         except Exception:
             try:
-                self.provisioner.revoke(tunnel_id=tunnel_id)
+                if tunnel_id:
+                    self.provisioner.revoke(tunnel_id=tunnel_id)
             except Exception:
                 pass
             raise

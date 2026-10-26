@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
+    QLineEdit,
     QLabel,
     QMainWindow,
     QStackedWidget,
@@ -515,6 +517,7 @@ class SchoolCSMControlCenterWindow(QMainWindow):
         gateway_panel.directory_sync_requested.connect(self._retry_district_registration)
         gateway_panel.setup_requested.connect(self._open_gateway_setup)
         gateway_panel.connect_requested.connect(self._request_gateway_connection)
+        gateway_panel.pilot_monitoring_requested.connect(self._link_existing_pilot_monitoring)
         gateway_panel.diagnostics_requested.connect(
             self._open_gateway_diagnostics
         )
@@ -1339,6 +1342,17 @@ class SchoolCSMControlCenterWindow(QMainWindow):
             self.server_board.internet_gateway.diagnostics_button
         )
         self.gateway_controller.run_diagnostics_async()
+
+    def _link_existing_pilot_monitoring(self) -> None:
+        code, accepted = QInputDialog.getText(
+            self, "Link existing gateway to district monitoring",
+            "In the district portal, issue an activation code for this School ID.\n"
+            "Enter that code below (not a Cloudflare API token).\n"
+            "This links status reporting only; it does not replace the tunnel or grant district control of it.",
+            QLineEdit.EchoMode.Password,
+        )
+        if accepted and code.strip():
+            self.gateway_controller.link_pilot_monitoring_async(code)
 
     def _open_gateway_details(self) -> None:
         self.gateway_details_overlay.show_state(self.gateway_controller.state())

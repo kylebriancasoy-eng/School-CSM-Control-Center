@@ -277,6 +277,15 @@ def build_service() -> RegistrationService:
     )
 
 
+class PilotMonitorLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    school_id: str = Field(max_length=16)
+    installation_id: str = Field(max_length=64)
+    public_host: str = Field(max_length=253)
+    activation_code: str = Field(max_length=128)
+    monitoring_secret: str = Field(min_length=64, max_length=64)
+
+
 def create_app(
     service: RegistrationService | None = None,
     *,
@@ -389,6 +398,7 @@ def create_app(
                 return _json_error(429, "Too many sign-in attempts. Try again later.")
         elif (
             path.startswith("/v1/registrations")
+            or path == "/v1/pilot-monitoring/link"
             or path.startswith("/v1/transfers")
             or path.startswith("/v1/passkeys")
         ):
@@ -403,7 +413,7 @@ def create_app(
                 client, "credential-handoff", limit=12, window=600
             ):
                 return _json_error(429, "Too many completion-code attempts. Try again later.")
-        elif path.startswith("/v1/installations/"):
+        elif path.startswith(("/v1/installations/", "/v1/pilot-monitoring/")):
             client = request.client.host if request.client else "unknown"
             parts = path.split("/")
             installation = parts[3] if len(parts) > 3 else "unknown"
@@ -1197,6 +1207,25 @@ def create_app(
             survey_status=body.survey_status,
             error_code=body.error_code,
         )
+
+    @app.post("/v1/pilot-monitoring/link")
+    def link_pilot_monitor(body: PilotMonitorLink, service: RegistrationService = Depends(current_service)):
+        from .pilot_monitoring import link
+        return link(service, **body.model_dump())
+
+    @app.delete("/v1/admin/schools/{school_id}/pilot-monitoring")
+    def unlink_pilot_monitor(school_id: str,
+                             _session: DistrictAdminSession = Depends(current_district_mutation),
+                             service: RegistrationService = Depends(current_service)):
+        from .pilot_monitoring import unlink
+        return unlink(service, school_id)
+
+    @app.post("/v1/pilot-monitoring/{installation_id}/heartbeat")
+    def pilot_monitor_heartbeat(installation_id: str, body: InstallationHeartbeat,
+                                authorization: str | None = Header(default=None),
+                                service: RegistrationService = Depends(current_service)):
+        from .pilot_monitoring import heartbeat
+        return heartbeat(service, installation_id=installation_id, secret=_bearer(authorization), payload=body.model_dump())
 
     return app
 
