@@ -511,6 +511,9 @@ class InternetGatewayWebSecurityTests(unittest.TestCase):
         self.assertEqual(status, 302)
 
     def test_new_public_cookie_does_not_reset_submit_rate_limit(self) -> None:
+        # Keep the Retry-After assertion deterministic on slow Windows runners.
+        # This test checks identity continuity across cookies, not elapsed time.
+        self.server.internet_rate_limiter = BoundedRateLimiter(clock=lambda: 100.0)
         self.settings["internet_gateway_rate_limits"] = {
             "access_session": {"limit": 10, "window_seconds": 60},
             "survey_submit": {"limit": 1, "window_seconds": 60},

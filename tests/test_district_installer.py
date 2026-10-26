@@ -47,7 +47,7 @@ class DistrictInstallerManifestTests(unittest.TestCase):
         self.assertEqual(data["package"]["entryPoint"], packages.ENTRY_POINT)
         self.assertEqual(data["installer"]["fileName"], manifests.INSTALLER_NAME)
         self.assertEqual(native.call_count, 2)
-        self.assertEqual(native.call_args_list[0].args, (self.app / packages.ENTRY_POINT,
+        self.assertEqual(native.call_args_list[0].args, (self.app.resolve() / packages.ENTRY_POINT,
             str(manifests.VERSION_DATA["WINDOWS_FILE_VERSION_TEXT"])))
         for item in (data["package"], data["installer"]):
             path = result.parent / item["fileName"]
