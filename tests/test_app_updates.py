@@ -85,6 +85,39 @@ class UpdateUiTests(unittest.TestCase):
         self.assertTrue(control.available)  # Preserve previously verified details offline.
         dialog.close()
 
+    def test_district_check_uses_district_assets(self):
+        from csm_updates.qt import UpdateController
+        control = UpdateController("0.8.8", district=True)
+        with patch("csm_updates.qt.fetch_latest", return_value=parse_release(json.dumps(metadata(district=True)).encode(), district=True)) as fetch:
+            class ImmediateThread:
+                def __init__(self, *, target, **kwargs): self.target = target
+                def start(self): self.target()
+            with patch("csm_updates.qt.Thread", ImmediateThread):
+                control.check()
+            fetch.assert_called_once_with(district=True)
+        self.assertTrue(control.available)
+
+    def test_district_backup_acknowledgement_and_product_specific_setup(self):
+        from csm_updates.qt import UpdateController, UpdateDialog
+        from PySide6.QtWidgets import QMessageBox
+        control = UpdateController("0.8.8", district=True)
+        exit_app = Mock()
+        dialog = UpdateDialog(control, Path.cwd(), exit_app)
+        self.assertIn("#f8fbef", dialog.styleSheet())
+        with patch("csm_updates.qt.sys.frozen", True, create=True):
+            dialog.refresh()
+            self.assertFalse(dialog.setup_button.isEnabled())
+            with patch("csm_updates.qt.QMessageBox.information"), patch("csm_updates.qt.launch_setup") as launch:
+                dialog._open_setup()
+                launch.assert_not_called()
+            dialog.backup_confirmation.setChecked(True)
+            self.assertTrue(dialog.setup_button.isEnabled())
+            with patch("csm_updates.qt.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes), patch("csm_updates.qt.launch_setup") as launch:
+                dialog._open_setup()
+                launch.assert_called_once_with(Path.cwd(), district=True)
+        exit_app.assert_called_once()
+        dialog.close()
+
     def test_title_bar_has_accessible_bell_action(self):
         from PySide6.QtWidgets import QMainWindow
         from school_csm_control_center.ui.title_bar import BrandedTitleBar

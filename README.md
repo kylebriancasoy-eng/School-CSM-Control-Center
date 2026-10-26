@@ -1,4 +1,4 @@
-# School CSM Control Center 0.8.8
+# School CSM Control Center 0.8.9
 
 School CSM Control Center is an offline-first Windows application for collecting,
 scanning, analyzing, printing, and auditing School Client Satisfaction Measurement
@@ -29,6 +29,14 @@ administrator-installed provider configuration. The uninstall data-removal optio
 must be selected explicitly; it removes the current account's standard saved-data
 folder and named application credentials, but retains the machine-wide provider
 configuration.
+
+## 0.8.9 highlights
+
+- District Management now has its own pinned update bell, availability dot,
+  district-themed release details and bundled District Setup action.
+- District update checks are independent of the school program. Opening Setup
+  requires a fresh encrypted-backup acknowledgement and waits for ongoing
+  district operations to finish. Updates remain operator-controlled.
 
 ## 0.8.8 highlights
 

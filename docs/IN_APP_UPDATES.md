@@ -24,9 +24,18 @@ Updating is always explicit:
 
 Both school and district release packages include their own matching Setup EXE.
 The district app's **Open District Setup / updater** action opens that local
-wizard after confirmation; create a fresh encrypted district backup first.
-The district window retains its native Windows title bar; the new notification
-bell is in the School Control Center's custom title bar.
+update panel, as does its pinned bell at the top-right of the district header.
+The panel matches the district seal's colors, shows release details, and requires
+a fresh encrypted recovery-backup acknowledgement before launching District Setup.
+An ongoing backup, restore or credential operation also blocks the launch.
+The district window retains its native Windows title bar; its bell remains visible
+below that title bar while settings scroll. The school bell uses its custom title bar.
+
+Both products check on the same startup/six-hour cadence and can be checked
+manually. District checks require the district Setup and district manifest assets;
+they never select the school installer. Only opening Setup and confirming closure
+stops the district service. Reading update details does not stop any service.
+Backup acknowledgement resets when the district panel is reopened.
 
 Setup is copied to a unique temporary folder and copy-verified before launch, so
 it is not running inside the program folder it will replace. Build-time release

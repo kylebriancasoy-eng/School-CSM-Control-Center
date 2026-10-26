@@ -56,6 +56,7 @@ def main() -> int:
     )
     parser.add_argument("--product-name", default="School CSM Control Center")
     parser.add_argument("--original-filename", default="School CSM Control Center.exe")
+    parser.add_argument("--python-version-output", type=Path)
     args = parser.parse_args()
     content = TEMPLATE.format(
         file_version=WINDOWS_FILE_VERSION,
@@ -68,6 +69,10 @@ def main() -> int:
     if not args.output.exists() or args.output.read_text(encoding="utf-8") != content:
         args.output.write_text(content, encoding="utf-8", newline="\n")
     print(args.output)
+    if args.python_version_output is not None:
+        version_module = '# Generated from school_csm_control_center/version.py; do not edit.\n__version__ = ' + repr(__version__) + '\n'
+        args.python_version_output.parent.mkdir(parents=True, exist_ok=True)
+        args.python_version_output.write_text(version_module, encoding="utf-8", newline="\n")
     return 0
 
 

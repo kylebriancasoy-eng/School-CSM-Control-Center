@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import Thread
 import webbrowser
 
-from PySide6.QtCore import QObject, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, QTimer, Qt, Signal, QSize
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSystemTrayIcon,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -38,6 +39,8 @@ from .token_rotation import replace_cloudflare_api_token
 from .server_controller import DistrictServerController
 from .setup import DistrictSetupResult, configure_district_server
 from .windows_startup import is_enabled, set_enabled
+from .version import __version__
+from csm_updates.qt import UpdateController, UpdateDialog, district_bell_icon
 
 
 class _AsyncSignals(QObject):
@@ -335,6 +338,8 @@ class DistrictManagementWindow(QMainWindow):
         self.operation_signals.succeeded.connect(self._finished)
         self.operation_signals.failed.connect(self._operation_failed)
         self.controller = DistrictServerController(paths, install_root)
+        self.updates = UpdateController(__version__, self, district=True)
+        self._update_dialog = None
         self.setWindowTitle("School CSM District Management Server")
         self.setMinimumSize(700, 430)
         self.setWindowIcon(district_icon(install_root))
@@ -344,6 +349,17 @@ class DistrictManagementWindow(QMainWindow):
             "School CSM District Management Server",
             "Motiong district roster, activation, gateway provisioning, and safe infrastructure status",
         )
+        self.update_bell = QToolButton()
+        self.update_bell.setFixedSize(42, 42)
+        self.update_bell.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.update_bell.setStyleSheet("QToolButton { background: #e7f7f7; border: 1px solid #b9e2e3; border-radius: 9px; } QToolButton:hover { background: #cceff2; } QToolButton:focus { border: 2px solid #08627a; }")
+        self.update_bell.setIconSize(QSize(28, 28))
+        self.update_bell.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_bell.setAccessibleName("District software updates")
+        self.update_bell.clicked.connect(self._show_updates)
+        header.layout().addWidget(self.update_bell, 0, Qt.AlignmentFlag.AlignTop)
+        self.updates.changed.connect(self._refresh_update_bell)
+        self._refresh_update_bell()
         self.state = QLabel("Stopped")
         self.state.setObjectName("state")
         self.detail = QLabel("Starting…")
@@ -383,7 +399,6 @@ class DistrictManagementWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.setContentsMargins(22, 22, 22, 22)
         layout.setSpacing(12)
-        layout.addWidget(header)
         layout.addWidget(state_card)
         layout.addLayout(row)
         layout.addWidget(self.setup_button)
@@ -400,7 +415,12 @@ class DistrictManagementWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(holder)
-        self.setCentralWidget(scroll)
+        outer = QWidget()
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(12, 12, 12, 0)
+        outer_layout.addWidget(header)
+        outer_layout.addWidget(scroll, 1)
+        self.setCentralWidget(outer)
         self.setStyleSheet(_STYLE)
 
         self.tray = QSystemTrayIcon(self.windowIcon(), self)
@@ -736,19 +756,25 @@ class DistrictManagementWindow(QMainWindow):
             )
 
     def _open_bundled_setup(self) -> None:
-        if self._working:
-            QMessageBox.information(self, "District operation in progress", "Finish the current operation before opening Setup.")
-            return
-        if QMessageBox.question(self, "Open District Setup?",
-                "Create a fresh encrypted recovery backup first.\n\nOpen the bundled setup wizard and close this district app? The district service will stop until you reopen it. Nothing is installed automatically.") != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            from csm_updates.release import launch_setup
-            launch_setup(self.install_root, district=True)
-        except Exception as error:
-            QMessageBox.warning(self, "District Setup could not open", str(error))
-            return
-        self.exit_application()
+        self._show_updates()
+
+    def _refresh_update_bell(self) -> None:
+        self.update_bell.setIcon(district_bell_icon(self.updates.available))
+        text = f"District update {self.updates.info.version} available" if self.updates.available else "District software updates"
+        self.update_bell.setToolTip(text)
+        self.update_bell.setAccessibleDescription(text)
+
+    def _show_updates(self) -> None:
+        if self._update_dialog is None:
+            self._update_dialog = UpdateDialog(self.updates, self.install_root, self.exit_application, self,
+                can_update=lambda: not self._working)
+        if not self._update_dialog.isVisible():
+            self._update_dialog.backup_confirmation.setChecked(False)
+        self._update_dialog.show()
+        self._update_dialog.raise_()
+        self._update_dialog.activateWindow()
+        if self.updates.info is None and not self.updates.busy:
+            self.updates.check()
 
     def exit_application(self) -> None:
         if self._working:

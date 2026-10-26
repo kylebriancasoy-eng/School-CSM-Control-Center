@@ -67,9 +67,8 @@ jobs:
         shell: pwsh
         run: |
           python scripts/generate_version_info.py | Out-Null
-          python scripts/generate_version_info.py --output packaging/pyinstaller/district_version_info.txt --product-name "School CSM District Management Server" --original-filename "School CSM District Management Server.exe" | Out-Null
-          git diff --exit-code -- packaging/pyinstaller/version_info.txt
-          git diff --exit-code -- packaging/pyinstaller/district_version_info.txt
+          python scripts/generate_version_info.py --output packaging/pyinstaller/district_version_info.txt --product-name "School CSM District Management Server" --original-filename "School CSM District Management Server.exe" --python-version-output district_management_server/version.py | Out-Null
+          git diff --exit-code -- packaging/pyinstaller/version_info.txt packaging/pyinstaller/district_version_info.txt district_management_server/version.py
 
       - name: Compile maintenance installer
         shell: pwsh

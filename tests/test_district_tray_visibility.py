@@ -115,6 +115,28 @@ class DistrictTrayVisibilityTests(unittest.TestCase):
         self.window.deleteLater()
         self.app.processEvents()
 
+    def test_update_bell_is_pinned_and_uses_district_release_details(self):
+        from csm_updates.release import ReleaseInfo
+        from PySide6.QtWidgets import QScrollArea
+        self.window.updates._complete(ReleaseInfo("99.0.0", "District update", "Test release details"))
+        self.assertIn("99.0.0", self.window.update_bell.toolTip())
+        self.assertFalse(self.window.update_bell.icon().isNull())
+        # Header remains outside the scrolling settings area.
+        parent = self.window.update_bell.parentWidget()
+        while parent is not None:
+            self.assertNotIsInstance(parent, QScrollArea)
+            parent = parent.parentWidget()
+        with patch.object(self.window.updates, "check") as check:
+            self.window.update_bell.click()
+            self.assertTrue(self.window._update_dialog.controller.district)
+            self.assertIn("District", self.window._update_dialog.windowTitle())
+            check.assert_not_called()  # Already have verified release details.
+        self.window._update_dialog.close()
+        self.window._update_dialog.backup_confirmation.setChecked(True)
+        self.window.update_bell.click()
+        self.assertFalse(self.window._update_dialog.backup_confirmation.isChecked())
+        self.window._update_dialog.close()
+
     def tearDown(self) -> None:
         self.controller.start.assert_not_called()
         self.controller.restart.assert_not_called()

@@ -38,9 +38,9 @@ The bootstrapper intentionally performs anonymous HTTPS downloads and stores no 
 `school_csm_control_center/version.py` is the single source of truth for this
 release:
 
-- application semantic version: `0.8.8`;
-- Windows executable version: `0.8.8.0`;
-- release tag: `v0.8.8`.
+- application semantic version: `0.8.9`;
+- Windows executable version: `0.8.9.0`;
+- release tag: `v0.8.9`.
 
 District releases also include a separate product-bound `district-release.json`,
 `District-SHA256SUMS.txt`, and `School-CSM-District-Management-Server-Setup.exe`.
@@ -52,6 +52,7 @@ After changing the version, regenerate and check the PyInstaller version resourc
 
 ```powershell
 python scripts/generate_version_info.py
+python scripts/generate_version_info.py --output packaging/pyinstaller/district_version_info.txt --product-name "School CSM District Management Server" --original-filename "School CSM District Management Server.exe" --python-version-output district_management_server/version.py
 ```
 
 The release workflow refuses a tag that does not exactly match `RELEASE_TAG`.

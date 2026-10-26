@@ -39,7 +39,8 @@ $versionInfo = Join-Path $repoRoot "packaging\pyinstaller\district_version_info.
 & $Python (Join-Path $repoRoot "scripts\generate_version_info.py") `
     --output $versionInfo `
     --product-name "School CSM District Management Server" `
-    --original-filename "School CSM District Management Server.exe" | Out-Null
+    --original-filename "School CSM District Management Server.exe" `
+    --python-version-output (Join-Path $repoRoot 'district_management_server\version.py') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Could not generate district Windows version information." }
 
 $workRoot = Join-Path $OutputRoot "pyinstaller-work"
